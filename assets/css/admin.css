@@ -1,0 +1,854 @@
+/* Add these new styles to your existing admin.css */
+.sync-status-summary {
+    margin: 20px 0;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.campaign-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    background: #e9ecef;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.memory-usage {
+    font-family: monospace;
+    font-size: 12px;
+    color: #666;
+}
+
+/* Add animation for running status */
+.status-badge.status-running:after {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-left: 5px;
+    border-radius: 50%;
+    background-color: currentColor;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+}
+
+/* Add to admin.css */
+.tier-badge {
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.tier-gold, .tier-gold_purchased {
+    background: #ffd700;
+    color: #000;
+}
+
+.tier-silver, .tier-silver_purchased {
+    background: #c0c0c0;
+    color: #000;
+}
+
+.tier-bronze, .tier-bronze_purchased {
+    background: #cd7f32;
+    color: #fff;
+}
+
+.tier-wood {
+    background: #966F33;
+    color: #fff;
+}
+
+.details-section {
+    margin-bottom: 20px;
+}
+
+.details-section h3 {
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #eee;
+}
+
+.group-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    margin: 2px;
+    background: #e9ecef;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.sync-errors {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.error-message {
+    color: #dc3545;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.subscriber-details table thead th {
+    background: #f8f9fa;
+    font-weight: 600;
+}
+
+.subscriber-details table td, 
+.subscriber-details table th {
+    padding: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.subscriber-details .details-section {
+    margin-bottom: 20px;
+}
+
+.subscriber-details .details-section:last-child {
+    margin-bottom: 0;
+}
+
+.subscriber-details h3 {
+    margin: 0 0 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    color: #23282d;
+}
+
+.subscriber-details table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.subscriber-details th,
+.subscriber-details td {
+    padding: 8px;
+    text-align: left;
+    border: 1px solid #eee;
+}
+
+.subscriber-details th {
+    width: 30%;
+    background: #f9f9f9;
+}
+
+
+/* Enhanced Status Grid */
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin: 15px 0;
+}
+
+.status-item {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+}
+
+.status-item .label {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.status-item .value {
+    font-size: 14px;
+    color: #212529;
+}
+
+/* Enhanced Progress Bar */
+.progress-container {
+    margin-top: 10px;
+}
+
+.progress-bar {
+    height: 20px;
+    background: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+
+.progress-bar .progress {
+    height: 100%;
+    background: #007bff;
+    transition: width 0.5s ease-in-out;
+}
+
+/* Tab styling */
+.nav-tab-wrapper {
+    margin: 20px 0;
+    border-bottom: 1px solid #ccc;
+}
+
+.tab-content .tab-pane {
+    display: none;
+    padding: 20px 0;
+}
+
+.tab-content .tab-pane.active {
+    display: block;
+}
+
+/* Ensure proper spacing */
+.sync-controls {
+    margin-top: 20px;
+}
+
+.failed-jobs-section {
+    margin-top: 20px;
+}
+
+/* Campaign groups styling */
+.campaign-groups-wrapper {
+    margin: 20px 0;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+}
+
+.groups-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.group-item {
+    padding: 15px;
+    background: #f9f9f9;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+}
+
+.group-item h3 {
+    margin: 0 0 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.group-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.group-transitions {
+    margin-top: 15px;
+}
+
+.group-transitions h4 {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+.group-transitions ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.group-actions {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e5e5;
+}
+
+.group-actions .button {
+    margin-right: 10px;
+}
+
+/* Sync Control Buttons */
+.sync-controls .button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+#stop-sync {
+    background-color: #dc3232;
+    border-color: #dc3232;
+    color: white;
+    display: none;
+    /* Hidden by default */
+}
+
+#stop-sync:hover {
+    background-color: #b32d2e;
+    border-color: #b32d2e;
+}
+
+#stop-sync:disabled {
+    background-color: #f1f1f1;
+    border-color: #ddd;
+    color: #666;
+}
+
+/* Animation for running state */
+.status-badge.status-running {
+    position: relative;
+    padding-right: 25px;
+}
+
+.status-badge.status-running:after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #fff;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.3;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Sync Status Styles */
+.sync-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.sync-status-item {
+    background: #fff;
+    padding: 15px;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+}
+
+.sync-status-item .label {
+    font-weight: 600;
+    color: #1d2327;
+    margin-bottom: 8px;
+    display: block;
+}
+
+/* Progress Bar Enhancements */
+.progress-container {
+    margin-top: 10px;
+}
+
+.progress-bar {
+    height: 20px;
+    background: #f0f0f1;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+
+.progress-bar .progress {
+    height: 100%;
+    background: #2271b1;
+    transition: width 0.5s ease-in-out;
+}
+
+.progress-text {
+    font-size: 12px;
+    color: #50575e;
+}
+
+/* Log Details Enhancements */
+.log-details {
+    max-width: 800px;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+.log-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.log-message {
+    margin: 15px 0;
+    padding: 10px;
+    background: #f8f9fa;
+    border-left: 4px solid #2271b1;
+}
+
+.log-details-json {
+    margin-top: 15px;
+}
+
+.log-details-json pre {
+    background: #f6f7f7;
+    padding: 15px;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+
+/* Campaign Selector Enhancements */
+.campaign-selector {
+    margin-bottom: 20px;
+}
+
+.campaign-selector select {
+    min-width: 250px;
+}
+
+/* Status Badge Updates */
+.status-badge.status-running {
+    background-color: #2271b1;
+}
+
+.status-badge.status-completed {
+    background-color: #46b450;
+}
+
+.status-badge.status-failed {
+    background-color: #dc3232;
+}
+
+.status-badge.status-stopped {
+    background-color: #f0c33c;
+}
+
+.tab-content {
+    margin-top: 20px;
+}
+
+.tablenav-pages {
+    margin: 1em 0;
+}
+
+.view-details,
+.view-log-details {
+    margin: 0 5px;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+}
+
+.modal-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+}
+
+/* Sync Manager Styles */
+.bema-sync-manager .sync-status-card {
+    background: #fff;
+    padding: 20px;
+    margin: 20px 0;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+}
+
+.sync-status .status-item {
+    margin: 10px 0;
+}
+
+.sync-status .label {
+    font-weight: bold;
+    min-width: 120px;
+    display: inline-block;
+}
+
+.progress-bar {
+    background: #f1f1f1;
+    height: 20px;
+    width: 100%;
+    max-width: 500px;
+    border-radius: 3px;
+    display: inline-block;
+    margin: 0 10px;
+}
+
+.progress-bar .progress {
+    background: #0073aa;
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+/* Log Viewer Styles */
+.log-status {
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.log-status.success {
+    background: #46b450;
+    color: #fff;
+}
+
+.log-status.error {
+    background: #dc3232;
+    color: #fff;
+}
+
+.log-status.warning {
+    background: #ffb900;
+    color: #000;
+}
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 15% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 800px;
+    position: relative;
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: #000;
+}
+
+#log-details-content {
+    background: #f1f1f1;
+    padding: 15px;
+    overflow: auto;
+    max-height: 400px;
+}
+
+
+/* General Admin Styles */
+.bema-database-management {
+    margin: 20px 0;
+}
+
+/* Tabs Styling */
+.nav-tab-wrapper {
+    margin-bottom: 20px;
+}
+
+.nav-tab {
+    margin-left: 0.5em;
+}
+
+.nav-tab-active {
+    border-bottom: 1px solid #f1f1f1;
+}
+
+/* Table Styling */
+.wp-list-table {
+    margin-top: 20px;
+}
+
+.wp-list-table th {
+    font-weight: 600;
+}
+
+.wp-list-table td,
+.wp-list-table th {
+    padding: 12px 10px;
+    vertical-align: middle;
+}
+
+/* Status and Tier Badges */
+.status-badge,
+.tier-badge {
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: capitalize;
+    display: inline-block;
+}
+
+/* Status Colors */
+.status-success {
+    background-color: #dff0d8;
+    color: #3c763d;
+}
+
+.status-error {
+    background-color: #f2dede;
+    color: #a94442;
+}
+
+.status-warning {
+    background-color: #fcf8e3;
+    color: #8a6d3b;
+}
+
+/* Tier Colors */
+.tier-gold,
+.tier-gold_purchased {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.tier-silver,
+.tier-silver_purchased {
+    background-color: #e2e3e5;
+    color: #383d41;
+}
+
+.tier-bronze,
+.tier-bronze_purchased {
+    background-color: #d7ccc8;
+    color: #6d4c41;
+}
+
+.tier-opt-in {
+    background-color: #cce5ff;
+    color: #004085;
+}
+
+/* Modal Styling */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 100000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    overflow-y: auto;
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 90%;
+    max-width: 800px;
+    position: relative;
+    border-radius: 4px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.close {
+    position: absolute;
+    right: 20px;
+    top: 10px;
+    font-size: 28px;
+    font-weight: bold;
+    color: #666;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: #000;
+}
+
+.sync-controls {
+    margin: 20px 0;
+}
+
+.sync-controls button {
+    margin-right: 10px;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-badge.status-running {
+    background-color: #2271b1;
+    color: white;
+}
+
+.status-badge.status-stopped {
+    background-color: #dc3232;
+    color: white;
+}
+
+.status-badge.status-completed {
+    background-color: #46b450;
+    color: white;
+}
+
+.status-badge.status-pending {
+    background-color: #ffb900;
+    color: #000;
+}
+
+.status-badge.status-idle {
+    background-color: #72aee6;
+    color: white;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #f0f0f1;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-bar .progress {
+    height: 100%;
+    background-color: #2271b1;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    margin-left: 10px;
+    font-size: 12px;
+    color: #50575e;
+}
+
+/* Search and Filter Section */
+.tablenav.top {
+    margin: 16px 0;
+    height: auto;
+}
+
+.search-box {
+    float: left;
+    margin-right: 10px;
+}
+
+.actions.alignleft {
+    margin-right: 10px;
+}
+
+/* Form Controls */
+select,
+input[type="text"] {
+    min-width: 200px;
+    margin-right: 5px;
+}
+
+/* Pagination */
+.tablenav-pages {
+    float: right;
+}
+
+.tablenav-pages .page-numbers {
+    padding: 3px 8px;
+    border: 1px solid #ccd0d4;
+    background: #f7f7f7;
+    margin-left: 2px;
+    display: inline-block;
+    text-decoration: none;
+    color: #555;
+}
+
+.tablenav-pages .page-numbers.current {
+    background: #0073aa;
+    border-color: #0073aa;
+    color: #fff;
+}
+
+/* Button Styling */
+.button.view-subscriber-details,
+.button.view-log-details {
+    min-width: 100px;
+}
+
+/* Details Table in Modal */
+#modal-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+#modal-content table th {
+    width: 30%;
+    text-align: left;
+    background: #f9f9f9;
+}
+
+#modal-content table td,
+#modal-content table th {
+    padding: 8px;
+    border: 1px solid #ddd;
+}
+
+/* Responsive Design */
+@media screen and (max-width: 782px) {
+    .tablenav-pages {
+        float: none;
+        margin: 10px 0;
+    }
+
+    .search-box {
+        float: none;
+        margin-bottom: 10px;
+    }
+
+    select,
+    input[type="text"] {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+
+    .modal-content {
+        width: 95%;
+        margin: 10% auto;
+    }
+}
