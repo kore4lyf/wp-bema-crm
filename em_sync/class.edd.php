@@ -160,7 +160,7 @@ class EDD implements Provider_Interface
         ];
 
         // Use direct request to WordPress admin-post.php for better local handling
-        $api_url = admin_url('admin-post.php');
+        $api_url = home_url('index.php');
         $api_url = add_query_arg(['edd-api' => $endpoint], $api_url);
         $request_url = add_query_arg(array_merge($baseParams, $params), $api_url);
 
@@ -305,13 +305,14 @@ class EDD implements Provider_Interface
 
                 foreach ($response['customers'] as $customer) {
                     $allCustomers[] = [
-                        'email' => $customer['email'],
-                        'id' => $customer['id'],
-                        'purchase_count' => $customer['purchase_count'],
-                        'purchase_value' => $customer['purchase_value'],
-                        'date_created' => $customer['date_created'],
-                        'last_purchase' => $customer['date_created']
+                        'name' => $customer['first_name'] . ' ' . $customer['last_name'] ,
+                        'email' => $customer['info']['email'],
+                        'id' => $customer['info']['user_id'],
+                        'purchase_count' => $customer['stats']['total_purchases'],
+                        'purchase_value' => $customer['stats']['total_spent'],
+                        'date_created' => $customer['info']['date_created']
                     ];
+
                     $totalProcessed++;
                 }
 
@@ -628,41 +629,21 @@ class EDD implements Provider_Interface
         }
     }
 
-    public function hasUserPurchasedProduct(string $email, int $product_id): bool
+    public function hasUserPurchasedProduct(int $user_id, int $product_id)
     {
         try {
             debug_to_file([
                 'checking_purchase' => 1,
-                'email' => $email,
+                'user_id' => $user_id,
                 'product_id' => $product_id
             ], 'EDD_PURCHASE_CHECK');
 
-            // Query just using wp_posts and wp_postmeta without requiring edd_payment_meta
-            $query = $this->wpdb->prepare(
-                "SELECT p.ID 
-            FROM {$this->wpdb->posts} p 
-            JOIN {$this->wpdb->postmeta} pm ON p.ID = pm.post_id 
-            WHERE p.post_type = 'edd_payment' 
-            AND p.post_status = 'publish' 
-            AND pm.meta_key = '_edd_payment_user_email'
-            AND pm.meta_value = %s
-            AND EXISTS (
-                SELECT 1 FROM {$this->wpdb->postmeta} pm2 
-                WHERE pm2.post_id = p.ID 
-                AND pm2.meta_key = '_edd_payment_meta' 
-                AND pm2.meta_value LIKE %s
-            )
-            LIMIT 1",
-                $email,
-                '%"' . $product_id . '"%'
-            );
 
-            $result = $this->wpdb->get_var($query);
-            $has_purchased = !empty($result);
+            $has_purchased =  edd_has_user_purchased( absint($user_id), $product_id );
 
             debug_to_file([
                 'purchase_check_result' => [
-                    'email' => $email,
+                    'user_id' => $user_id,
                     'product_id' => $product_id,
                     'has_purchased' => $has_purchased
                 ]
@@ -671,7 +652,7 @@ class EDD implements Provider_Interface
             return $has_purchased;
         } catch (Exception $e) {
             $this->logger->log('Failed to check purchase status', 'error', [
-                'email' => $email,
+                'user_id' => $user_id,
                 'product_id' => $product_id,
                 'error' => $e->getMessage()
             ]);

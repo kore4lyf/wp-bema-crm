@@ -1294,7 +1294,7 @@ class Bema_Admin_Interface
                                     $additional_data['campaign_data'] = [
                                         'product_id' => $product_id,
                                         'has_purchased' => $edd_instance->hasUserPurchasedProduct(
-                                            $subscriber['subscriber'],
+                                            $subscriber['id'],
                                             $product_id
                                         )
                                     ];

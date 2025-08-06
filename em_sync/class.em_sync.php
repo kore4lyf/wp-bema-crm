@@ -697,7 +697,7 @@ class EM_Sync
                 try {
                     // Check purchase status
                     $hasPurchased = $this->eddInstance->hasUserPurchasedProduct(
-                        $subscriber['email'],
+                        $subscriber['id'],
                         $campaign['product_id'] ?? null
                     );
 
@@ -1165,7 +1165,7 @@ class EM_Sync
                 $hasPurchased = false;
             } else {
                 $hasPurchased = $this->eddInstance->hasUserPurchasedProduct(
-                    $subscriber['email'],
+                    $subscriber['id'],
                     $productId
                 );
             }
@@ -1473,7 +1473,7 @@ class EM_Sync
             }
 
             $hasPurchased = $this->eddInstance->hasUserPurchasedProduct(
-                $subscriber['email'],
+                $subscriber['id'],
                 $productId
             );
 
