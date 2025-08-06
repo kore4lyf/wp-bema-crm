@@ -4,9 +4,21 @@
     <h1><?php _e('Campaign Transitions', 'bema-crm'); ?></h1>
 
     <div class="transition-grid">
+
+        <!-- Tiers  -->
+        <?php
+            $tier_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'settings/' . 'tier-view.php';
+
+            if (file_exists($tier_view_path)) {
+                include $tier_view_path;
+            } else {
+                echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
+            }
+        ?>
         <!-- Campaign Connections -->
         <div class="postbox">
-            <h2 class="hndle"><span><?php _e('Campaign Connections', 'bema-crm'); ?></span></h2>
+            <h2 class="transitions-subtitle"><span><?php _e('Campaign Connections', 'bema-crm'); ?></span></h2>
+
             <div class="inside">
                 <table class="wp-list-table widefat fixed striped">
                     <thead>
@@ -35,7 +47,7 @@
 
         <!-- Tier Transition Matrix -->
         <div class="postbox">
-            <h2 class="hndle"><span><?php _e('Tier Transition Matrix', 'bema-crm'); ?></span></h2>
+            <h2 class="transitions-subtitle"><span><?php _e('Tier Transition Matrix', 'bema-crm'); ?></span></h2>
             <div class="inside">
                 <table class="wp-list-table widefat fixed striped transition-matrix">
                     <thead>
@@ -65,6 +77,10 @@
 </div>
 
 <style>
+    .transitions-subtitle {
+        margin-left: 12px;
+    }
+
     .transition-grid {
         display: grid;
         gap: 20px;

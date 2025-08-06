@@ -360,6 +360,21 @@ class Bema_Admin_Interface
                 true
             );
 
+            if ( isset($_GET['page']) && $_GET['page'] === 'bema-transitions' ) {
+                wp_enqueue_style(
+                    'bema-crm-subscribers-style',
+                    plugins_url('assets/css/settings/admin-tier-settings.css', BEMA_FILE),
+                    BEMA_VERSION,
+                );
+        
+                wp_enqueue_script(
+                    'bema-crm-subscribers-script',
+                    plugins_url('assets/js/settings/admin-tier-settings.js', BEMA_FILE),
+                    BEMA_VERSION,
+                    true
+                );
+            }
+
             // Module scripts for sync manager
             if (strpos($hook, 'bema-sync-manager') !== false) {
                 wp_enqueue_script(
@@ -913,23 +928,23 @@ class Bema_Admin_Interface
 
     private function get_transition_matrix(): array
     {
-        return [
-            [
-                'current_tier' => 'Gold Purchase',
-                'next_tier' => 'Gold',
-                'requires_purchase' => true
-            ],
-            [
-                'current_tier' => 'Silver Purchase',
-                'next_tier' => 'Silver',
-                'requires_purchase' => true
-            ],
-            [
-                'current_tier' => 'Bronze Purchase',
-                'next_tier' => 'Opt-in',
-                'requires_purchase' => true
-            ]
-        ];
+            return [
+                [
+                    'current_tier' => 'Gold Purchase',
+                    'next_tier' => 'Gold',
+                    'requires_purchase' => true
+                ],
+                [
+                    'current_tier' => 'Silver Purchase',
+                    'next_tier' => 'Silver',
+                    'requires_purchase' => true
+                ],
+                [
+                    'current_tier' => 'Bronze Purchase',
+                    'next_tier' => 'Opt-in',
+                    'requires_purchase' => true
+                ]
+            ];
     }
 
     private function get_next_campaign(string $campaign): ?string

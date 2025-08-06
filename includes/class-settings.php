@@ -23,6 +23,14 @@ class Bema_Settings
     const SETTINGS_VERSION = '1.0.0';
     const CACHE_TTL = 3600; // 1 hour
 
+    // tiers option name and group
+    private $tiers_option_group = 'bema_crm_tiers_group';
+    private $tiers_option_name  = 'bema_crm_tiers';
+
+    // tier transition matrix option name and group
+    private $tier_transition_matrix_group = 'bema_crm_transition_matrix_group';
+    private $tier_transition_matrix_name = 'bema_crm_transition_matrix';
+
     public static function get_instance(BemaCRMLogger $logger): self
     {
         if (null === self::$instance) {
@@ -46,7 +54,10 @@ class Bema_Settings
             // Add hooks after initialization
             add_action('admin_init', [$this, 'register_settings']);
             add_action('admin_init', [$this, 'handle_settings_actions']);
+            add_action('admin_init', [$this, 'tier_settings']);
+            add_action('admin_init', [$this, 'transition_matrix_settings']);
             add_action('admin_notices', [$this, 'display_settings_notices']);
+            
         } catch (Exception $e) {
             error_log('Bema Settings initialization error: ' . $e->getMessage());
         }
@@ -305,6 +316,31 @@ class Bema_Settings
         }
     }
 
+    public function tier_settings() {
+        register_setting(
+            $this->tiers_option_group,
+            $this->tiers_option_name,
+            array(
+                'type'              => 'array',
+                'sanitize_callback' => array($this, 'sanitize_tiers'),
+                'default'           => [],
+            )
+        );
+    }
+
+    
+    public function transition_matrix_settings() {
+        register_setting(
+            $this->tier_transition_matrix_group,
+            $this->tier_transition_matrix_name,
+            array(
+                'sanitize_callback' => array($this,'sanitize_transition_matrix'),
+                'type'              => 'array'          ,
+                'description'       => 'Defines the tier transition rules for Bema CRM.'
+            )
+        );
+    }
+
     private function add_notification_settings_fields(): void
     {
         $notification_fields = [
@@ -554,6 +590,74 @@ class Bema_Settings
             return $this->get_settings();
         }
     }
+
+    /**
+     * Sanitizes the settings data before saving to the database.
+     * This is a critical security function.
+     *
+     * @return array The sanitized array.
+     */
+    public function sanitize_tiers() {
+        $names = $_POST['bema_crm_tiers_names'] ?? [];
+    
+        $sanitized = [];
+    
+        foreach ($names as $name) {
+            $tier_name = sanitize_text_field($name);
+    
+            if (!empty($tier_name)) {
+                $sanitized[] = $tier_name;
+            }
+        }
+    
+        return $sanitized;
+    }
+
+    /**
+     * Sanitizes the Bema CRM transition matrix data.
+     *
+     * Ensures that each entry in the transition matrix array has the correct
+     * structure and that its data types are valid and safe.
+     *
+     * @param array $input The raw input data from the settings form.
+     * @return array The sanitized data.
+     */
+    function sanitize_transition_matrix( $input ) {
+        $sanitized_data = [];
+
+        if ( ! is_array( $input ) || empty( $input ) ) {
+            return $sanitized_data; // Return empty array if input is not an array or is empty
+        }
+
+    foreach ( $input as $entry ) {
+        // Ensure each entry is an array
+        if ( ! is_array( $entry ) ) {
+            continue;
+        }
+
+        $current_tier      = isset( $entry['current_tier'] ) ? sanitize_text_field( $entry['current_tier'] ) : '';
+        $next_tier         = isset( $entry['next_tier'] ) ? sanitize_text_field( $entry['next_tier'] ) : '';
+        $requires_purchase = isset( $entry['requires_purchase'] ) ? filter_var( $entry['requires_purchase'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE ) : null;
+
+        // Validate required fields and their types
+        if (
+            ! empty( $current_tier ) &&
+            ! empty( $next_tier ) &&
+            is_bool( $requires_purchase ) // Ensure it's a boolean (not null from FILTER_NULL_ON_FAILURE)
+        ) {
+            $sanitized_data[] = [
+                'current_tier'      => $current_tier,
+                'next_tier'         => $next_tier,
+                'requires_purchase' => $requires_purchase,
+            ];
+        } else {
+            // Optionally, log invalid entries for debugging
+            error_log( 'Bema CRM: Invalid transition matrix entry skipped: ' . print_r( $entry, true ) );
+        }
+    }
+
+    return $sanitized_data;
+}
 
     private function validate_settings(array $settings): void
     {

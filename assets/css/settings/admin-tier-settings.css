@@ -1,0 +1,22 @@
+/*
+ * BEMA CRM Lite API Settings Page Styles
+ */
+
+.bema-crm-lite-section-card {
+  border-radius: 4px;
+  padding: 20px;
+  margin-top: 20px;
+  border: 1px solid #c3c4c7;
+  box-shadow: 0 1px 1px rgba(0,0,0,.04);
+  background-color: #fff;
+}
+
+.bema-crm-lite-section-card p {
+  margin-bottom: 1rem;
+}
+
+.danger-button {
+  color: #b32d2e !important;
+  border-color: #b32d2e !important;
+  background: #fef7f7;
+}

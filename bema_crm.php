@@ -1171,6 +1171,7 @@ register_activation_hook(__FILE__, function () {
     debug_to_file('Activation hook triggered');
     try {
         Bema_CRM::activate();
+        init_default_data();
     } catch (Exception $e) {
         debug_to_file('Activation error: ' . $e->getMessage());
         wp_die(
@@ -1190,5 +1191,28 @@ register_deactivation_hook(__FILE__, function () {
         error_log('Bema CRM deactivation error: ' . $e->getMessage());
     }
 });
+
+function init_default_data() {
+    // Set default tiers if not already set
+    if (!get_option('bema_crm_tiers')) {
+        $default_tiers = array(
+            'Opt-In',
+            'Wood',
+            'Gold',
+            'Silver',
+            'Bronze',
+            'Bronze Purchase',
+            'Sliver Purchase',
+            'Gold Purchase',
+        );
+
+        add_option('bema_crm_tiers', $default_tiers);
+    }
+}
+
+
+function remove_init_data() {
+    delete_option( 'bema_crm_tiers' );         // Tiers
+}
 
 register_uninstall_hook(__FILE__, ['\Bema\Bema_CRM', 'uninstall']);
