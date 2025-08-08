@@ -7,10 +7,10 @@
 
         <!-- Tiers  -->
         <?php
-            $tier_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'settings/' . 'tier-view.php';
+            $tier_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'settings/' . 'tier-view.php';
 
-            if (file_exists($tier_view_path)) {
-                include $tier_view_path;
+            if (file_exists($tier_table_view_path)) {
+                include $tier_table_view_path;
             } else {
                 echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
             }
@@ -46,33 +46,21 @@
         </div>
 
         <!-- Tier Transition Matrix -->
-        <div class="postbox">
-            <h2 class="transitions-subtitle"><span><?php _e('Tier Transition Matrix', 'bema-crm'); ?></span></h2>
-            <div class="inside">
-                <table class="wp-list-table widefat fixed striped transition-matrix">
-                    <thead>
-                        <tr>
-                            <th><?php _e('Current Tier', 'bema-crm'); ?></th>
-                            <th><?php _e('Next Campaign Tier', 'bema-crm'); ?></th>
-                            <th><?php _e('Purchase Required', 'bema-crm'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($transition_matrix as $transition): ?>
-                            <tr>
-                                <td><?php echo esc_html($transition['current_tier']); ?></td>
-                                <td><?php echo esc_html($transition['next_tier']); ?></td>
-                                <td>
-                                    <?php if ($transition['requires_purchase']): ?>
-                                        <span class="dashicons dashicons-yes"></span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <?php
+            $transition_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'settings/' . 'transitions-matrix-view.php';
+
+            if (file_exists($transition_table_view_path)) {
+                include $transition_table_view_path;
+            } else {
+                echo '<div class="notice notice-error"><p>Missing view file: transitions-matrix-view.php</p></div>';
+            }
+        ?>
+
+
+
+
+
+
     </div>
 </div>
 

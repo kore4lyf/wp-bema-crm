@@ -3,8 +3,8 @@
 if (!defined('ABSPATH')) exit;
 
 // Fetch saved tiers from DB.
-$saved_tiers = get_option('bema_crm_tiers', []);
-$saved_tiers = is_array($saved_tiers) ? $saved_tiers : [];
+$tiers = get_option('bema_crm_tiers', []);
+$tiers = is_array($tiers) ? $tiers : [];
 ?>
 
 <div class="wrap">
@@ -25,7 +25,7 @@ $saved_tiers = is_array($saved_tiers) ? $saved_tiers : [];
                     </tr>
                 </thead>
                 <tbody id="tier-rows">
-                    <?php foreach ($saved_tiers as $name ): ?>
+                    <?php foreach ($tiers as $name ): ?>
                         <tr>
                             <td>
                                 <span class="tier-name-text"><?php echo esc_html($name); ?></span>

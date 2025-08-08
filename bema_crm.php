@@ -156,6 +156,8 @@ class Bema_CRM
     const OPTION_SYNC_STATUS = 'bema_sync_status';
     const OPTION_SYNC_QUEUE = 'bema_sync_queue';
     const OPTION_FAILED_JOBS = 'bema_sync_failed_jobs';
+    const OPTION_TIERS = 'bema_crm_tiers';
+    const OPTION_TRANSITION_MATRIX = 'bema_crm_transition_matrix';
 
     public static function get_instance(): ?self
     {
@@ -1208,11 +1210,29 @@ function init_default_data() {
 
         add_option('bema_crm_tiers', $default_tiers);
     }
-}
 
+    // Set default transition matrix data if not set
+    if (!get_option('bema_crm_transition_matrix')) {
+        $default_transition_matrix = [
+            [
+                'current_tier'      => 'Gold Purchase',
+                'next_tier'         => 'Gold',
+                'requires_purchase' => true
+            ],
+            [
+                'current_tier'      => 'Silver Purchase',
+                'next_tier'         => 'Silver',
+                'requires_purchase' => true
+            ],
+            [
+                'current_tier'      => 'Bronze Purchase',
+                'next_tier'         => 'Opt-in',
+                'requires_purchase' => true
+            ]
+        ];
 
-function remove_init_data() {
-    delete_option( 'bema_crm_tiers' );         // Tiers
+        add_option('bema_crm_transition_matrix', $default_transition_matrix);
+    }
 }
 
 register_uninstall_hook(__FILE__, ['\Bema\Bema_CRM', 'uninstall']);

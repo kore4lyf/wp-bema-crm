@@ -362,16 +362,33 @@ class Bema_Admin_Interface
 
             if ( isset($_GET['page']) && $_GET['page'] === 'bema-transitions' ) {
                 wp_enqueue_style(
-                    'bema-crm-subscribers-style',
-                    plugins_url('assets/css/settings/admin-tier-settings.css', BEMA_FILE),
+                    'bema-crm-tier-style',
+                    plugins_url('assets/css/settings/admin-transitions-page.css', BEMA_FILE),
                     BEMA_VERSION,
                 );
         
                 wp_enqueue_script(
-                    'bema-crm-subscribers-script',
-                    plugins_url('assets/js/settings/admin-tier-settings.js', BEMA_FILE),
+                    'bema-crm-tier-script',
+                    plugins_url('assets/js/settings/admin-tier-table.js', BEMA_FILE),
                     BEMA_VERSION,
                     true
+                );
+        
+                wp_enqueue_script(
+                    'bema-crm-tier-transitions-script',
+                    plugins_url('assets/js/settings/admin-tier-transitions-table.js', BEMA_FILE),
+                    BEMA_VERSION,
+                    true
+                );
+
+                // This creates a JavaScript object named 'bemaCrmData' that your script can use.
+                $saved_tiers = get_option('bema_crm_tiers', []);
+                wp_localize_script(
+                    'bema-crm-tier-transitions-script',
+                    'bemaCrmData', // The name of the global JavaScript object to create
+                    array(
+                        'tiers' => $saved_tiers, // Key/value pair for the data
+                    )
                 );
             }
 
