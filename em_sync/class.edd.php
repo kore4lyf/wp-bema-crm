@@ -539,6 +539,34 @@ class EDD implements Provider_Interface
         return round($bytes / (1024 ** $pow), 2) . ' ' . $units[$pow];
     }
 
+    /**
+     * get_albums: All products/albums in EDD
+     * 
+     * @return array
+     */
+    public function get_albums (): array {
+        try {
+            $response = $this->makeRequest("products");
+
+            if (isset($response['products'])) {
+                $this->logger->log('Products fetched successfully', 'info', [
+                    'total_products' => count($response['products']),
+                    'product' => "All Products"
+                ]);
+
+                return $response['products'];
+            }
+
+            return [];
+        } catch (Exception $e) {
+            $this->logger->log('Failed to fetch EDD Products/Albums', 'error', [
+                'error' => $e->getMessage()
+            ]);
+
+            return [];
+        }
+    }
+
     public function updateSubscriber($id, $data): bool
     {
         try {

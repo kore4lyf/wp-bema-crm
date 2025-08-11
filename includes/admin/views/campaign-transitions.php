@@ -15,6 +15,7 @@
                 echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
             }
         ?>
+
         <!-- Campaign Connections -->
         <div class="postbox">
             <h2 class="transitions-subtitle"><span><?php _e('Campaign Connections', 'bema-crm'); ?></span></h2>

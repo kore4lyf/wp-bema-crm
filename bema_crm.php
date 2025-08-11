@@ -141,16 +141,19 @@ class Bema_CRM
         'easy-digital-downloads/easy-digital-downloads.php' => 'Easy Digital Downloads',
         'easy-digital-downloads-pro/easy-digital-downloads.php' => 'Easy Digital Downloads Pro'
     ];
+
     const REQUIRED_TABLES = [
         'bemacrmmeta',
         'sync_logs',
         'subscribers'
     ];
+
     const PROTECTED_DIRS = [
         'logs',
         'cache',
         'temp'
     ];
+
     const OPTION_SETTINGS = 'bema_crm_settings';
     const OPTION_DB_VERSION = 'bema_crm_db_version';
     const OPTION_SYNC_STATUS = 'bema_sync_status';
@@ -933,6 +936,16 @@ class Bema_CRM
             if (get_option(self::OPTION_SETTINGS, false) === false) {
                 self::initialize_default_settings();
             }
+            
+            // Initialize option tier settings if not exists
+            if (get_option(self::OPTION_TIERS, false) === false) {
+                self::initialize_default_settings();
+            }
+            
+            // Initialize transition matrix settings if not exists
+            if (get_option(self::OPTION_TRANSITION_MATRIX, false) === false) {
+                self::initialize_default_settings();
+            }
 
             // Create required directories
             self::create_directories();
@@ -980,8 +993,18 @@ class Bema_CRM
                 'bema_health_status'
             ];
 
+            // Clear Options
+            $options_to_delete = [
+                SELF::OPTION_TIERS,
+                SELF::OPTION_TRANSITION_MATRIX
+            ];
+
             foreach ($transients_to_delete as $transient) {
                 delete_transient($transient);
+            }
+
+            foreach ($options_to_delete as $option) {
+                delete_option($option);
             }
 
             // Clear sync status
@@ -1093,6 +1116,48 @@ class Bema_CRM
         update_option(self::OPTION_SETTINGS, $default_settings);
         debug_to_file('Default settings initialized');
     }
+
+    private static function initialize_tier_settings(): void
+    {
+        $default_tiers = array(
+            'Opt-In',
+            'Wood',
+            'Gold',
+            'Silver',
+            'Bronze',
+            'Bronze Purchase',
+            'Sliver Purchase',
+            'Gold Purchase',
+        );
+
+        add_option('bema_crm_tiers', $default_tiers);
+        debug_to_file('Default tier settings initialized');
+    }
+
+    private static function initialize_transition_settings(): void
+    {
+        $default_transition_matrix = [
+            [
+                'current_tier'      => 'Gold Purchase',
+                'next_tier'         => 'Gold',
+                'requires_purchase' => true
+            ],
+            [
+                'current_tier'      => 'Silver Purchase',
+                'next_tier'         => 'Silver',
+                'requires_purchase' => true
+            ],
+            [
+                'current_tier'      => 'Bronze Purchase',
+                'next_tier'         => 'Opt-in',
+                'requires_purchase' => true
+            ]
+        ];
+
+        add_option('bema_crm_transition_matrix', $default_transition_matrix);
+        debug_to_file('Default transition matrix settings initialized');
+    }
+    
 
     private static function create_directories(): void
     {

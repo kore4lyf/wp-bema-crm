@@ -32,9 +32,6 @@ class MailerLite implements Provider_Interface
     const CACHE_GROUP = 'mailerlite_cache';
     const CACHE_TTL = 3600; // 1 hour
     const RATE_LIMIT_KEY = 'mailerlite_rate_limit';
-    const MAX_CACHE_SIZE = 10000;
-    const REQUEST_TIMEOUT = 30;
-    const MAX_BATCH_RETRIES = 3;
 
     public function __construct($apiKey, ?BemaCRMLogger $logger = null)
     {
@@ -382,9 +379,9 @@ class MailerLite implements Provider_Interface
         return false;
     }
 
-    private function getSubscriberDetails(string $subscriberId): array
+    public function getSubscriberDetails(string $subscriberIdOrEmail): array
     {
-        return $this->makeRequest("subscribers/{$subscriberId}", 'GET');
+        return $this->makeRequest("subscribers/{$subscriberIdOrEmail}", 'GET');
     }
 
     public function addOrUpdateSubscriber(array $data): string

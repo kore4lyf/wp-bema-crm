@@ -8,6 +8,7 @@ use Bema\EM_Sync;
 use Bema\Sync_Scheduler;
 use Bema\Bema_Settings;
 use function Bema\debug_to_file;
+use Bema\Providers\EDD;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -916,7 +917,7 @@ class Bema_Admin_Interface
         $view_data = [
             'campaigns' => $this->campaign_manager->get_all_valid_campaigns(),
             'campaign_connections' => $this->get_campaign_connections(),
-            'transition_matrix' => $this->get_transition_matrix()
+            'edd_instance' => $this->sync_instance->getMailerLiteInstance()
         ];
 
         // Extract data to make it available in view scope
@@ -941,27 +942,6 @@ class Bema_Admin_Interface
             }
         }
         return $connections;
-    }
-
-    private function get_transition_matrix(): array
-    {
-            return [
-                [
-                    'current_tier' => 'Gold Purchase',
-                    'next_tier' => 'Gold',
-                    'requires_purchase' => true
-                ],
-                [
-                    'current_tier' => 'Silver Purchase',
-                    'next_tier' => 'Silver',
-                    'requires_purchase' => true
-                ],
-                [
-                    'current_tier' => 'Bronze Purchase',
-                    'next_tier' => 'Opt-in',
-                    'requires_purchase' => true
-                ]
-            ];
     }
 
     private function get_next_campaign(string $campaign): ?string

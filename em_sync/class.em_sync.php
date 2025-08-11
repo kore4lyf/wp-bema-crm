@@ -12,6 +12,8 @@ use Bema\Exceptions\API_Exception;
 use Bema\Exceptions\Validation_Exception;
 use Bema\SyncBatchProcessor;
 use Bema\Campaign_Manager;
+use Bema\Bema_Settings;
+use Bema\BemaCRMLogger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -365,8 +367,8 @@ class EM_Sync
                 'total_processed' => $totalProcessed,
                 'total_campaigns' => $totalCampaigns,
                 'duration' => $duration,
-                'start_time' => date('Y-m-d H:i:s', (int)$startTime),
-                'end_time' => date('Y-m-d H:i:s', (int)$endTime)
+                'start_time' => date('Y-m-d H:i:s', (int) $startTime),
+                'end_time' => date('Y-m-d H:i:s', (int) $endTime)
             ], 'SYNC_COMPLETION');
 
             // Clear any remaining sync flags
@@ -1288,7 +1290,8 @@ class EM_Sync
 
             foreach ($purchaseTiers as $tier) {
                 $groupId = $this->getGroupIdByName("{$fromCampaign}_{$tier}");
-                if (!$groupId) continue;
+                if (!$groupId)
+                    continue;
 
                 $subscribers = $this->mailerLiteInstance->getGroupSubscribers($groupId);
 
@@ -1577,6 +1580,7 @@ class EM_Sync
     {
         try {
             $subscriberGroups = $this->mailerLiteInstance->getSubscriberGroups($subscriberId);
+
             if (!empty($subscriberGroups)) {
                 return $subscriberGroups[0]['name'];
             }
@@ -2303,6 +2307,7 @@ class EM_Sync
         }
 
         $newGroupId = $mlGroups[$tier];
+
         foreach ($mlGroups as $groupId) {
             if ($groupId !== $newGroupId) {
                 $this->mailerLiteInstance->removeSubscriberFromGroup($subscriberId, $groupId);
@@ -2312,11 +2317,41 @@ class EM_Sync
         $this->mailerLiteInstance->addSubscriberToGroup($subscriberId, $newGroupId);
     }
 
-    private function updatePurchaseStatus(string $email, string $campaign_code): void
+    public function updateSubscriberFieldStatus(string $email, string $field_name)
+    {
+        try {
+            $subscriber_data = [
+                'fields' => [
+                    $field_name => 1
+                ]
+            ];
+
+            // Get subscriber ID from MailerLite
+            $subscribers = $this->mailerLiteInstance->getSubscribers(['email' => $email, 'limit' => 1]);
+
+            if (!empty($subscribers[0]['id'])) {
+                $this->mailerLiteInstance->updateSubscriber($subscribers[0]['id'], $subscriber_data);
+            }
+
+            // Update local database
+            // $this->dbManager->updateSubscriberPurchaseStatus($email, $campaign_code, $has_purchased);
+
+        } catch (Exception $e) {
+            $this->logger->log('Failed to update subscriber field status', 'error', [
+                'email' => $email,
+                'field_name' => $field_name,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    public function updatePurchaseStatus(string $email, string $campaign_code): void
     {
         try {
             // Get the field name for this campaign
             $field_name = $this->campaign_manager->get_purchase_field_name($campaign_code);
+
             if (!$field_name) {
                 throw new Exception("Invalid campaign code: {$campaign_code}");
             }
@@ -2336,6 +2371,7 @@ class EM_Sync
 
             // Get subscriber ID from MailerLite
             $subscribers = $this->mailerLiteInstance->getSubscribers(['email' => $email, 'limit' => 1]);
+
             if (!empty($subscribers[0]['id'])) {
                 $this->mailerLiteInstance->updateSubscriber($subscribers[0]['id'], $subscriber_data);
 
@@ -2478,6 +2514,64 @@ class EM_Sync
             // Memory management
             $this->manageMemory();
         }
+    }
+
+
+    /**
+     * get_album_details: returns album release year and artist name from a provided album name.
+     * 
+     * @param string $album_name
+     * @return array{artist: mixed, year: string}
+     */
+    public function get_album_details(string $album_name): array
+    {
+
+        $albums = $this->eddInstance->get_albums();
+
+        if ($albums) {
+
+            foreach ($albums as $album) {
+
+                if (
+                    isset($album['info']['title']) &&
+                    strtolower(trim($album['info']['title'])) === strtolower(trim($album_name))
+                ) {
+
+                    // Extract release year
+                    $release_year = '0';
+                    if (!empty($album['info']['create_date'])) {
+
+                        $dateArr = explode('-', $album['info']['create_date']);
+                        $release_year = $dateArr[0];
+                    }
+
+                    // Extract artist from categories
+                    $artist_name = '';
+                    if (!empty($album['info']['category']) && is_array($album['info']['category'])) {
+
+                        foreach ($album['info']['category'] as $category) {
+                            if (
+                                !empty($category['slug']) &&
+                                substr($category['slug'], -7) === '-artist' &&
+                                !empty($category['name'])
+                            ) {
+                                $artist_name = $category['name'];
+                                break;
+                            }
+                        }
+                    }
+
+                    return [
+                        'artist' => $artist_name,
+                        'year' => $release_year,
+                    ];
+                }
+            }
+        }
+        return [
+            'artist' => '',
+            'year' => '0',
+        ];
     }
 
     /**
