@@ -274,6 +274,70 @@ class MailerLite implements Provider_Interface
         }
     }
 
+    /**
+     * Fetches a single subscriber from MailerLite by their ID or email.
+     *
+     * @param string|int $identifier The subscriber's ID or email address.
+     * @return array The subscriber data, including fields, status, etc.
+     * @throws Exception Throws an exception if the identifier is missing or the API call fails.
+     */
+    public function getSubscriber(string|int $identifier): array
+    {
+        try {
+            if (empty($identifier)) {
+                $this->logger->log('Fetch failed: Missing subscriber identifier', 'error');
+                throw new Exception('Missing subscriber identifier for fetch operation.');
+            }
+
+            $this->logger->log('Attempting to fetch single subscriber', 'debug', ['identifier' => $identifier]);
+
+            // The MailerLite API uses the same endpoint for ID and email
+            $response = $this->makeRequest("subscribers/{$identifier}", 'GET');
+
+            // Check if the response was successful and contains data
+            if (isset($response['data'])) {
+                $subscriberData = $response['data'];
+                $this->logger->log('Subscriber fetched successfully', 'info', ['id' => $subscriberData['id']]);
+                return $subscriberData;
+            } else {
+                // Log the API failure response and throw an exception
+                $this->logger->log('Failed to fetch subscriber from API', 'error', [
+                    'identifier' => $identifier,
+                    'response' => $response
+                ]);
+                throw new API_Exception(
+                    'Failed to fetch subscriber from MailerLite.',
+                    'subscribers/' . $identifier,
+                    'GET',
+                    $response['status_code'] ?? 0,
+                    true
+                );
+            }
+
+        } catch (Exception $e) {
+            // Re-throw the exception to be handled by the caller
+            throw new API_Exception(
+                'Failed to get subscriber from MailerLite: ' . $e->getMessage(),
+                'subscribers',
+                'GET',
+                $e->getCode(),
+                true
+            );
+        }
+    }
+
+
+    /**
+     * Fetches subscribers from MailerLite with support for a custom limit.
+     *
+     * This function handles cursor-based pagination from the MailerLite API.
+     * It will stop fetching when the requested limit is reached.
+     *
+     * @param array $params Optional parameters for filtering and limiting the results.
+     * e.g., ['limit' => 10, 'email' => 'test@example.com']
+     * @return array A paginated array of subscriber data.
+     * @throws Exception Throws an exception if the API call fails.
+     */
     public function getSubscribers($params = []): array
     {
         $cacheKey = 'subscribers_' . md5(serialize($params));
@@ -284,39 +348,46 @@ class MailerLite implements Provider_Interface
         }
 
         try {
-            debug_to_file([
-                'attempting_mailerlite_api_call' => true,
-                'url' => 'https://connect.mailerlite.com/api/subscribers',
-                'api_key_exists' => !empty($this->apiKey)
-            ], 'ML_API_DEBUG');
-
             $allSubscribers = [];
-            $page = 1;
-            $params = array_merge($params, ['limit' => $this->batchSize]);
+            $cursor = null;
+            $limit = $params['limit'] ?? null; // Get the user's requested limit
+            $count = 0; // Initialize a counter for fetched subscribers
+
+            // Remove the limit from the params array so it doesn't get sent to the API incorrectly
+            unset($params['limit']);
 
             do {
                 $this->waitForRateLimit();
 
-                debug_to_file([
-                    'fetching_page' => $page,
-                    'batch_size' => $this->batchSize
-                ], 'ML_API_DEBUG');
+                $requestParams = $params;
+                if ($cursor) {
+                    $requestParams['cursor'] = $cursor;
+                }
+
+                // If a limit is specified, adjust the API's limit to not fetch more than needed
+                $batchLimit = $this->batchSize;
+                if ($limit !== null) {
+                    $remaining = $limit - $count;
+                    if ($remaining <= 0) {
+                        break; // Stop if we've already met the limit
+                    }
+                    $batchLimit = min($remaining, $this->batchSize);
+                }
+                $requestParams['limit'] = $batchLimit;
 
                 $response = $this->makeRequest(
-                    "subscribers?" . http_build_query(array_merge($params, ['page' => $page])),
+                    "subscribers?" . http_build_query($requestParams),
                     'GET'
                 );
-
-                debug_to_file([
-                    'response_received' => true,
-                    'response_data' => $response
-                ], 'ML_API_DEBUG');
 
                 if (!isset($response['data']) || empty($response['data'])) {
                     break;
                 }
 
                 foreach ($response['data'] as $subscriber) {
+                    if ($limit !== null && $count >= $limit) {
+                        break; // Stop adding subscribers if the limit is reached
+                    }
                     $allSubscribers[] = [
                         'email' => $subscriber['email'],
                         'id' => $subscriber['id'],
@@ -329,28 +400,17 @@ class MailerLite implements Provider_Interface
                         'subscribed_at' => $subscriber['subscribed_at'] ?? null,
                         'updated_at' => $subscriber['updated_at'] ?? null
                     ];
+                    $count++;
                 }
 
-                $page++;
+                $cursor = $response['meta']['next_cursor'] ?? null;
 
-                if ($page % 10 === 0) {
-                    $this->manageMemory();
-                }
-            } while (!empty($response['data']));
-
-            debug_to_file([
-                'subscribers_fetched' => count($allSubscribers)
-            ], 'ML_API_DEBUG');
+            } while ($cursor !== null && ($limit === null || $count < $limit));
 
             wp_cache_set($cacheKey, $allSubscribers, self::CACHE_GROUP, self::CACHE_TTL);
             return $allSubscribers;
-        } catch (Exception $e) {
-            debug_to_file([
-                'mailerlite_api_error' => true,
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ], 'ML_API_ERROR');
 
+        } catch (Exception $e) {
             throw new API_Exception(
                 'Failed to get subscribers from MailerLite: ' . $e->getMessage(),
                 'subscribers',
@@ -877,10 +937,12 @@ class MailerLite implements Provider_Interface
     }
 
     /**
-     * Update a subscriber in MailerLite
+     * Update a subscriber in MailerLite with the provided data.
+     *
      * @param string|int $id Subscriber ID
-     * @param array|mixed $data Update data
-     * @return bool
+     * @param array $data Update data. Expected format: ['fields' => ['field_name' => 'value']].
+     * @return bool Returns true if the update was successful, false otherwise.
+     * @throws Exception Throws a custom API_Exception if the call fails unexpectedly.
      */
     public function updateSubscriber($id, $data): bool
     {
@@ -890,22 +952,16 @@ class MailerLite implements Provider_Interface
                 return false;
             }
 
-            $fields = [];
-            if (is_array($data) && isset($data['fields'])) {
-                $fields = $data['fields'];
-            } elseif (is_array($data)) {
-                $fields = $data;
+            $fields = $data['fields'] ?? [];
+            if (empty($fields)) {
+                $this->logger->log('Update failed: No fields provided', 'error', ['id' => $id]);
+                return false;
             }
 
-            $updateData = [
-                'fields' => []
-            ];
-
-            // Format fields properly for MailerLite
+            $updateData = ['fields' => []];
+            // Change field characters to lowercase
             foreach ($fields as $field => $value) {
-                // Convert field name to tag format if needed
-                $tag = $this->formatFieldToTag($field);
-                $updateData['fields'][$tag] = (int) $value; // Ensure numeric value
+                $updateData['fields'][strtolower($field)] = $value;
             }
 
             $this->logger->log('Updating subscriber fields', 'debug', [
@@ -914,15 +970,34 @@ class MailerLite implements Provider_Interface
             ]);
 
             $response = $this->makeRequest("subscribers/{$id}", 'PUT', $updateData);
-            return true;
+            $statusCode = $response['status_code'] ?? 0;
+
+            if (
+                ($statusCode >= 200 && $statusCode < 300) ||
+                ($statusCode === 0 && isset($response['data']['id']) && $response['data']['id'] === $id)
+            ) {
+
+                $this->logger->log('Subscriber updated successfully', 'info', ['id' => $id]);
+                return true;
+            } else {
+                $this->logger->log('Update failed: API returned an unexpected response', 'error', [
+                    'id' => $id,
+                    'status_code' => $statusCode,
+                    'response' => $response
+                ]);
+                return false;
+            }
+
         } catch (Exception $e) {
-            $this->logger->log('Failed to update subscriber', 'error', [
+            $this->logger->log('Failed to update subscriber due to exception', 'error', [
                 'id' => $id,
                 'error' => $e->getMessage()
             ]);
             return false;
         }
     }
+
+
 
     /**
      * Convert field name to MailerLite tag format

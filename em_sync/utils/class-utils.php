@@ -1,17 +1,11 @@
 <?php
-namespace Bema\Core;
+namespace Bema;
 
-use Bema\Providers\EDD;
-
-// if ( !defined( 'ABSPATH' ) ) {
-//   exit;
-// }
+  if ( !defined( 'ABSPATH' ) ) {
+    exit;
+  }
 
 class Utils {
-
-    // function __construct(?EDD $edd = null){
-    //   $this->edd = $edd;
-    // }
 
     /**
      * get_campaign_group_name: Generates campaign group name

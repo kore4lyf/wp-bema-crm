@@ -61,56 +61,48 @@ if (!function_exists('Bema\\debug_to_file')) {
 spl_autoload_register(function ($class) {
     try {
         $namespace = 'Bema\\';
-        if (strpos($class, $namespace) !== 0) {
+
+    // If the class is not in our namespace, we ignore it.
+    if (strpos($class, $namespace) !== 0) {
+        return;
+    }
+
+    // A map of core class names to their file paths (relative to BEMA_PATH).
+    // This is the most robust way to ensure critical classes are found.
+    $class_file_map = [
+        'Bema_CRM'          => 'bema_crm.php',
+        'BemaCRMLogger'     => 'includes/bema-crm-logger.php',
+        'Campaign_Manager'  => 'em_sync/class.campaign_manager.php',
+        'EM_Sync'           => 'em_sync/class.em_sync.php',
+        'EDD'               => 'em_sync/class.edd.php',
+        'Triggers'       => 'em_sync/triggers/class-edd-trigger.php',
+        'Utils'     => 'em_sync/utils/class-utils-trigger.php',
+    ];
+
+    // Remove the namespace prefix from the class name.
+    $relative_class_name = str_replace($namespace, '', $class);
+
+    // Check if the class exists in our map.
+    if (isset($class_file_map[$relative_class_name])) {
+        $file_path = BEMA_PATH . $class_file_map[$relative_class_name];
+
+        // If the file exists, we require it.
+        if (file_exists($file_path)) {
+            require_once $file_path;
             return;
         }
+    }
 
-        $relative_class = str_replace($namespace, '', $class);
-        $file = str_replace('\\', '/', $relative_class);
+    // If the class is not in the map, we fall back to a more general naming convention search.
+    $file_name = str_replace('_', '-', strtolower($relative_class_name));
+    $file_path = BEMA_PATH . 'includes/class-' . $file_name . '.php';
 
-        // Convert underscore to dash for the filename
-        $file_with_dash = str_replace('_', '-', strtolower($file));
+    if (file_exists($file_path)) {
+        require_once $file_path;
+        return;
+    }
 
-        // Try all possible file naming patterns
-        $possible_paths = [
-            BEMA_PATH . 'includes/class-' . $file_with_dash . '.php',
-            BEMA_PATH . 'includes/' . $file_with_dash . '.php',
-            BEMA_PATH . 'includes/class-' . strtolower($file) . '.php',
-            BEMA_PATH . 'includes/' . strtolower($file) . '.php'
-        ];
-
-        foreach ($possible_paths as $try_path) {
-            if (file_exists($try_path)) {
-                require_once $try_path;
-                return;
-            }
-        }
-
-        $alt_paths = [
-            'admin' => BEMA_PATH . 'includes/admin/',
-            'exceptions' => BEMA_PATH . 'includes/exceptions/',
-            'providers' => BEMA_PATH . 'em_sync/',
-            'validators' => BEMA_PATH . 'includes/validators/',
-            'handlers' => BEMA_PATH . 'includes/handlers/',
-            'interfaces' => BEMA_PATH . 'includes/interfaces/',
-            'performance' => BEMA_PATH . 'includes/'
-        ];
-
-        foreach ($alt_paths as $prefix => $path) {
-            if (strpos(strtolower($relative_class), strtolower($prefix)) === 0) {
-                $file = $path . 'class-' . strtolower(basename(str_replace('\\', '/', $relative_class))) . '.php';
-                if (file_exists($file)) {
-                    require_once $file;
-                    return;
-                }
-            }
-        }
-
-        debug_to_file("Could not load class file for: {$class}", 'AUTOLOADER');
-        debug_to_file("Tried paths:", 'AUTOLOADER');
-        foreach ($possible_paths as $index => $path) {
-            debug_to_file(($index + 1) . ". {$path}", 'AUTOLOADER');
-        }
+    
     } catch (Exception $e) {
         debug_to_file("Autoloader error: {$e->getMessage()}", 'AUTOLOADER_ERROR');
     }
@@ -124,6 +116,7 @@ class Bema_CRM
     private static $instance = null;
     private $logger;
     private $sync_instance;
+    private $utils;
     private $sync_scheduler;
     private $admin_interface;
     private $settings;
@@ -213,7 +206,6 @@ class Bema_CRM
             $this->handle_initialization_error($e);
         }
     }
-
     private function verify_critical_paths(): void
     {
         $critical_paths = [
@@ -416,7 +408,9 @@ class Bema_CRM
                 'post-types/class.bema-cpt.php',
                 'em_sync/class.edd.php',
                 'em_sync/class.mailerlite.php',
-                'em_sync/class.em_sync.php'
+                'em_sync/class.em_sync.php',
+                'em_sync/utils/class-utils.php',
+                'em_sync/triggers/class-edd-triggers.php',
             ];
 
             foreach ($dependencies as $file) {
@@ -440,7 +434,9 @@ class Bema_CRM
             'Bema\\Database_Manager',
             'Bema\\EM_Sync',
             'Bema\\Sync_Scheduler',
-            'Bema\\Bema_Settings'
+            'Bema\\Bema_Settings',
+            'Bema\\Triggers',
+            'Bema\\Utils'
         ];
 
         foreach ($required_classes as $class) {
@@ -457,12 +453,19 @@ class Bema_CRM
                 return;
             }
 
+            
             // Initialize logger first
             if (!isset($this->logger)) {
                 $this->logger = new BemaCRMLogger();
                 $this->component_registry['logger'] = $this->logger;
             }
 
+            // Initialize utils
+            if (!isset($this->utils)) {
+                $this->utils = new Utils;
+                $this->component_registry['utils'] = $this->settings;
+            }
+            
             // Initialize settings with logger
             if (!isset($this->settings) && isset($this->logger)) {
                 $this->settings = Bema_Settings::get_instance($this->logger);
@@ -705,6 +708,13 @@ class Bema_CRM
                 add_action('admin_notices', [$this, 'display_admin_notices']);
             }
 
+            // Add EDD Hooks
+            
+            $triggers = new Triggers($this->sync_instance, $this->utils, $this->logger);
+            add_action( 'edd_after_order_actions', [ $triggers, 'update_purchase_field_on_order_complete' ], 10, 3 );
+            error_log("add_hooks: edd_after_order_actions HOOK ADDED" . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+
             debug_to_file('Hooks added successfully');
         } catch (Exception $e) {
             debug_to_file('Error adding hooks: ' . $e->getMessage());
@@ -936,15 +946,15 @@ class Bema_CRM
             if (get_option(self::OPTION_SETTINGS, false) === false) {
                 self::initialize_default_settings();
             }
-            
+
             // Initialize option tier settings if not exists
             if (get_option(self::OPTION_TIERS, false) === false) {
-                self::initialize_default_settings();
+                self::initialize_tier_settings();
             }
-            
+
             // Initialize transition matrix settings if not exists
             if (get_option(self::OPTION_TRANSITION_MATRIX, false) === false) {
-                self::initialize_default_settings();
+                self::initialize_transition_settings();
             }
 
             // Create required directories
@@ -1238,7 +1248,6 @@ register_activation_hook(__FILE__, function () {
     debug_to_file('Activation hook triggered');
     try {
         Bema_CRM::activate();
-        init_default_data();
     } catch (Exception $e) {
         debug_to_file('Activation error: ' . $e->getMessage());
         wp_die(
@@ -1258,46 +1267,5 @@ register_deactivation_hook(__FILE__, function () {
         error_log('Bema CRM deactivation error: ' . $e->getMessage());
     }
 });
-
-function init_default_data() {
-    // Set default tiers if not already set
-    if (!get_option('bema_crm_tiers')) {
-        $default_tiers = array(
-            'Opt-In',
-            'Wood',
-            'Gold',
-            'Silver',
-            'Bronze',
-            'Bronze Purchase',
-            'Sliver Purchase',
-            'Gold Purchase',
-        );
-
-        add_option('bema_crm_tiers', $default_tiers);
-    }
-
-    // Set default transition matrix data if not set
-    if (!get_option('bema_crm_transition_matrix')) {
-        $default_transition_matrix = [
-            [
-                'current_tier'      => 'Gold Purchase',
-                'next_tier'         => 'Gold',
-                'requires_purchase' => true
-            ],
-            [
-                'current_tier'      => 'Silver Purchase',
-                'next_tier'         => 'Silver',
-                'requires_purchase' => true
-            ],
-            [
-                'current_tier'      => 'Bronze Purchase',
-                'next_tier'         => 'Opt-in',
-                'requires_purchase' => true
-            ]
-        ];
-
-        add_option('bema_crm_transition_matrix', $default_transition_matrix);
-    }
-}
 
 register_uninstall_hook(__FILE__, ['\Bema\Bema_CRM', 'uninstall']);

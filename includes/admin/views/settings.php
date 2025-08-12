@@ -7,8 +7,11 @@ use Bema\Providers\MailerLite;
 use Bema\Providers\EDD;
 use Bema\BemaCRMLogger;
 use Bema\EM_Sync;
+use Bema\Utils;
+use Bema\Triggers;
 
 $logger = new BemaCRMLogger();
+
 
 
 
@@ -25,6 +28,10 @@ $current_settings = $admin->get_settings();
 $has_sync = $admin->has_sync_capability();
 $sync_disabled = !$has_sync;
 
+//
+// REMOVE ME
+//
+
 $apiKey = $current_settings['api']['edd_api_key'];
 $token = $current_settings['api']['edd_token'];
 $mailerlite_key = $current_settings['api']['mailerlite_api_key'];
@@ -33,39 +40,7 @@ $mailerlite_key = $current_settings['api']['mailerlite_api_key'];
 $edd = new EDD($apiKey, $token, $admin->logger);
 $mailerlite = new MailerLite($mailerlite_key, $admin->logger);
 
-$this->sync_instance = new EM_Sync(
-    $mailerlite,
-    $edd,
-    $admin->logger,
-    $admin->settings
-);
-
-$em_sync = $admin->sync_instance;
-
-
-
-// if ($edd->validateConnection()) {
-//     echo "EDD connection is Valid";
-
-    // Fetch all subscribers
-    // $subscribers = $edd->getSubscribers();
-    
-
-    // $albums = $edd->get_albums();
-
-    // echo var_dump($albums);
-
-    // var_dump($subscribers);
-// } else {
-//     echo "EDD connection is invalid";
-
-    // Handle the error (e.g., show a message in the WordPress admin)
-//     $logger->log('Could not connect to EDD', 'error');
-// }
-
-
-
-
+echo var_dump(get_option('bema_crm_tiers', false));
 
 
 

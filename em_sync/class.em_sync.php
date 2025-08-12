@@ -2317,34 +2317,78 @@ class EM_Sync
         $this->mailerLiteInstance->addSubscriberToGroup($subscriberId, $newGroupId);
     }
 
-    public function updateSubscriberFieldStatus(string $email, string $field_name)
+    /**
+     * Updates a subscriber's custom field with the provided field name and value.
+     *
+     * This function uses the dedicated getSubscriber() method to find the subscriber's
+     * ID by email, then uses that ID to update a specific field via the MailerLite API.
+     * This is the correct and reliable method to perform this operation.
+     *
+     * @param string $email The email of the subscriber to update.
+     * @param string $field_name The name of the field to update (e.g., 'first_name').
+     * @param string|int $field_value The new value for the field.
+     * @return bool Returns true on success, false on failure.
+     */
+    public function updateSubscriberField(string $email, string|int $field_name, string|int $field_value): bool
     {
         try {
-            $subscriber_data = [
-                'fields' => [
-                    $field_name => 1
-                ]
-            ];
+            $field_name = (string) $field_name;
+            $field_name = strtolower($field_name);
 
-            // Get subscriber ID from MailerLite
-            $subscribers = $this->mailerLiteInstance->getSubscribers(['email' => $email, 'limit' => 1]);
+            // Use the dedicated getSubscriber() function to get the full subscriber data by email.
+            $subscriber = $this->mailerLiteInstance->getSubscriber($email);
 
-            if (!empty($subscribers[0]['id'])) {
-                $this->mailerLiteInstance->updateSubscriber($subscribers[0]['id'], $subscriber_data);
+            // Check if a subscriber was found. If not, the function will have already thrown an exception
+            // or returned an empty array, depending on its implementation.
+            if (!empty($subscriber)) {
+                $subscriber_id = $subscriber['id'];
+
+                // Prepare the data to be sent to MailerLite
+                $subscriber_data = [
+                    'fields' => [
+                        $field_name => (string) $field_value // Ensure the value is a string as required by the API
+                    ]
+                ];
+
+                $this->logger->log('Subscriber found, attempting to update field.', 'debug', [
+                    'email' => $email,
+                    'id' => $subscriber_id,
+                    'field_name' => $field_name
+                ]);
+
+                // Call the updateSubscriber method and check its return value for success
+                $update_successful = $this->mailerLiteInstance->updateSubscriber($subscriber_id, $subscriber_data);
+
+                if ($update_successful) {
+                    $this->logger->log('Successfully updated subscriber field.', 'info', [
+                        'email' => $email,
+                        'field_name' => $field_name
+                    ]);
+                    return true;
+                } else {
+                    $this->logger->log('UpdateSubscriber API call failed.', 'error', [
+                        'email' => $email,
+                        'field_name' => $field_name
+                    ]);
+                    return false;
+                }
+            } else {
+                // This block may be hit if getSubscriber() returns an empty array instead of throwing an exception.
+                $this->logger->log('Subscriber not found for update.', 'error', ['email' => $email]);
+                return false;
             }
 
-            // Update local database
-            // $this->dbManager->updateSubscriberPurchaseStatus($email, $campaign_code, $has_purchased);
-
         } catch (Exception $e) {
-            $this->logger->log('Failed to update subscriber field status', 'error', [
+            $this->logger->log('Failed to update subscriber field status due to exception', 'error', [
                 'email' => $email,
                 'field_name' => $field_name,
                 'error' => $e->getMessage()
             ]);
+            // Re-throw the exception to allow the original caller to handle it
             throw $e;
         }
     }
+
 
     public function updatePurchaseStatus(string $email, string $campaign_code): void
     {
