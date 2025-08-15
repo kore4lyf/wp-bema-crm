@@ -84,6 +84,8 @@ class Bema_Admin_Interface
         $this->init();
     }
 
+    
+
     private function has_sync_capability(): bool
     {
         static $capability = null;

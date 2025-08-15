@@ -121,6 +121,7 @@ class Bema_CRM
     private $admin_interface;
     private $settings;
     private $db_manager;
+    private $group_db_manager;
     private $component_registry = [];
     private $initialized = false;
     private static $instance_creating = false;
@@ -535,6 +536,8 @@ class Bema_CRM
                 return;
             }
 
+            $settings = get_option('bema_crm_settings');
+
             // Initialize providers with logging
             debug_to_file('Initializing MailerLite provider', 'PROVIDER_INIT');
             $mailerlite = new \Bema\Providers\MailerLite(
@@ -561,6 +564,9 @@ class Bema_CRM
                 $this->logger,
                 $this->settings
             );
+
+            // create group db instance
+            $this->group_db_manager = new \Bema\Group_Database_Manager();
 
             // Initialize handlers
             $lock_handler = new \Bema\Handlers\Default_Lock_Handler();
@@ -709,11 +715,17 @@ class Bema_CRM
             }
 
             // Add EDD Hooks
+            $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '', $this->logger );
             
-            $triggers = new Triggers($this->sync_instance, $this->utils, $this->logger);
-            add_action( 'edd_after_order_actions', [ $triggers, 'update_purchase_field_on_order_complete' ], 10, 3 );
-            error_log("add_hooks: edd_after_order_actions HOOK ADDED" . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->logger);
 
+            add_action( 'edd_after_order_actions', [ $triggers, 'update_purchase_field_on_order_complete' ], 10, 3 );
+            // add_action( 'transition_post_status', [ $triggers, 'create_subscriber_groups_on_album_publish' ], 10, 3 ); 
+            add_action( 'transition_post_status', [ $triggers, 'create_subscriber_purchase_field_on_album_publish' ], 10, 3 ); 
+
+            add_action( 'bema_handle_order_purchase_field_update', [ $triggers, 'handle_order_purchase_field_update_via_cron' ], 10, 3 );
+            // add_action( 'bema_create_groups_on_album_publish', [ $triggers, 'handle_create_groups_via_cron' ], 10, 1 );
+            add_action( 'bema_create_purchase_field_on_album_publish', [ $triggers, 'handle_create_purchase_field_via_cron' ], 10, 1 );
 
             debug_to_file('Hooks added successfully');
         } catch (Exception $e) {
@@ -965,6 +977,10 @@ class Bema_CRM
             if ($instance) {
                 $instance->clear_plugin_cache();
             }
+
+            // create group Table
+            $group_db_manager = new \Bema\Group_Database_Manager();
+            $group_db_manager->create_table();
 
             // Clear rewrite rules
             flush_rewrite_rules();

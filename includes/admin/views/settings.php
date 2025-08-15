@@ -9,6 +9,7 @@ use Bema\BemaCRMLogger;
 use Bema\EM_Sync;
 use Bema\Utils;
 use Bema\Triggers;
+use Bema\Group_Database_Manager;
 
 $logger = new BemaCRMLogger();
 
@@ -39,9 +40,26 @@ $mailerlite_key = $current_settings['api']['mailerlite_api_key'];
 // Instantiate the EDD provider
 $edd = new EDD($apiKey, $token, $admin->logger);
 $mailerlite = new MailerLite($mailerlite_key, $admin->logger);
+$utils = new Utils();
+$group_db_manager = new Group_Database_Manager();
 
-echo var_dump(get_option('bema_crm_tiers', false));
+$triggers = new Triggers($mailerlite, $this->sync_instance, $utils, $group_db_manager, $this->logger);
 
+class WP_Post {
+    public $post_type;
+    public $post_title;
+}
+
+// Initial data for a successful function call
+$new_status = 'publish';
+$old_status = 'draft';
+
+// Create a mock WP_Post object
+$post = new WP_Post();
+$post->post_type = 'download';
+$post->post_title = 'Wurrdie Tripwire';
+
+// $triggers->create_subscriber_purchase_field_on_album_publish($new_status,$old_status,$post);
 
 
 // Debug logging to verify values
@@ -427,6 +445,10 @@ if ($test_results && is_array($test_results['messages'])) {
 </script>
 
 <style>
+    h1.wp-heading-inline {
+        margin-bottom: 24px;
+    }
+
     .settings-section.disabled {
         opacity: 0.5;
         pointer-events: none;

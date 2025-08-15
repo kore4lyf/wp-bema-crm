@@ -1,9 +1,9 @@
 <?php
 namespace Bema;
 
-  if ( !defined( 'ABSPATH' ) ) {
-    exit;
-  }
+if ( !defined( 'ABSPATH' ) ) {
+  exit;
+}
 
 class Utils {
 

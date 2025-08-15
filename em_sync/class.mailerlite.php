@@ -544,22 +544,74 @@ class MailerLite implements Provider_Interface
         }
     }
 
-    public function createGroup(string $name): bool
+    /**
+     * Creates a new custom field in MailerLite.
+     *
+     * @param string $name The name of the field (max 255 characters).
+     * @param string $type The field type, which can be 'text', 'number', or 'date'.
+     * @return bool True if the field was successfully created, otherwise false.
+     * @throws Exception If the underlying `makeRequest` method throws an exception.
+     */
+    public function createField(string $name, string $type): bool
     {
         try {
-            $response = $this->makeRequest('groups', 'POST', [
-                'name' => $name
+            // Prepare the payload for the API request with both name and type.
+            $payload = [
+                'name' => $name,
+                'type' => $type
+            ];
+
+            // Send a POST request to the 'fields' endpoint.
+            $response = $this->makeRequest('fields', 'POST', $payload);
+
+            // Check for a successful response by ensuring the 'id' key exists in the data array.
+            return isset($response['data']['id']);
+
+        } catch (Exception $e) {
+            // Log the failure to create the field.
+            $this->logger->log('Failed to create MailerLite field', 'error', [
+                'field_name' => $name,
+                'field_type' => $type,
+                'error_message' => $e->getMessage()
             ]);
 
-            return isset($response['data']['id']);
-        } catch (Exception $e) {
-            $this->logger->log('Failed to create group', 'error', [
-                'name' => $name,
-                'error' => $e->getMessage()
-            ]);
             return false;
         }
     }
+
+    /**
+     * Creates a new subscriber group in MailerLite.
+     *
+     * @param string $name The name for the new group (max 255 characters).
+     * @return array|null The new group's data array on success, or null on failure.
+     * @throws Exception If the underlying `makeRequest` method throws an exception.
+     */
+    public function createGroup(string $name): ?array
+    {
+        try {
+
+            // Prepare the payload for the API request.
+            $payload = ['name' => $name];
+
+            // Send a POST request to the 'groups' endpoint.
+            $response = $this->makeRequest('groups', 'POST', $payload);
+            error_log("response: " . $response . "\n", 3, dirname(__FILE__) . '/debug.log');
+            error_log("response id: " . $response['id'] . "\n", 3, dirname(__FILE__) . '/debug.log');
+            // Return the group's data on a successful response.
+            return $response['data'];
+            
+        } catch (Exception $e) {
+            // Log the failure to create the group, including the name and error message.
+            $this->logger->log('Failed to create MailerLite group', 'error', [
+                'group_name' => $name,
+                'error_message' => $e->getMessage()
+            ]);
+            error_log("error creating group: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+            return null;
+        }
+    }
+
+
 
     public function getGroups(): array
     {

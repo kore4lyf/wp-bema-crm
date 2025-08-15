@@ -1,5 +1,0 @@
-TRIGGER START: Test order complete
-order_complete: start trigger
-order_complete: store customer email
-order_complete: Get ordered products
-order_complete: looping through products.

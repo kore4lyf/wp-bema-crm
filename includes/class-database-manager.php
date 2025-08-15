@@ -111,7 +111,7 @@ class Database_Manager
     public function updateSubscriberTier(string $email, string $campaign, string $tier): bool
     {
         try {
-            // Update in bemacrmmeta table
+            // Update in table
             $result = $this->wpdb->update(
                 $this->wpdb->prefix . 'bemacrmmeta',
                 [

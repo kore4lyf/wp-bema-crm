@@ -2563,58 +2563,71 @@ class EM_Sync
 
     /**
      * get_album_details: returns album release year and artist name from a provided album name.
-     * 
-     * @param string $album_name
+     * * @param string $album_name
      * @return array{artist: mixed, year: string}
      */
     public function get_album_details(string $album_name): array
     {
+        global $wpdb;
+        
+        $album_name = sanitize_text_field($album_name);
 
-        $albums = $this->eddInstance->get_albums();
+        // Find the EDD download (post) by its title
+        $query = $wpdb->prepare(
+        "
+        SELECT ID, post_date
+        FROM {$wpdb->posts}
+        WHERE post_title = %s
+        AND post_type = 'download'
+        AND post_status = 'publish'
+        LIMIT 1
+        ",
+            $album_name
+        );
 
-        if ($albums) {
+        $album = $wpdb->get_row($query, ARRAY_A);
 
-            foreach ($albums as $album) {
-
-                if (
-                    isset($album['info']['title']) &&
-                    strtolower(trim($album['info']['title'])) === strtolower(trim($album_name))
-                ) {
-
-                    // Extract release year
-                    $release_year = '0';
-                    if (!empty($album['info']['create_date'])) {
-
-                        $dateArr = explode('-', $album['info']['create_date']);
-                        $release_year = $dateArr[0];
-                    }
-
-                    // Extract artist from categories
-                    $artist_name = '';
-                    if (!empty($album['info']['category']) && is_array($album['info']['category'])) {
-
-                        foreach ($album['info']['category'] as $category) {
-                            if (
-                                !empty($category['slug']) &&
-                                substr($category['slug'], -7) === '-artist' &&
-                                !empty($category['name'])
-                            ) {
-                                $artist_name = $category['name'];
-                                break;
-                            }
-                        }
-                    }
-
-                    return [
-                        'artist' => $artist_name,
-                        'year' => $release_year,
-                    ];
-                }
-            }
+        if (empty($album)) {
+            return [
+                'artist' => '',
+                'year' => '0',
+            ];
         }
+
+        $release_year = '0';
+        if (!empty($album['post_date'])) {
+            $dateArr = explode('-', $album['post_date']);
+            $release_year = $dateArr[0];
+        }
+
+        $artist_name = '';
+
+        // Fetch the artist name from the post's categories
+        $artist_term = $wpdb->get_row(
+            $wpdb->prepare(
+                "
+            SELECT t.name
+            FROM {$wpdb->terms} AS t
+            INNER JOIN {$wpdb->term_taxonomy} AS tt ON t.term_id = tt.term_id
+            INNER JOIN {$wpdb->term_relationships} AS tr ON tr.term_taxonomy_id = tt.term_taxonomy_id
+            WHERE tr.object_id = %d
+            AND tt.taxonomy = 'download_category'
+            AND t.slug LIKE %s
+            LIMIT 1
+            ",
+                $album['ID'],
+                '%-artist' // Search for a term slug ending in '-artist'
+            ),
+            ARRAY_A
+        );
+
+        if (!empty($artist_term['name'])) {
+            $artist_name = $artist_term['name'];
+        }
+
         return [
-            'artist' => '',
-            'year' => '0',
+            'artist' => $artist_name,
+            'year' => $release_year,
         ];
     }
 
