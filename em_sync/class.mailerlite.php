@@ -563,6 +563,7 @@ class MailerLite implements Provider_Interface
 
             // Send a POST request to the 'fields' endpoint.
             $response = $this->makeRequest('fields', 'POST', $payload);
+            error_log("Group Created: " . print_r($response) . "\n", 3, dirname(__FILE__) . '/debug.log');
 
             // Check for a successful response by ensuring the 'id' key exists in the data array.
             return isset($response['data']['id']);
@@ -574,7 +575,7 @@ class MailerLite implements Provider_Interface
                 'field_type' => $type,
                 'error_message' => $e->getMessage()
             ]);
-
+            error_log("error creating group: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
             return false;
         }
     }
@@ -595,8 +596,7 @@ class MailerLite implements Provider_Interface
 
             // Send a POST request to the 'groups' endpoint.
             $response = $this->makeRequest('groups', 'POST', $payload);
-            error_log("response: " . $response . "\n", 3, dirname(__FILE__) . '/debug.log');
-            error_log("response id: " . $response['id'] . "\n", 3, dirname(__FILE__) . '/debug.log');
+
             // Return the group's data on a successful response.
             return $response['data'];
             
@@ -606,7 +606,6 @@ class MailerLite implements Provider_Interface
                 'group_name' => $name,
                 'error_message' => $e->getMessage()
             ]);
-            error_log("error creating group: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
             return null;
         }
     }

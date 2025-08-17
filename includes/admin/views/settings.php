@@ -10,6 +10,7 @@ use Bema\EM_Sync;
 use Bema\Utils;
 use Bema\Triggers;
 use Bema\Group_Database_Manager;
+use Bema\Field_Database_Manager;
 
 $logger = new BemaCRMLogger();
 
@@ -42,8 +43,9 @@ $edd = new EDD($apiKey, $token, $admin->logger);
 $mailerlite = new MailerLite($mailerlite_key, $admin->logger);
 $utils = new Utils();
 $group_db_manager = new Group_Database_Manager();
+$field_db_manager = new Field_Database_Manager();
 
-$triggers = new Triggers($mailerlite, $this->sync_instance, $utils, $group_db_manager, $this->logger);
+$triggers = new Triggers($mailerlite, $this->sync_instance, $utils, $group_db_manager, $field_db_manager,  $this->logger);
 
 class WP_Post {
     public $post_type;
@@ -60,7 +62,9 @@ $post->post_type = 'download';
 $post->post_title = 'Wurrdie Tripwire';
 
 // $triggers->create_subscriber_purchase_field_on_album_publish($new_status,$old_status,$post);
+// echo get_option('bema_crm_settings')['api']['mailerlite_api_key'];
 
+// echo var_dump($mailerlite->createField('korede', 'text'));
 
 // Debug logging to verify values
 debug_to_file([
@@ -104,7 +108,6 @@ if ($test_results && is_array($test_results['messages'])) {
     <?php endif; ?>
 
     <form method="post" action="options.php" id="bema-settings-form" class="settings-form">
-        <?php settings_fields('bema_crm_settings'); ?>
 
         <div class="settings-container">
             <!-- API Configuration Section -->

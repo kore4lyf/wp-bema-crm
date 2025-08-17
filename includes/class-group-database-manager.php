@@ -3,11 +3,12 @@
 namespace Bema;
 
 use Exception;
+use Bema\BemaCRMLogger;
 
 /**
  * Group_Database_Manager class.
  *
- * Handles database operations for the 'bemacrmgroupmeta' table.
+ * Handles database operations for the 'bemacrm_groupmeta' table.
  *
  */
 if (!defined('ABSPATH')) {
@@ -34,11 +35,12 @@ class Group_Database_Manager
     /**
      * Group_Database_Manager constructor.
      */
-    public function __construct()
+    public function __construct(?BemaCRMLogger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
-        $this->table_name = $wpdb->prefix . 'bemacrmgroupmeta';
+        $this->table_name = $wpdb->prefix . 'bemacrm_groupmeta';
+        $this->logger = $logger ?? new BemaCRMLogger();
     }
 
     /**
@@ -59,6 +61,7 @@ class Group_Database_Manager
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 group_name VARCHAR(255) NOT NULL,
                 group_id BIGINT UNSIGNED NOT NULL,
+
                 PRIMARY KEY  (id),
                 UNIQUE KEY group_name (group_name),
                 UNIQUE KEY group_id (group_id)
@@ -71,7 +74,7 @@ class Group_Database_Manager
             }
             return true;
         } catch (Exception $e) {
-            error_log('Group_Database_Manager Error: ' . $e->getMessage());
+            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;
         }
     }
@@ -100,7 +103,7 @@ class Group_Database_Manager
             }
             return $this->wpdb->insert_id;
         } catch (Exception $e) {
-            error_log('Group_Database_Manager Error: ' . $e->getMessage());
+            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;
         }
     }
@@ -141,7 +144,7 @@ class Group_Database_Manager
 
             return $inserted;
         } catch (Exception $e) {
-            error_log('Group_Database_Manager Error: ' . $e->getMessage());
+            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;
         }
     }
@@ -189,7 +192,7 @@ class Group_Database_Manager
             }
             return $updated;
         } catch (Exception $e) {
-            error_log('Group_Database_Manager Error: ' . $e->getMessage());
+            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;
         }
     }
@@ -214,7 +217,7 @@ class Group_Database_Manager
             }
             return $deleted;
         } catch (Exception $e) {
-            error_log('Group_Database_Manager Error: ' . $e->getMessage());
+            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;
         }
     }
@@ -242,7 +245,7 @@ class Group_Database_Manager
      * @param int $group_id The ID of the group to retrieve.
      * @return array|null An associative array of the group on success, or null if not found.
      */
-    public function get_group_by_group_id($group_id)
+    public function get_group_by_id($group_id)
     {
         return $this->wpdb->get_row(
             $this->wpdb->prepare(

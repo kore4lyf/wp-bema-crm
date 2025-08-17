@@ -56,7 +56,7 @@ class EDD implements Provider_Interface
             $this->apiKey = $apiKey;
             $this->token = $token;
             $this->siteUrl = site_url();
-            $this->logger = $logger;
+            $this->logger = $logger ?? new BemaCRMLogger();
             $this->setHeaders();
 
             debug_to_file('EDD instance constructed successfully', 'EDD_INIT');

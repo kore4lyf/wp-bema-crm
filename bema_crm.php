@@ -75,8 +75,8 @@ spl_autoload_register(function ($class) {
         'Campaign_Manager'  => 'em_sync/class.campaign_manager.php',
         'EM_Sync'           => 'em_sync/class.em_sync.php',
         'EDD'               => 'em_sync/class.edd.php',
-        'Triggers'       => 'em_sync/triggers/class-edd-trigger.php',
-        'Utils'     => 'em_sync/utils/class-utils-trigger.php',
+        'Triggers'          => 'em_sync/triggers/class-triggers.php',
+        'Utils'             => 'em_sync/utils/class-utils-trigger.php',
     ];
 
     // Remove the namespace prefix from the class name.
@@ -122,6 +122,7 @@ class Bema_CRM
     private $settings;
     private $db_manager;
     private $group_db_manager;
+    private $field_db_manager;
     private $component_registry = [];
     private $initialized = false;
     private static $instance_creating = false;
@@ -201,6 +202,7 @@ class Bema_CRM
             debug_to_file("Hooks added");
 
             $this->initialized = true;
+
             debug_to_file("Initialization complete");
         } catch (Exception $e) {
             debug_to_file("Initialization error: " . $e->getMessage());
@@ -568,6 +570,9 @@ class Bema_CRM
             // create group db instance
             $this->group_db_manager = new \Bema\Group_Database_Manager();
 
+            // create field db instance
+            $this->field_db_manager = new \Bema\Field_Database_Manager();
+
             // Initialize handlers
             $lock_handler = new \Bema\Handlers\Default_Lock_Handler();
             $health_monitor = new \Bema\Handlers\Default_Health_Monitor($this->logger);
@@ -714,18 +719,10 @@ class Bema_CRM
                 add_action('admin_notices', [$this, 'display_admin_notices']);
             }
 
-            // Add EDD Hooks
+            // Add CRM Trigger
             $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '', $this->logger );
-            
-            $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->logger);
-
-            add_action( 'edd_after_order_actions', [ $triggers, 'update_purchase_field_on_order_complete' ], 10, 3 );
-            // add_action( 'transition_post_status', [ $triggers, 'create_subscriber_groups_on_album_publish' ], 10, 3 ); 
-            add_action( 'transition_post_status', [ $triggers, 'create_subscriber_purchase_field_on_album_publish' ], 10, 3 ); 
-
-            add_action( 'bema_handle_order_purchase_field_update', [ $triggers, 'handle_order_purchase_field_update_via_cron' ], 10, 3 );
-            // add_action( 'bema_create_groups_on_album_publish', [ $triggers, 'handle_create_groups_via_cron' ], 10, 1 );
-            add_action( 'bema_create_purchase_field_on_album_publish', [ $triggers, 'handle_create_purchase_field_via_cron' ], 10, 1 );
+            $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager, $this->logger);
+            $triggers->init();
 
             debug_to_file('Hooks added successfully');
         } catch (Exception $e) {
