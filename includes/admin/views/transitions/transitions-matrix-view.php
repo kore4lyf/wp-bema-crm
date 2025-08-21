@@ -12,7 +12,7 @@ $transition_matrix = is_array($transition_matrix) ? $transition_matrix : [];
 
 <div class="wrap bema-crm-tm-wrap">
     <div class="settings-section bema-crm-lite-section">
-        <h2>Transition Matrix Configuration</h2>
+        <h2>Transition Matrix</h2>
 
         <form method="post" action="options.php" class="bema-crm-tm-form">
             <?php

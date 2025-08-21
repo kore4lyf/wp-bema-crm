@@ -65,6 +65,23 @@ $post->post_title = 'Wurrdie Tripwire';
 // echo get_option('bema_crm_settings')['api']['mailerlite_api_key'];
 
 // echo var_dump($mailerlite->createField('korede', 'text'));
+$is_field_deleted_on_mailerlite = "Hi";
+// $is_field_deleted_on_mailerlite = $mailerlite->deleteField('2025_ETB_GIG_PURCHASE');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Debug logging to verify values
 debug_to_file([
@@ -98,6 +115,7 @@ if ($test_results && is_array($test_results['messages'])) {
 
 <div class="wrap bema-settings">
     <h1 class="wp-heading-inline"><?php echo esc_html(get_admin_page_title()); ?></h1>
+<?php echo var_dump($is_field_deleted_on_mailerlite); ?>
 
     <?php
     $sync_disabled = !$has_sync;

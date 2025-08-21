@@ -108,7 +108,7 @@ class Field_Database_Manager
    * @param mixed|null $new_value
    * @return int|false
    */
-  public function update_field_by_id($field_id, $new_name = null, $new_value = null)
+  public function update_field_by_id($field_id, $new_name = null)
   {
     try {
       $data = [];
@@ -145,18 +145,18 @@ class Field_Database_Manager
   }
 
   /**
-   * Delete a field by its field_id.
+   * Delete a field by its field_name.
    *
-   * @param int $field_id
+   * @param string $field_name
    * @return int|false
    */
-  public function delete_field_by_id($field_id)
+  public function delete_field_by_name($field_name)
   {
     try {
       $deleted = $this->wpdb->delete(
         $this->table_name,
-        ['field_id' => absint($field_id)],
-        ['%d']
+        ['field_name' => sanitize_text_field($field_name)],
+        ['%s']
       );
 
       if (false === $deleted) {
@@ -169,6 +169,7 @@ class Field_Database_Manager
       return false;
     }
   }
+
 
   /**
    * Get a field by its field_id.

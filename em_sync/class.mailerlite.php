@@ -7,6 +7,8 @@ use WP_Object_Cache;
 use Bema\BemaCRMLogger;
 use Bema\Interfaces\Provider_Interface;
 use Bema\Exceptions\API_Exception;
+use Bema\Group_Database_Manager;
+use Bema\Field_Database_Manager;
 use function Bema\debug_to_file;
 
 if (!defined('ABSPATH')) {
@@ -44,6 +46,8 @@ class MailerLite implements Provider_Interface
             }
 
             $this->apiKey = $apiKey;
+            $this->group_db_manager = new Group_Database_Manager($logger);
+            $this->field_db_manager = new Field_Database_Manager($logger);
             $this->logger = $logger;
             $this->setHeaders();
             $this->initializeRateLimit();
@@ -178,6 +182,12 @@ class MailerLite implements Provider_Interface
                         $method,
                         $httpCode
                     );
+                }
+
+                if ($httpCode === 204) {
+                    // MailerLite returns 204 with an empty body for successful DELETE.
+                    // Return an empty array or null to signal success.
+                    return [];
                 }
 
                 $decoded = json_decode($response, true);
@@ -549,10 +559,10 @@ class MailerLite implements Provider_Interface
      *
      * @param string $name The name of the field (max 255 characters).
      * @param string $type The field type, which can be 'text', 'number', or 'date'.
-     * @return bool True if the field was successfully created, otherwise false.
+     * @return string empty string if the field was not created, otherwise the field id.
      * @throws Exception If the underlying `makeRequest` method throws an exception.
      */
-    public function createField(string $name, string $type): bool
+    public function createField(string $name, string $type): bool|string
     {
         try {
             // Prepare the payload for the API request with both name and type.
@@ -563,10 +573,10 @@ class MailerLite implements Provider_Interface
 
             // Send a POST request to the 'fields' endpoint.
             $response = $this->makeRequest('fields', 'POST', $payload);
-            error_log("Group Created: " . print_r($response) . "\n", 3, dirname(__FILE__) . '/debug.log');
+            error_log("Group Created: " . print_r($response, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
 
             // Check for a successful response by ensuring the 'id' key exists in the data array.
-            return isset($response['data']['id']);
+            return $response['data']['id'];
 
         } catch (Exception $e) {
             // Log the failure to create the field.
@@ -576,9 +586,116 @@ class MailerLite implements Provider_Interface
                 'error_message' => $e->getMessage()
             ]);
             error_log("error creating group: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+            return '';
+        }
+    }
+
+    /**
+     * Updates the name of an existing custom field in MailerLite.
+     *
+     * @param string $current_name The current field name stored in the local database.
+     * @param string $new_name The new name for the field (max 255 characters).
+     * @return bool True if the field was successfully updated, otherwise false.
+     * @throws Exception If the underlying `makeRequest` method throws an exception.
+     */
+    public function updateField(string $current_name, string $new_name): bool
+    {
+        try {
+            // Get field details from the database
+            $field = $this->field_db_manager->get_field_by_name($current_name);
+
+            if (!$field || empty($field['field_id'])) {
+                $this->logger->log('Field not found in database', 'error', [
+                    'field_name' => $current_name
+                ]);     
+                error_log("Field not found: " . $current_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                return false;
+            }
+
+            $field_id = (int) $field['field_id'];
+
+            // Prepare the payload with the new field name
+            $payload = [
+                'name' => $new_name
+            ];
+
+            // Send a PUT request to the 'fields/{field_id}' endpoint
+            $endpoint = 'fields/' . $field_id;
+            $response = $this->makeRequest($endpoint, 'PUT', $payload);
+
+            // Log the response for debugging
+            error_log("Field Updated: " . print_r($response, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+            if (isset($response['data'])) {
+                return true;
+            }
+
+            return false;
+
+        } catch (Exception $e) {
+            // Log any error during update
+            $this->logger->log('Failed to update MailerLite field', 'error', [
+                'current_name' => $current_name,
+                'new_name' => $new_name,
+                'error_message' => $e->getMessage()
+            ]);
+            error_log("Error updating field: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
             return false;
         }
     }
+
+    /**
+     * Deletes a custom field in MailerLite.
+     *
+     * @param string $field_name The field name to delete (looked up from the local database).
+     * @return bool True if the field was successfully deleted, otherwise false.
+     * @throws Exception If the underlying `makeRequest` method throws an exception.
+     */
+    public function deleteField(string $field_name): bool
+    {
+        try {
+            error_log("deleteField: Start" . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+            // Get field details from the database
+            $field = $this->field_db_manager->get_field_by_name($field_name);
+            error_log("deleteField: " . print_r($field, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+            if (!$field || empty($field['field_id'])) {
+                $this->logger->log('Field not found in database', 'error', [
+                    'field_name' => $field_name
+                ]);
+                
+                error_log("Field not found: " . $field_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                return false;
+            }
+
+            $field_id = $field['field_id'];
+
+            // Send a DELETE request to the 'fields/{field_id}' endpoint
+            $endpoint = 'fields/' . $field_id;
+            $response = $this->makeRequest($endpoint, 'DELETE');
+
+            // Log the response for debugging
+            error_log("Field Deleted Response: " . print_r($response, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+            // MailerLite returns 204 No Content on success, so response may be empty
+            if ($response === null || $response === [] || (isset($response['status']) && $response['status'] === 204)) {
+                return true;
+            }
+
+            return false;
+
+        } catch (Exception $e) {
+            // Log any error during delete
+            $this->logger->log('Failed to delete MailerLite field', 'error', [
+                'field_name' => $field_name,
+                'error_message' => $e->getMessage()
+            ]);
+            error_log("Error deleting field: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+            return false;
+        }
+    }
+
 
     /**
      * Creates a new subscriber group in MailerLite.
@@ -599,7 +716,7 @@ class MailerLite implements Provider_Interface
 
             // Return the group's data on a successful response.
             return $response['data'];
-            
+
         } catch (Exception $e) {
             // Log the failure to create the group, including the name and error message.
             $this->logger->log('Failed to create MailerLite group', 'error', [
@@ -610,6 +727,55 @@ class MailerLite implements Provider_Interface
         }
     }
 
+    /**
+     * Deletes a subscriber group in MailerLite.
+     *
+     * @param string $group_name The name of the group to delete (looked up from the local database).
+     * @return bool True if the group was successfully deleted, otherwise false.
+     * @throws Exception If the underlying `makeRequest` method throws an exception.
+     */
+    public function deleteGroup(string $group_name): bool
+    {
+        try {
+            // Get group details from the database
+            $group = $this->group_db_manager->get_group_by_name($group_name);
+
+            error_log("Unexpected delete group response: " . print_r($group, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+
+            if (!$group || empty($group['group_id'])) {
+                $this->logger->log('Group not found in database', 'error', [
+                    'group_name' => $group_name
+                ]);
+                error_log("Group not found: " . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                return false;
+            }
+
+            $group_id = $group['group_id'];
+
+            // Send a DELETE request to the 'groups/{group_id}' endpoint
+            $endpoint = 'groups/' . $group_id;
+            $response = $this->makeRequest($endpoint, 'DELETE');
+
+            // MailerLite returns 204 No Content on success, so response may be empty
+            if ($response === null || $response === [] || (isset($response['status']) && $response['status'] === 204)) {
+                return true;
+            }
+
+            // Log unexpected response
+            error_log("Unexpected delete group response: " . print_r($response, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+            return false;
+
+        } catch (Exception $e) {
+            // Log any error during delete
+            $this->logger->log('Failed to delete MailerLite group', 'error', [
+                'group_name' => $group_name,
+                'error_message' => $e->getMessage()
+            ]);
+            error_log("Error deleting group: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+            return false;
+        }
+    }
 
 
     public function getGroups(): array

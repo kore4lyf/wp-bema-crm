@@ -1,20 +1,28 @@
-<?php if (!defined('ABSPATH')) exit; ?>
+<?php if (!defined('ABSPATH'))
+    exit; ?>
+
+<?php
+// Fetch current tab
+$current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'history';
+?>
 
 <div class="wrap bema-transitions">
     <h1><?php _e('Campaign Transitions', 'bema-crm'); ?></h1>
 
-    <div class="transition-grid">
+    <?php
+    // Display any validation errors or warnings registered during submission.
+    settings_errors();
+    ?>
 
-        <!-- Tiers  -->
-        <?php
-            $tier_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'settings/' . 'tier-view.php';
+    <!-- Navigation Tabs -->
+    <nav class="nav-tab-wrapper">
+        <a href="?page=bema-transitions&tab=history"
+            class="nav-tab <?php echo $current_tab === 'history' ? 'nav-tab-active' : ''; ?>"> History </a>
+        <a href="?page=bema-transitions&tab=settings"
+            class="nav-tab <?php echo $current_tab === 'settings' ? 'nav-tab-active' : ''; ?>"> Settings </a>
+    </nav>
 
-            if (file_exists($tier_table_view_path)) {
-                include $tier_table_view_path;
-            } else {
-                echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
-            }
-        ?>
+    <?php if ($current_tab === 'history'): ?>
 
         <!-- Campaign Connections -->
         <div class="postbox">
@@ -46,58 +54,31 @@
             </div>
         </div>
 
-        <!-- Tier Transition Matrix -->
+    <?php elseif ($current_tab === 'settings'): ?>
+        <!-- Tiers  -->
         <?php
-            $transition_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'settings/' . 'transitions-matrix-view.php';
+        $tier_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'tier-view.php';
 
-            if (file_exists($transition_table_view_path)) {
-                include $transition_table_view_path;
-            } else {
-                echo '<div class="notice notice-error"><p>Missing view file: transitions-matrix-view.php</p></div>';
-            }
+        if (file_exists($tier_table_view_path)) {
+            include $tier_table_view_path;
+        } else {
+            echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
+        }
         ?>
 
 
 
+        <!-- Tier Transition Matrix -->
+        <?php
+        $transition_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'transitions-matrix-view.php';
 
+        if (file_exists($transition_table_view_path)) {
+            include $transition_table_view_path;
+        } else {
+            echo '<div class="notice notice-error"><p>Missing view file: transitions-matrix-view.php</p></div>';
+        }
+        ?>
 
+    <?php endif; ?>
 
-    </div>
 </div>
-
-<style>
-    .transitions-subtitle {
-        margin-left: 12px;
-    }
-
-    .transition-grid {
-        display: grid;
-        gap: 20px;
-        margin-top: 20px;
-    }
-
-    .status-indicator {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 3px;
-        font-weight: bold;
-    }
-
-    .status-indicator.valid {
-        background-color: #d4edda;
-        color: #155724;
-    }
-
-    .status-indicator.invalid {
-        background-color: #f8d7da;
-        color: #721c24;
-    }
-
-    .transition-matrix td {
-        vertical-align: middle;
-    }
-
-    .transition-matrix .dashicons-yes {
-        color: #46b450;
-    }
-</style>

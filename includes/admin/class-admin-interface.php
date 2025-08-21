@@ -18,6 +18,7 @@ class Bema_Admin_Interface
 {
     private $logger;
     private $sync_instance;
+    private $utils;
     private $sync_scheduler;
     private $settings;
     private $page_hooks = [];
@@ -51,6 +52,7 @@ class Bema_Admin_Interface
         $this->settings = $settings;
         $this->sync_instance = $sync_instance;
         $this->sync_scheduler = $sync_scheduler;
+        $this->utils = new \Bema\Utils();
         $this->current_tab = $_GET['tab'] ?? 'general';
 
         // Initialize campaign manager if sync instance exists
@@ -222,6 +224,7 @@ class Bema_Admin_Interface
 
             $this->current_tab = $_GET['tab'] ?? 'general';
             $initialized = true;
+            
         } catch (Exception $e) {
             $this->logger->log('Admin interface initialization failed', 'error', [
                 'error' => $e->getMessage()
@@ -394,6 +397,34 @@ class Bema_Admin_Interface
                     )
                 );
             }
+
+
+            if ( isset($_GET['page']) && $_GET['page'] === 'bema-database' ) {
+                wp_enqueue_style(
+                    'bema-crm-database-style',
+                    plugins_url('assets/css/database/admin-database-page.css', BEMA_FILE),
+                    BEMA_VERSION,
+                );
+        
+                wp_enqueue_script(
+                    'bema-crm-database-script',
+                    plugins_url('assets/js/database/admin-database-table.js', BEMA_FILE),
+                    ['jquery'],
+                    BEMA_VERSION,
+                    true
+                );
+
+                // This creates a JavaScript object named 'bemaCrmData' that your script can use.
+                wp_localize_script(
+                    'bema-crm-database-script',
+                    'bemaCrmDatabaseData', // The name of the global JavaScript object to create
+                    [
+                        'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+                        'nonce'   => wp_create_nonce( 'bema_crm_nonce' ),
+                    ]
+                );
+            }
+
 
             // Module scripts for sync manager
             if (strpos($hook, 'bema-sync-manager') !== false) {

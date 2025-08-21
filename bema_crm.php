@@ -123,6 +123,7 @@ class Bema_CRM
     private $db_manager;
     private $group_db_manager;
     private $field_db_manager;
+    private $subscriber_db_manager;
     private $component_registry = [];
     private $initialized = false;
     private static $instance_creating = false;
@@ -569,9 +570,11 @@ class Bema_CRM
 
             // create group db instance
             $this->group_db_manager = new \Bema\Group_Database_Manager();
-
             // create field db instance
             $this->field_db_manager = new \Bema\Field_Database_Manager();
+            // create subscriber db instance
+            $this->subscriber_db_manager = new \Bema\Subscribers_Database_Manager();
+
 
             // Initialize handlers
             $lock_handler = new \Bema\Handlers\Default_Lock_Handler();

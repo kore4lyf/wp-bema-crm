@@ -41,7 +41,7 @@ $active_filters = $admin->get_active_filters();
         </a>
     </nav>
 
-    <?php if ($current_tab === 'subscribers'): ?>
+    <?php if ($current_tab === 'test'): ?>
         <!-- Subscribers Tab Content -->
         <div class="tablenav top">
             <!-- Bulk Actions -->
@@ -236,6 +236,17 @@ $active_filters = $admin->get_active_filters();
                 <?php endif; ?>
             </tbody>
         </table>
+
+    <?php elseif ($current_tab === 'subscribers'): ?>
+			<?php
+			$subscriber_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'database/' . 'subscriber-table-view.php';
+
+        if (file_exists($subscriber_table_view_path)) {
+            include $subscriber_table_view_path;
+        } else {
+            echo '<div class="notice notice-error"><p>Missing view file: subscriber-table-view.php</p></div>';
+        }
+        ?>
 
     <?php elseif ($current_tab === 'sync-logs'): ?>
         <!-- Sync Logs Content -->

@@ -22,7 +22,7 @@ class Triggers
     private Group_Database_Manager $group_db_manager;
     private Field_Database_Manager $field_db_manager;
     private BemaCRMLogger $logger;
-    private array $deleted_album_titles = [];
+    private array $deleted_album_details = [];
 
     public function __construct(MailerLite $mailerlite, EM_Sync $em_sync, Utils $utils, Group_Database_Manager $group_db_manager, Field_Database_Manager $field_db_manager, ?BemaCRMLogger $logger = null)
     {
@@ -42,21 +42,22 @@ class Triggers
     function init(): void
     {
         add_action('edd_after_order_actions', [$this, 'update_purchase_field_on_order_complete'], 10, 3);
-        // add_action( 'transition_post_status', [ $this, 'create_subscriber_groups_on_album_publish' ], 10, 3 ); 
+        add_action( 'transition_post_status', [ $this, 'create_subscriber_groups_on_album_publish' ], 10, 3 ); 
         add_action('transition_post_status', [$this, 'create_subscriber_purchase_field_on_album_publish'], 10, 3);
-
         // Capture album title before deletion
         add_action('before_delete_post', [$this, 'capture_deleted_album_title']);
 
-        // Schedule WP-Cron after deletion
-        add_action('deleted_post', [$this, 'schedule_deleted_album_cron']);
 
         // WP-Cron
+
+        // Schedule WP-Cron after deletion
+        add_action('deleted_post', [$this, 'schedule_deleted_album_via_cron']);
+
         // WP-Cron hook to handle the update of purchase field on mailerlite
         add_action('bema_handle_order_purchase_field_update', [$this, 'handle_order_purchase_field_update_via_cron'], 10, 3);
 
         // WP-Cron hook to handle the creation of purchase field asynchronously
-        // add_action( 'bema_create_groups_on_album_publish', [ $this, 'handle_create_groups_via_cron' ], 10, 1 );
+        add_action( 'bema_create_groups_on_album_publish', [ $this, 'handle_create_groups_via_cron' ], 10, 1 );
 
         // WP-Cron hook to handle the creation of purchase field on mailerlite
         add_action('bema_create_purchase_field_on_album_publish', [$this, 'handle_create_purchase_field_via_cron'], 10, 1);
@@ -84,7 +85,7 @@ class Triggers
 
         // Schedule a single event to run in 30 seconds
         wp_schedule_single_event(
-            time() + 60,
+            time() + 30,
             'bema_handle_order_purchase_field_update',
             [$order_id, $customer_email, $order_items]
         );
@@ -122,7 +123,7 @@ class Triggers
 
             foreach ($ordered_albums as $album_name => $album_price) {
                 // Fetch album details
-                $album_details = $this->em_sync->get_album_details($album_name);
+                $album_details = $this->utils->get_album_details($album_name);
                 $album_release_year = $album_details['year'] ?? '';
                 $album_artist = $album_details['artist'] ?? '';
 
@@ -201,12 +202,12 @@ class Triggers
         $this->logger->log('WP-Cron Trigger Start: create subscriber groups', 'info', ['post_id' => $post->ID]);
         error_log('WP-Cron Trigger Start: create subscriber groups. ' . 'post_id: ' . $post->ID . "\n", 3, dirname(__FILE__) . '/debug.log');
 
-        $post_title = trim($post->post_title);
+        $post_title = $post->post_title;
         $tiers = get_option('bema_crm_tiers', []);
         $groups = [];
 
         // Fetch album details
-        $album_details = $this->em_sync->get_album_details($post_title);
+        $album_details = $this->utils->get_album_details($post_title);
         $album_release_year = $album_details['year'] ?? '';
         $album_artist = $album_details['artist'] ?? '';
 
@@ -223,7 +224,6 @@ class Triggers
             if (!empty($group_name)) {
                 // Create mailerlite subscriber group with post title
                 $this->logger->log("Creating group for: " . $group_name, 'info');
-                error_log("Creating group for: " . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
                 error_log("Creating group for: " . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
                 $group_data = $this->mailerlite->createGroup($group_name);
                 $this->logger->log("MailerLite response for group: " . print_r($group_data, true), 'info');
@@ -286,7 +286,7 @@ class Triggers
     public function handle_create_purchase_field_via_cron(int $post_id): void
     {
         $post = get_post($post_id);
-        if (!empty($post)) {
+        if (!$post) {
             $this->logger->log('WP-Cron event failed: Post not found for ID ' . $post_id, 'error');
             error_log('WP-Cron event failed: Post not found for ID ' . $post_id . "\n", 3, dirname(__FILE__) . '/debug.log');
             return;
@@ -296,7 +296,7 @@ class Triggers
         error_log('WP-Cron Trigger Start: create subscriber purchase field' . ['post_id' => $post->ID] . "\n", 3, dirname(__FILE__) . '/debug.log');
 
         // Get album details and generate the field name
-        $album_details = $this->em_sync->get_album_details($post->post_title);
+        $album_details = $this->utils->get_album_details($post->post_title);
         $field_name = $this->utils->get_campaign_group_name(
             $album_details['year'] ?? '',
             $album_details['artist'] ?? '',
@@ -307,9 +307,11 @@ class Triggers
         // Create the field and store in the field table if the field name exists
         if (!empty($field_name)) {
             $field_id = $this->mailerlite->createField($field_name, 'number');
+
             $this->field_db_manager->insert_field($field_id, $field_name);
+
             $this->logger->log("MailerLite field created and recorded in the database: field_name: {$field_name} , field_id: {$field_id}", 'info');
-            error_log("MailerLite field created and recorded in the database: {$field_name}" . "\n", 3, dirname(__FILE__) . '/debug.log');
+            error_log("MailerLite field created and recorded in the database: field_name: {$field_name} , field_id: {$field_id}" . "\n", 3, dirname(__FILE__) . '/debug.log');
         } else {
             $this->logger->log('Failed to create field: name could not be generated.', 'warning', ['post_id' => $post->ID, 'post_title' => $post->post_title]);
             error_log('Failed to create field: name could not be generated.' . ['post_id' => $post->ID, 'post_title' => $post->post_title] . "\n", 3, dirname(__FILE__) . '/debug.log');
@@ -327,11 +329,24 @@ class Triggers
      */
     public function capture_deleted_album_title(int $post_id): void
     {
+        error_log('capture_deleted_album_title: Start' . "\n", 3, dirname(__FILE__) . '/debug.log');
         $post = get_post($post_id);
+        error_log('capture_deleted_album_title: post title: ' . $post->post_title . "\n", 3, dirname(__FILE__) . '/debug.log');
 
         if ($post && $post->post_type === 'download') {
-            $this->deleted_album_titles[$post_id] = $post->post_title;
+            $this->deleted_album_details[$post_id] = [
+                'album_name' => $post->post_title,
+                'album_details' => [
+                    'year' =>  '2025',
+                    'artist' => 'Eko the beat'
+                ] 
+            ];
         }
+        
+
+        error_log('capture_deleted_album_title:  $this->deleted_album_details is set' . print_r($this->deleted_album_details, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+        
+        error_log('capture_deleted_album_title: ended ' . "\n", 3, dirname(__FILE__) . '/debug.log');
     }
 
     /**
@@ -342,15 +357,16 @@ class Triggers
      * @param int $post_id The ID of the post that was deleted.
      * @return void
      */
-    public function schedule_deleted_album_cron(int $post_id): void
+    public function schedule_deleted_album_via_cron(int $post_id): void
     {
-        if (isset($this->deleted_album_titles[$post_id])) {
-            $title = $this->deleted_album_titles[$post_id];
+        if (isset($this->deleted_album_details[$post_id])) {
+            $details = $this->deleted_album_details[$post_id];
 
-            // Schedule the WP-Cron event if not already scheduled
-            if (!wp_next_scheduled('bema_handle_deleted_album', [$post_id, $title])) {
-                wp_schedule_single_event(time() + 60, 'bema_handle_deleted_album', [$post_id, $title]);
-            }
+            wp_schedule_single_event(
+                time() + 30,
+                'bema_handle_deleted_album',
+                [$details['album_name'], $details['album_details']]
+            );
 
             // Clean up temporary storage
             unset($this->deleted_album_titles[$post_id]);
@@ -358,29 +374,114 @@ class Triggers
     }
 
     /**
-     * Handles album deletion asynchronously via WP-Cron.
+     * Handles the deletion of the album purchase field on MailerLite and the local database.
+     *
+     * @param string $album_name The name of the deleted album.
+     * @param array $album_details The details of the deleted album.
+     * @return void
+     */
+    private function handle_deleted_album_fields(string $album_name, array $album_details): void
+    {
+        error_log('handle_deleted_album_fields: Start' . "\n", 3, dirname(__FILE__) . '/debug.log');
+        error_log('handle_deleted_album_fields: Recieved - album_name: ' . $album_name . ' - album_details: ' . print_r($album_details, true) .  "\n", 3, dirname(__FILE__) . '/debug.log');
+
+        $album_release_year = $album_details['year'] ?? '';
+        $album_artist = $album_details['artist'] ?? '';
+
+        // Build campaign field name
+        $field_name = $this->utils->get_campaign_group_name(
+            $album_release_year,
+            $album_artist,
+            $album_name,
+            'PURCHASE'
+        );
+        error_log('handle_deleted_album_fields: $field_name: ' . $field_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+        
+        // Delete album purchase field on MailerLite
+        $is_field_deleted_on_mailerlite = $this->mailerlite->deleteField($field_name);
+
+        error_log('handle_deleted_album_fields: $is_field_deleted_on_mailerlite:' . $is_field_deleted_on_mailerlite . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+        if ($is_field_deleted_on_mailerlite) {
+            error_log('handle_deleted_album_fields: $is_field_deleted_on_mailerlite: successfully deleted on mailerlite' . "\n", 3, dirname(__FILE__) . '/debug.log');
+            // Delete album field from local database
+            $this->field_db_manager->delete_field_by_name($field_name);
+            error_log('handle_deleted_album_fields: Delete field name from the database' . "\n", 3, dirname(__FILE__) . '/debug.log');
+        }
+
+    }
+
+    /**
+     * Handles the deletion of album groups on MailerLite and the local database.
+     *
+     * @param string $album_name The name of the deleted album.
+     * @param array $album_details The details of the deleted album.
+     * @param array $tiers The array of tiers for the album.
+     * @return void
+     */
+    private function handle_deleted_album_groups(string $album_name, array $album_details, array $tiers): void
+    {
+        error_log('handle_deleted_album_groups: Start: ' . "\n", 3, dirname(__FILE__) . '/debug.log');
+        error_log('handle_deleted_album_groups: Received - album_name: ' . $album_name . ' - album_details: ' . print_r($album_details, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+        error_log('handle_deleted_album_groups: Tiers: ' . print_r($tiers, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+        $album_release_year = $album_details['year'] ?? '';
+        $album_artist = $album_details['artist'] ?? '';
+
+        // Delete album groups on MailerLite
+        foreach ($tiers as $tier) {
+            $group_name = $this->utils->get_campaign_group_name('2025', 'Eko the beat', $album_name, $tier);
+            //     $album_release_year,
+            //     $album_artist,
+            //     $album_name,
+            //     $tier
+            // );
+
+            error_log('handle_deleted_album_groups: $group_name: ' . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+
+            if (!empty($group_name)) {
+                // Delete mailerlite subscriber group with post title
+                $this->logger->log("Creating group for: " . $group_name, 'info');
+                error_log("Creating group for: " . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+                $is_group_deleted_on_mailerlite = $this->mailerlite->deleteGroup($group_name);
+                $this->logger->log("MailerLite response for group: " . print_r($group_data, true), 'info');
+                error_log("MailerLite response for group: " . print_r($group_data, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+                if ($is_group_deleted_on_mailerlite) {
+                    $this->group_db_manager->delete_group_by_name($group_name);
+                    error_log('handle_deleted_album_groups: Delete field name from the database' . "\n", 3, dirname(__FILE__) . '/debug.log');
+                }
+
+                $this->logger->log("Album group: '{$group_name}' was permanently deleted.", 'info');
+                error_log("Album group: '{$group_name}' was permanently deleted.\n", 3, dirname(__FILE__) . '/debug.log');
+            } else {
+                $this->logger->log('Group name could not be generated for tier: ' . $tier, 'warning');
+                error_log('Group name could not be generated for tier: ' . $tier . "\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->log("Album group: '{$group_name}' was not deleted.", 'info');
+                error_log("Album group: '{$group_name}' was not deleted.\n", 3, dirname(__FILE__) . '/debug.log');
+            }
+        }
+    }
+
+    /**
+     * Handles album deletion.
      *
      * This method is triggered by the 'bema_handle_deleted_album' WP-Cron event.
      *
-     * @param int $post_id The ID of the deleted album.
-     * @param string $title The title of the deleted album.
+     * @param string $album_name The album_name of the deleted album.
      * @return void
      */
-    public function handle_deleted_album_cron(int $post_id, string $title): void
+    public function handle_deleted_album_cron(string $album_name, array $album_details): void
     {
-        // Log deletion event
-        $this->logger->log(
-            "WP-Cron: Album '{$title}' (ID: {$post_id}) was permanently deleted.",
-            'info'
-        );
+        $tiers = get_option('bema_crm_tiers', []);
 
-        error_log(
-            "WP-Cron: Album '{$title}' (ID: {$post_id}) was permanently deleted.\n",
-            3,
-            dirname(__FILE__) . '/debug.log'
-        );
+        // Handle field deletion
+        $this->handle_deleted_album_fields($album_name, $album_details);
 
-        // Add any additional post-deletion logic here
-        // Example: cleanup CRM records, notify APIs, or sync with MailerLite
+        // Handle group deletion
+        $this->handle_deleted_album_groups($album_name, $album_details, $tiers);
     }
+
 }
