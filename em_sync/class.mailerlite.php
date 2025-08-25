@@ -186,7 +186,6 @@ class MailerLite implements Provider_Interface
 
                 if ($httpCode === 204) {
                     // MailerLite returns 204 with an empty body for successful DELETE.
-                    // Return an empty array or null to signal success.
                     return [];
                 }
 
@@ -200,8 +199,23 @@ class MailerLite implements Provider_Interface
                     );
                 }
 
+                // *** START OF CRITICAL CHANGE ***
                 if ($httpCode >= 400) {
                     $errorMessage = isset($decoded['message']) ? $decoded['message'] : 'Unknown error';
+
+                    // If a group already exists, it's not a fatal error for this process.
+                    // We can log it as a successful check and return to stop the loop.
+                    if ($httpCode === 422 && strpos($errorMessage, 'The name has already been taken.') !== false) {
+                        debug_to_file([
+                            'action' => 'group_already_exists',
+                            'message' => $errorMessage
+                        ], 'ML_API_INFO');
+                        // Return an empty array or a specific success signal
+                        // to break the outer while loop successfully.
+                        return ['status' => 'success', 'message' => 'Group already exists.'];
+                    }
+
+                    // For any other 4xx or 5xx errors, throw the exception as before.
                     throw new API_Exception(
                         "API error ({$httpCode}): {$errorMessage}",
                         $endpoint,
@@ -555,6 +569,88 @@ class MailerLite implements Provider_Interface
     }
 
     /**
+     * Retrieves a list of custom fields from the MailerLite API.
+     *
+     * This function gets fields from cache if available. Otherwise, it fetches
+     * them from the MailerLite API, handles pagination, and then caches the result.
+     *
+     * @return array An array of field data, with each item containing the 'id',
+     * 'name', 'key', and 'type' of a field.
+     *
+     * @throws Exception If the API request fails.
+     */
+    public function getFields(): array
+    {
+        $cacheKey = 'mailerlite_fields';
+        $cachedFields = wp_cache_get($cacheKey, self::CACHE_GROUP);
+
+        if ($cachedFields !== false) {
+            debug_to_file([
+                'using_cached_fields' => true,
+                'count' => count($cachedFields)
+            ], 'ML_FIELDS');
+            return $cachedFields;
+        }
+
+        try {
+            debug_to_file('Fetching fields from MailerLite API', 'ML_FIELDS');
+            $this->waitForRateLimit();
+
+            $fields = [];
+            $page = 1;
+            $hasMore = true;
+
+            while ($hasMore) {
+                $response = $this->makeRequest(
+                    "fields?page={$page}&limit={$this->batchSize}",
+                    'GET'
+                );
+
+                if (!isset($response['data']) || empty($response['data'])) {
+                    break;
+                }
+
+                foreach ($response['data'] as $field) {
+                    $fields[] = [
+                        'id' => $field['id'],
+                        'name' => $field['name'],
+                        'key' => $field['key'],
+                        'type' => $field['type']
+                    ];
+
+                    debug_to_file([
+                        'field_found' => [
+                            'id' => $field['id'],
+                            'name' => $field['name']
+                        ]
+                    ], 'ML_FIELDS');
+                }
+
+                $page++;
+                $hasMore = !empty($response['data']);
+
+                if ($page % 10 === 0) {
+                    $this->manageMemory();
+                }
+            }
+
+            wp_cache_set($cacheKey, $fields, self::CACHE_GROUP, self::CACHE_TTL);
+
+            debug_to_file([
+                'fields_fetched' => count($fields)
+            ], 'ML_FIELDS');
+
+            return $fields;
+        } catch (Exception $e) {
+            debug_to_file([
+                'fields_fetch_failed' => true,
+                'error' => $e->getMessage()
+            ], 'ML_FIELDS');
+            throw $e;
+        }
+    }
+
+    /**
      * Creates a new custom field in MailerLite.
      *
      * @param string $name The name of the field (max 255 characters).
@@ -607,7 +703,7 @@ class MailerLite implements Provider_Interface
             if (!$field || empty($field['field_id'])) {
                 $this->logger->log('Field not found in database', 'error', [
                     'field_name' => $current_name
-                ]);     
+                ]);
                 error_log("Field not found: " . $current_name . "\n", 3, dirname(__FILE__) . '/debug.log');
                 return false;
             }
@@ -664,7 +760,7 @@ class MailerLite implements Provider_Interface
                 $this->logger->log('Field not found in database', 'error', [
                     'field_name' => $field_name
                 ]);
-                
+
                 error_log("Field not found: " . $field_name . "\n", 3, dirname(__FILE__) . '/debug.log');
                 return false;
             }
@@ -940,54 +1036,84 @@ class MailerLite implements Provider_Interface
     }
 
     /**
-     * Get subscribers for a specific group with pagination
+     * Get subscribers for a specific group with support for a custom limit.
+     *
+     * This function handles cursor-based pagination from the MailerLite API.
+     * It will stop fetching when the requested limit is reached.
+     *
      * @param string $groupId Group identifier
-     * @param array $options Pagination options
+     * @param array $options Optional parameters for filtering and limiting the results.
      * @return array
+     * @throws Exception Throws an exception if the API call fails.
      */
-    public function getGroupSubscribers(string $groupId, array $options = []): array
+    public function getGroupSubscribers(string $groupId, ?array $options = []): array
     {
-        $page = $options['page'] ?? 1;
-        $limit = $options['limit'] ?? 100;
+        $allSubscribers = [];
+        $cursor = null;
+        $limit = $options['limit'] ?? null;
+        $count = 0;
+
+        // Remove the limit and any other invalid options to prevent them from being sent to the API
+        $apiParams = array_diff_key($options, ['limit' => '']);
 
         try {
-            $response = $this->makeRequest(
-                "groups/{$groupId}/subscribers?page={$page}&limit={$limit}",
-                'GET'
-            );
+            do {
+                $this->waitForRateLimit();
 
-            if (!isset($response['data'])) {
-                return [];
-            }
+                $requestParams = $apiParams;
+                if ($cursor) {
+                    $requestParams['cursor'] = $cursor;
+                }
 
-            $subscribers = [];
-            foreach ($response['data'] as $subscriber) {
-                $subscribers[] = [
-                    'id' => $subscriber['id'],
-                    'email' => $subscriber['email'],
-                    'fields' => $subscriber['fields'] ?? [],
-                    'status' => $subscriber['status'],
-                    'subscribed_at' => $subscriber['subscribed_at'] ?? null,
-                    'group_id' => $groupId
-                ];
-            }
+                // If a limit is specified, adjust the API's limit for the current batch
+                $batchLimit = $this->batchSize;
+                if ($limit !== null) {
+                    $remaining = $limit - $count;
+                    if ($remaining <= 0) {
+                        break;
+                    }
+                    $batchLimit = min($remaining, $this->batchSize);
+                }
+                $requestParams['limit'] = $batchLimit;
 
-            debug_to_file([
-                'group_subscribers_fetched' => [
-                    'group_id' => $groupId,
-                    'page' => $page,
-                    'count' => count($subscribers)
-                ]
-            ], 'ML_API');
+                $query = http_build_query($requestParams);
+                $response = $this->makeRequest(
+                    "groups/{$groupId}/subscribers?" . $query,
+                    'GET'
+                );
 
-            return $subscribers;
+                if (!isset($response['data']) || empty($response['data'])) {
+                    break;
+                }
+
+                foreach ($response['data'] as $subscriber) {
+                    if ($limit !== null && $count >= $limit) {
+                        break;
+                    }
+                    $allSubscribers[] = [
+                        'id' => $subscriber['id'],
+                        'email' => $subscriber['email'],
+                        'fields' => $subscriber['fields'] ?? [],
+                        'status' => $subscriber['status'],
+                        'subscribed_at' => $subscriber['subscribed_at'] ?? null,
+                        'group_id' => $groupId
+                    ];
+                    $count++;
+                }
+
+                $cursor = $response['meta']['next_cursor'] ?? null;
+
+            } while ($cursor !== null && ($limit === null || $count < $limit));
+
+            return $allSubscribers;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get group subscribers', 'error', [
-                'group_id' => $groupId,
-                'page' => $page,
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
+            throw new API_Exception(
+                'Failed to get group subscribers from MailerLite: ' . $e->getMessage(),
+                'groups/{groupId}/subscribers',
+                'GET',
+                $e->getCode(),
+                true
+            );
         }
     }
 
@@ -1006,6 +1132,220 @@ class MailerLite implements Provider_Interface
             }
         }
         return $normalized;
+    }
+
+    /**
+     * Creates a new draft campaign in MailerLite without users.
+     *
+     * This function is intended to be a method within a class that handles
+     * MailerLite API requests. It constructs the necessary payload based on
+     * the API documentation and sends a POST request to the campaigns endpoint.
+     * The campaign created will be in a 'draft' status and will not be sent.
+     *
+     * @param string $name        The name of the campaign. Maximum length is 255 characters.
+     * @param string $type        The type of campaign. Must be 'regular', 'ab', 'resend', or 'multivariate'.
+     * @param string $subject     The subject line of the email. Maximum length is 255 characters.
+     * @param string $from_name   The sender's name for the email. Maximum length is 255 characters.
+     * @param string $from_email  The sender's email address. Must be a verified email on your MailerLite account.
+     * @param string $content     (Optional) The HTML content of the email. If not provided, a default
+     * will be used. The content must include an unsubscribe link and account details
+     * to avoid the default email footer from being added.
+     * @param string $language_id (Optional) The ID for the unsubscribe link language. Defaults to 'eng' (4).
+     * @return array|null The response data from the MailerLite API on success, or null on failure.
+     * @throws Exception If the underlying makeRequest method throws an exception.
+     */
+    public function create_draft_campaign(
+        string $name,
+        string $type = "regular",
+        string $subject = "Music Album: ",
+        string $from_name = "Bema Music Corporation",
+        string $from_email = "bemamarketing@bemamusic.com",
+        string $content = '<p>Hello,</p><p>This is a test campaign.</p><p>Click <a href="{$unsubscribe}">here</a> to unsubscribe.</p>',
+        string $language_id = '4'
+    ): ?array {
+        try {
+            $payload = [
+                'name' => $name,
+                'type' => $type,
+                'language_id' => $language_id,
+                'emails' => [
+                    [
+                        'subject' => $subject,
+                        'from_name' => $from_name,
+                        'from' => $from_email,
+                        'content' => $content,
+                    ]
+                ],
+            ];
+
+            // Send a POST request to the 'campaigns' endpoint using the API handler.
+            // It's assumed this class has a `makeRequest` method for handling API calls.
+            $response = $this->makeRequest('campaigns', 'POST', $payload);
+
+            // Return the `data` field from the successful API response.
+            return $response['data'];
+        } catch (Exception $e) {
+            // Log the error and return null to handle failures gracefully.
+            // The logger is assumed to be part of the class, similar to the example.
+            $this->logger->log('Failed to create MailerLite campaign', 'error', [
+                'campaign_name' => $name,
+                'error_message' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Gets a specific campaign from MailerLite by its name, handling pagination efficiently.
+     *
+     * This function performs a GET request to the campaigns endpoint page by page.
+     * It searches for a campaign with a matching name and returns the result as soon
+     * as a match is found. This prevents fetching the entire list of campaigns
+     * into memory, which is more efficient for accounts with a large number of campaigns.
+     *
+     * @param string $campaign_name The name of the campaign to find.
+     * @return array|null The campaign object on success, or null if not found or on failure.
+     * @throws Exception If the underlying makeRequest method throws an exception.
+     */
+    public function get_campaign_by_name(string $campaign_name): ?array
+    {
+        try {
+            $page = 1;
+            $has_next_page = true;
+
+            while ($has_next_page) {
+                $response = $this->makeRequest('campaigns?page=' . $page, 'GET');
+
+                // Check if the response contains campaign data and is an array.
+                if (isset($response['data']) && is_array($response['data'])) {
+                    // Loop through the campaigns on the current page to find a name match.
+                    foreach ($response['data'] as $campaign) {
+                        if (isset($campaign['name']) && $campaign['name'] === $campaign_name) {
+                            // Return the matching campaign immediately.
+                            return $campaign;
+                        }
+                    }
+                }
+
+                // Check if there is a next page to fetch.
+                if (isset($response['meta']['last_page']) && $page < $response['meta']['last_page']) {
+                    $page++;
+                } else {
+                    $has_next_page = false;
+                }
+            }
+
+            // Return null if no campaign was found after checking all pages.
+            return null;
+        } catch (Exception $e) {
+            // Log the error and return null.
+            $this->logger->log('Failed to retrieve MailerLite campaign by name', 'error', [
+                'campaign_name' => $campaign_name,
+                'error_message' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Gets a list of all campaigns from MailerLite, handling pagination.
+     *
+     * This function performs a GET request to the campaigns endpoint to retrieve
+     * a list of all campaigns. It automatically loops through all available pages
+     * to ensure all campaigns are fetched, regardless of the default API limit.
+     *
+     * @return array|null The `data` array containing all campaign objects on success, or null on failure.
+     * @throws Exception If the underlying makeRequest method throws an exception.
+     */
+    public function get_all_campaigns(): ?array
+    {
+        try {
+            $all_campaigns = [];
+            $page = 1;
+            $has_next_page = true;
+
+            while ($has_next_page) {
+                $response = $this->makeRequest('campaigns?page=' . $page, 'GET');
+
+                if (isset($response['data']) && is_array($response['data'])) {
+                    $all_campaigns = array_merge($all_campaigns, $response['data']);
+                }
+
+                // Check if there is a next page to fetch.
+                if (isset($response['meta']['last_page']) && $page < $response['meta']['last_page']) {
+                    $page++;
+                } else {
+                    $has_next_page = false;
+                }
+            }
+
+            return $all_campaigns;
+        } catch (Exception $e) {
+            // Log the error and return null.
+            $this->logger->log('Failed to retrieve all MailerLite campaigns', 'error', [
+                'error_message' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Gets a list of all campaign IDs and names from MailerLite.
+     *
+     * This function uses get_all_campaigns() to retrieve a full list of campaigns,
+     * then iterates through the list to create an associative array. The key of the
+     * array is the campaign name, and the value is the campaign ID.
+     *
+     * @return array An associative array of campaign names and their corresponding IDs.
+     * Returns an empty array on failure or if no campaigns are found.
+     */
+    public function get_all_campaign_id_and_name(): array
+    {
+        $all_campaigns = $this->get_all_campaigns();
+
+        if ($all_campaigns === null) {
+            return [];
+        }
+
+        $campaigns_map = [];
+        foreach ($all_campaigns as $campaign) {
+            if (isset($campaign['name']) && isset($campaign['id'])) {
+                $campaigns_map[$campaign['name']] = $campaign['id'];
+            }
+        }
+
+        return $campaigns_map;
+    }
+
+    /**
+     * Gets a specific campaign from MailerLite by its ID.
+     *
+     * This function performs a direct GET request to the campaigns endpoint with a
+     * specific campaign ID, which is the most efficient way to retrieve a single
+     * campaign's data.
+     *
+     * @param string $campaign_id The ID of the campaign to retrieve.
+     * @return array|null The campaign object on success, or null if not found or on failure.
+     * @throws Exception If the underlying makeRequest method throws an exception.
+     */
+    public function get_campaign_by_id(string $campaign_id): ?array
+    {
+        try {
+            $response = $this->makeRequest('campaigns/' . $campaign_id, 'GET');
+
+            if (isset($response['data'])) {
+                return $response['data'];
+            }
+
+            return null;
+        } catch (Exception $e) {
+            // Log the error and return null.
+            $this->logger->log('Failed to retrieve MailerLite campaign by ID', 'error', [
+                'campaign_id' => $campaign_id,
+                'error_message' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 
     /**
@@ -1125,9 +1465,11 @@ class MailerLite implements Provider_Interface
     private function manageMemory(): void
     {
         if (memory_get_usage(true) > $this->getMemoryThreshold()) {
+
             if (function_exists('gc_collect_cycles')) {
                 gc_collect_cycles();
             }
+
             $this->cache->flush();
         }
     }

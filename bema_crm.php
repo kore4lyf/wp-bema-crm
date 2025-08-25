@@ -62,47 +62,46 @@ spl_autoload_register(function ($class) {
     try {
         $namespace = 'Bema\\';
 
-    // If the class is not in our namespace, we ignore it.
-    if (strpos($class, $namespace) !== 0) {
-        return;
-    }
+        // If the class is not in our namespace, we ignore it.
+        if (strpos($class, $namespace) !== 0) {
+            return;
+        }
 
-    // A map of core class names to their file paths (relative to BEMA_PATH).
-    // This is the most robust way to ensure critical classes are found.
-    $class_file_map = [
-        'Bema_CRM'          => 'bema_crm.php',
-        'BemaCRMLogger'     => 'includes/bema-crm-logger.php',
-        'Campaign_Manager'  => 'em_sync/class.campaign_manager.php',
-        'EM_Sync'           => 'em_sync/class.em_sync.php',
-        'EDD'               => 'em_sync/class.edd.php',
-        'Triggers'          => 'em_sync/triggers/class-triggers.php',
-        'Utils'             => 'em_sync/utils/class-utils-trigger.php',
-    ];
+        // A map of core class names to their file paths (relative to BEMA_PATH).
+        // This is the most robust way to ensure critical classes are found.
+        $class_file_map = [
+            'Bema_CRM' => 'bema_crm.php',
+            'BemaCRMLogger' => 'includes/bema-crm-logger.php',
+            'Campaign_Manager' => 'em_sync/class.campaign_manager.php',
+            'EM_Sync' => 'em_sync/class.em_sync.php',
+            'EDD' => 'em_sync/class.edd.php',
+            'Triggers' => 'em_sync/triggers/class-triggers.php',
+            'Utils' => 'em_sync/utils/class-utils-trigger.php',
+        ];
 
-    // Remove the namespace prefix from the class name.
-    $relative_class_name = str_replace($namespace, '', $class);
+        // Remove the namespace prefix from the class name.
+        $relative_class_name = str_replace($namespace, '', $class);
 
-    // Check if the class exists in our map.
-    if (isset($class_file_map[$relative_class_name])) {
-        $file_path = BEMA_PATH . $class_file_map[$relative_class_name];
+        // Check if the class exists in our map.
+        if (isset($class_file_map[$relative_class_name])) {
+            $file_path = BEMA_PATH . $class_file_map[$relative_class_name];
 
-        // If the file exists, we require it.
+            // If the file exists, we require it.
+            if (file_exists($file_path)) {
+                require_once $file_path;
+                return;
+            }
+        }
+
+        // If the class is not in the map, we fall back to a more general naming convention search.
+        $file_name = str_replace('_', '-', strtolower($relative_class_name));
+        $file_path = BEMA_PATH . 'includes/class-' . $file_name . '.php';
+
         if (file_exists($file_path)) {
             require_once $file_path;
             return;
         }
-    }
 
-    // If the class is not in the map, we fall back to a more general naming convention search.
-    $file_name = str_replace('_', '-', strtolower($relative_class_name));
-    $file_path = BEMA_PATH . 'includes/class-' . $file_name . '.php';
-
-    if (file_exists($file_path)) {
-        require_once $file_path;
-        return;
-    }
-
-    
     } catch (Exception $e) {
         debug_to_file("Autoloader error: {$e->getMessage()}", 'AUTOLOADER_ERROR');
     }
@@ -121,6 +120,9 @@ class Bema_CRM
     private $admin_interface;
     private $settings;
     private $db_manager;
+    private $sync_db_manager;
+    private $campaign_group_subscriber_db_manager;
+    private $campaign_db_manager;
     private $group_db_manager;
     private $field_db_manager;
     private $subscriber_db_manager;
@@ -204,7 +206,11 @@ class Bema_CRM
 
             $this->initialized = true;
 
+            debug_to_file("Database instance");
+
             debug_to_file("Initialization complete");
+
+
         } catch (Exception $e) {
             debug_to_file("Initialization error: " . $e->getMessage());
             $this->handle_initialization_error($e);
@@ -457,7 +463,7 @@ class Bema_CRM
                 return;
             }
 
-            
+
             // Initialize logger first
             if (!isset($this->logger)) {
                 $this->logger = new BemaCRMLogger();
@@ -469,7 +475,7 @@ class Bema_CRM
                 $this->utils = new Utils;
                 $this->component_registry['utils'] = $this->settings;
             }
-            
+
             // Initialize settings with logger
             if (!isset($this->settings) && isset($this->logger)) {
                 $this->settings = Bema_Settings::get_instance($this->logger);
@@ -503,6 +509,22 @@ class Bema_CRM
             if (is_admin()) {
                 $this->initialize_admin_components();
             }
+
+            // create campaign db instance
+            $this->campaign_db_manager = new \Bema\Campaign_Database_Manager();
+            // create group db instance
+            $this->group_db_manager = new \Bema\Group_Database_Manager();
+            // create field db instance
+            $this->field_db_manager = new \Bema\Field_Database_Manager();
+            // create subscriber db instance
+            $this->subscriber_db_manager = new \Bema\Subscribers_Database_Manager();
+            // create campaign subscriber db instance
+            $this->campaign_group_subscriber_db_manager = new \Bema\Campaign_Group_Subscribers_Database_Manager();
+            // create sync db instance
+            $this->sync_db_manager = new \Bema\Sync_Database_Manager();
+
+            $this->field_db_manager->create_table();
+            $this->campaign_db_manager->create_table();
 
             $this->initialized = true;
         } catch (Exception $e) {
@@ -567,14 +589,6 @@ class Bema_CRM
                 $this->logger,
                 $this->settings
             );
-
-            // create group db instance
-            $this->group_db_manager = new \Bema\Group_Database_Manager();
-            // create field db instance
-            $this->field_db_manager = new \Bema\Field_Database_Manager();
-            // create subscriber db instance
-            $this->subscriber_db_manager = new \Bema\Subscribers_Database_Manager();
-
 
             // Initialize handlers
             $lock_handler = new \Bema\Handlers\Default_Lock_Handler();
@@ -723,9 +737,16 @@ class Bema_CRM
             }
 
             // Add CRM Trigger
-            $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '', $this->logger );
+            $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '', $this->logger);
             $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager, $this->logger);
             $triggers->init();
+
+            // --- Register Cron Hook (fires the actual sync) ---
+            add_action('bema_crm_sync_cron_job', function () {
+                error_log("Admin is in CRON" . "" . "\n", 3, dirname(__FILE__) . '/debug.log');
+                // Perform the sync
+                $this->sync_instance->sync_all_mailerlite_data();
+            });
 
             debug_to_file('Hooks added successfully');
         } catch (Exception $e) {
@@ -978,9 +999,18 @@ class Bema_CRM
                 $instance->clear_plugin_cache();
             }
 
-            // create group Table
-            $group_db_manager = new \Bema\Group_Database_Manager();
-            $group_db_manager->create_table();
+            // Create campaign Table
+            $this->campaign_db_manager->create_table();
+            // Create group Table
+            $this->group_db_manager->create_table();
+            // Create field Table
+            $this->field_db_manager->create_table();
+            // Create subscriber Table
+            $this->subscriber_db_manager->create_table();
+            // Create campaign subscriber Table
+            $this->campaign_group_subscriber_db_manager->create_table();
+            // Create sync Table
+            $this->$sync_db_manager->create_table();
 
             // Clear rewrite rules
             flush_rewrite_rules();
@@ -1021,8 +1051,8 @@ class Bema_CRM
 
             // Clear Options
             $options_to_delete = [
-                SELF::OPTION_TIERS,
-                SELF::OPTION_TRANSITION_MATRIX
+                self::OPTION_TIERS,
+                self::OPTION_TRANSITION_MATRIX
             ];
 
             foreach ($transients_to_delete as $transient) {
@@ -1035,6 +1065,18 @@ class Bema_CRM
 
             // Clear sync status
             update_option('bema_sync_running', false);
+
+            // create campaign Table
+            $this->campaign_db_manager->create_table();
+            // create group Table
+            $this->group_db_manager->delete_table();
+            // create field Table
+            $this->field_db_manager->delete_table();
+            // create subscriber Table
+            $this->subscriber_db_manager->delete_table();
+            // create campaign subscriber Table
+            $this->campaign_group_subscriber_db_manager->delete_table();
+            debug_to_file('Plugin database tables removed');
 
             // Clear rewrite rules
             flush_rewrite_rules();
@@ -1164,18 +1206,18 @@ class Bema_CRM
     {
         $default_transition_matrix = [
             [
-                'current_tier'      => 'Gold Purchase',
-                'next_tier'         => 'Gold',
+                'current_tier' => 'Gold Purchase',
+                'next_tier' => 'Gold',
                 'requires_purchase' => true
             ],
             [
-                'current_tier'      => 'Silver Purchase',
-                'next_tier'         => 'Silver',
+                'current_tier' => 'Silver Purchase',
+                'next_tier' => 'Silver',
                 'requires_purchase' => true
             ],
             [
-                'current_tier'      => 'Bronze Purchase',
-                'next_tier'         => 'Opt-in',
+                'current_tier' => 'Bronze Purchase',
+                'next_tier' => 'Opt-in',
                 'requires_purchase' => true
             ]
         ];
@@ -1183,7 +1225,7 @@ class Bema_CRM
         add_option('bema_crm_transition_matrix', $default_transition_matrix);
         debug_to_file('Default transition matrix settings initialized');
     }
-    
+
 
     private static function create_directories(): void
     {
@@ -1226,7 +1268,9 @@ class Bema_CRM
         }
     }
 
-    private function __clone() {}
+    private function __clone()
+    {
+    }
 
     public function __wakeup()
     {

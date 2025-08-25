@@ -10,6 +10,7 @@ use EDD\Orders\Order;
 use EDD_Customer;
 use Bema\Group_Database_Manager;
 use Bema\Field_Database_Manager;
+use Bema\Campaign_Database_Manager;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -32,6 +33,7 @@ class Triggers
         $this->group_db_manager = $group_db_manager;
         $this->field_db_manager = $field_db_manager;
         $this->logger = $logger ?? new BemaCRMLogger();
+        $this->campaign_db_manager = new Campaign_Database_Manager();
     }
 
     /**
@@ -307,8 +309,9 @@ class Triggers
         // Create the field and store in the field table if the field name exists
         if (!empty($field_name)) {
             $field_id = $this->mailerlite->createField($field_name, 'number');
-
-            $this->field_db_manager->insert_field($field_id, $field_name);
+            $campaign_name = $this->utils->get_campaign_name_from_text($field_name);
+            $campaign_id = $this->campaign_db_manager->get_campaign_by_name($campaign_name)['id'];
+            $this->field_db_manager->upsert_field($field_id, $field_name, $campaign_id);
 
             $this->logger->log("MailerLite field created and recorded in the database: field_name: {$field_name} , field_id: {$field_id}", 'info');
             error_log("MailerLite field created and recorded in the database: field_name: {$field_name} , field_id: {$field_id}" . "\n", 3, dirname(__FILE__) . '/debug.log');

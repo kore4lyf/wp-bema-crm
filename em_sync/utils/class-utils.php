@@ -169,7 +169,7 @@ class Utils
   }
 
 
-  public function get_campaigns_names()
+  public function get_campaigns_names(): array
   {
     $all_albums = $this->get_all_albums();
     $campaigns = [];
@@ -180,11 +180,52 @@ class Utils
     return $campaigns;
   }
 
+  public function get_campaign_group_names($campaign_name): array
+  {
+    $tiers = get_option('bema_crm_tiers', []);
+
+    $campaign_group_names = [];
+
+    foreach ($tiers as $tier) {
+      $campaign_group_names[] = $campaign_name . '_' . $this->transform_tier($tier);
+    }
+
+    return $campaign_group_names;
+  }
+
+  public function get_tier_from_group_name($group_name)
+  {
+    $group_name_list = explode('_', $group_name);
+    $group_name_size = count($group_name_list);
+
+    $tier = '';
+
+    for ($i = 3; $i < $group_name_size; $i++) {
+      $tier .= $group_name_list[$i] . ' ';
+    }
+
+    $tier = trim($tier);
+
+    return $tier;
+  }
+
+  public function get_campaign_name_from_text($group_name)
+  {
+    $group_name_list = explode('_', $group_name);
+    $group_name_size = count($group_name_list);
+
+    if ($group_name_size < 3) {
+      return '';
+    }
+
+    return $group_name_list[0] . '_' . $group_name_list[1] . '_' . $group_name_list[2];
+  }
+
 
   /**
    * get_album_details: returns album release year and artist name from a provided album name.
    * * @param string $album_name
-   * @return array{artist: mixed, year: string}
+   * @return array{artist:string, year: string}
    */
   public function get_album_details(string $album_name): array
   {
@@ -201,7 +242,7 @@ class Utils
         AND post_type = 'download'
         AND post_status = 'publish'
         LIMIT 1
-        ",
+      ",
       $album_name
     );
 

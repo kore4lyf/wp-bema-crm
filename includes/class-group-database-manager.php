@@ -4,6 +4,7 @@ namespace Bema;
 
 use Exception;
 use Bema\BemaCRMLogger;
+use wpdb;
 
 /**
  * Group_Database_Manager class.
@@ -33,6 +34,13 @@ class Group_Database_Manager
     private $wpdb;
 
     /**
+     * The logger instance.
+     *
+     * @var BemaCRMLogger
+     */
+    private BemaCRMLogger $logger;
+
+    /**
      * Group_Database_Manager constructor.
      */
     public function __construct(?BemaCRMLogger $logger = null)
@@ -51,9 +59,6 @@ class Group_Database_Manager
     public function create_table()
     {
         try {
-            if (!function_exists('dbDelta')) {
-                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-            }
 
             $charset_collate = $this->wpdb->get_charset_collate();
 
@@ -78,30 +83,62 @@ class Group_Database_Manager
             return false;
         }
     }
-
+    
     /**
-     * Inserts a new group into the database.
+     * Inserts or updates a group in the database based on group_name.
      *
      * @param string $group_name The name of the group.
-     * @param int    $group_id The ID of the group.
-     * @return int|false The ID of the newly inserted group on success, or false on failure.
+     * @param int    $group_id   The ID of the group.
+     * @return int|false The ID of the affected row on success, or false on failure.
      */
-    public function insert_group($group_name, $group_id)
+    public function upsert_group(string $group_name, int $group_id)
     {
         try {
-            $inserted = $this->wpdb->insert(
-                $this->table_name,
-                [
-                    'group_name' => sanitize_text_field($group_name),
-                    'group_id' => absint($group_id)
-                ],
-                ['%s', '%d']
-            );
+            // First, sanitize the input data.
+            $sanitized_group_name = sanitize_text_field($group_name);
+            $sanitized_group_id = absint($group_id);
 
-            if (false === $inserted) {
-                throw new Exception('Failed to insert group: ' . $this->wpdb->last_error);
+            // Check if a record with the same group_name already exists.
+            $existing_group = $this->get_group_by_name($sanitized_group_name);
+
+            if ($existing_group) {
+                // If it exists, update the group_id.
+                $updated = $this->wpdb->update(
+                    $this->table_name,
+                    [
+                        'group_id' => $sanitized_group_id,
+                    ],
+                    [
+                        'group_name' => $sanitized_group_name,
+                    ],
+                    ['%d'],
+                    ['%s']
+                );
+                
+                if (false === $updated) {
+                    throw new Exception('Failed to update group: ' . $this->wpdb->last_error);
+                }
+                
+                // Return the affected row ID. Since it's an update, we can return the existing ID.
+                return $existing_group['id'];
+
+            } else {
+                // If it doesn't exist, insert a new record.
+                $inserted = $this->wpdb->insert(
+                    $this->table_name,
+                    [
+                        'group_name' => $sanitized_group_name,
+                        'group_id' => $sanitized_group_id,
+                    ],
+                    ['%s', '%d']
+                );
+
+                if (false === $inserted) {
+                    throw new Exception('Failed to insert group: ' . $this->wpdb->last_error);
+                }
+                return $this->wpdb->insert_id;
             }
-            return $this->wpdb->insert_id;
+
         } catch (Exception $e) {
             $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;
@@ -109,22 +146,27 @@ class Group_Database_Manager
     }
 
     /**
-     * Inserts multiple groups into the database in a single query.
+     * Inserts or updates multiple groups into the database in a single query.
      *
-     * @param array $groups_to_insert An array of arrays, where each inner array
+     * This function uses MySQL's "INSERT ... ON DUPLICATE KEY UPDATE" syntax
+     * to efficiently handle both inserts and updates based on the unique 'group_name' key.
+     *
+     * @param array $groups_to_upsert An array of arrays, where each inner array
      * contains 'group_name' and 'group_id'.
-     * @return int|false The number of rows inserted on success, or false on failure.
+     * @return int|false The number of rows affected on success, or false on failure.
      */
-    public function insert_groups_bulk(array $groups_to_insert)
+    public function upsert_groups_bulk(array $groups_to_upsert)
     {
-        if (empty($groups_to_insert)) {
+
+        if (empty($groups_to_upsert)) {
             return false;
         }
 
         try {
             $placeholders = [];
             $values = [];
-            foreach ($groups_to_insert as $group) {
+            
+            foreach ($groups_to_upsert as $group) {
                 // Use a placeholder pair for each row to be inserted.
                 $placeholders[] = "(%s, %d)";
                 // Add the sanitized values to the values array.
@@ -132,66 +174,22 @@ class Group_Database_Manager
                 $values[] = absint($group['group_id']);
             }
 
-            // Build the SQL query with the placeholders.
-            $query = "INSERT INTO {$this->table_name} (group_name, group_id) VALUES " . implode(', ', $placeholders);
+            // Build the SQL query with placeholders and the ON DUPLICATE KEY UPDATE clause.
+            // This clause will update the group_id if the group_name already exists.
+            $query = "INSERT INTO {$this->table_name} (group_name, group_id) VALUES " .
+                     implode(', ', $placeholders) .
+                     " ON DUPLICATE KEY UPDATE group_id = VALUES(group_id)";
 
             // Prepare the query securely and execute it.
-            $inserted = $this->wpdb->query($this->wpdb->prepare($query, $values));
+            $result = $this->wpdb->query($this->wpdb->prepare($query, $values));
 
-            if (false === $inserted) {
-                throw new Exception('Failed to bulk insert groups: ' . $this->wpdb->last_error);
+            if (false === $result) {
+                throw new Exception('Failed to bulk upsert groups: ' . $this->wpdb->last_error);
             }
 
-            return $inserted;
+            return $result;
         } catch (Exception $e) {
-            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
-            return false;
-        }
-    }
-
-    /**
-     * Updates an existing group by its group name.
-     *
-     * @param string      $current_group_name The current group name.
-     * @param string|null $new_group_name Optional new group name.
-     * @param int|null    $new_group_id Optional new group ID.
-     * @return int|false The number of rows updated on success, or false on failure.
-     */
-    public function update_group_by_name($current_group_name, $new_group_name = null, $new_group_id = null)
-    {
-        try {
-            $data = [];
-            $where = ['group_name' => sanitize_text_field($current_group_name)];
-            $data_format = [];
-            $where_format = ['%s'];
-
-            if ($new_group_name !== null) {
-                $data['group_name'] = sanitize_text_field($new_group_name);
-                $data_format[] = '%s';
-            }
-
-            if ($new_group_id !== null) {
-                $data['group_id'] = absint($new_group_id);
-                $data_format[] = '%d';
-            }
-
-            if (empty($data)) {
-                return 0; // Nothing to update.
-            }
-
-            $updated = $this->wpdb->update(
-                $this->table_name,
-                $data,
-                $where,
-                $data_format,
-                $where_format
-            );
-
-            if (false === $updated) {
-                throw new Exception('Failed to update group: ' . $this->wpdb->last_error);
-            }
-            return $updated;
-        } catch (Exception $e) {
+            echo 'Failed: ' . $e->getMessage();
             $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;
         }
@@ -228,7 +226,7 @@ class Group_Database_Manager
      * @param string $group_name The name of the group to retrieve.
      * @return array|null An associative array of the group on success, or null if not found.
      */
-    public function get_group_by_name($group_name)
+    public function get_group_by_name(string $group_name)
     {
         return $this->wpdb->get_row(
             $this->wpdb->prepare(
@@ -245,7 +243,7 @@ class Group_Database_Manager
      * @param int $group_id The ID of the group to retrieve.
      * @return array|null An associative array of the group on success, or null if not found.
      */
-    public function get_group_by_id($group_id)
+    public function get_group_by_id(int $group_id)
     {
         return $this->wpdb->get_row(
             $this->wpdb->prepare(
@@ -264,5 +262,29 @@ class Group_Database_Manager
     public function get_all_groups()
     {
         return $this->wpdb->get_results("SELECT * FROM {$this->table_name}", ARRAY_A);
+    }
+
+    /**
+     * Deletes the custom database table.
+     *
+     * @return bool True on success, false on failure.
+     */
+    public function delete_table(): bool
+    {
+        try {
+            $sql = "DROP TABLE IF EXISTS {$this->table_name}";
+            $this->wpdb->query($sql);
+
+            // Check if the table was successfully dropped.
+            if ($this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") !== $this->table_name) {
+                return true;
+            }
+            
+            throw new Exception("Failed to delete the database table: {$this->table_name}");
+
+        } catch (Exception $e) {
+            $this->logger->log('Database Manager Error: ' . $e->getMessage(), 'error');
+            return false;
+        }
     }
 }

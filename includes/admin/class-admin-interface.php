@@ -86,8 +86,6 @@ class Bema_Admin_Interface
         $this->init();
     }
 
-    
-
     private function has_sync_capability(): bool
     {
         static $capability = null;
@@ -303,10 +301,10 @@ class Bema_Admin_Interface
 
         // Add sync-related pages only if sync capability is available
         if ($this->has_sync_capability()) {
-            $submenus['bema-sync-logs'] = [
-                'title' => __('Sync Logs', 'bema-crm'),
-                'menu_title' => __('Sync Logs', 'bema-crm'),
-                'callback' => 'render_logs_page'
+            $submenus['bema-synchronize'] = [
+                'title' => __('Synchronize', 'bema-crm'),
+                'menu_title' => __('Synchronize', 'bema-crm'),
+                'callback' => 'render_synchronize_page'
             ];
         }
 
@@ -537,18 +535,15 @@ class Bema_Admin_Interface
         }
     }
 
-    public function render_logs_page(): void
+    public function render_synchronize_page(): void
     {
         try {
-            $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
-            $filters = $this->get_log_filters();
-            $logs = $this->get_filtered_logs($filters, $page);
-            $total_logs = $this->get_total_logs($filters);
+            $admin = $this;
 
-            require_once BEMA_PATH . 'includes/admin/views/sync-logs.php';
+            require_once BEMA_PATH . 'includes/admin/views/synchronize.php';
         } catch (Exception $e) {
             $this->add_admin_notice(
-                sprintf(__('Error loading logs: %s', 'bema-crm'), $e->getMessage()),
+                sprintf(__('Error loading Synchronize page: %s', 'bema-crm'), $e->getMessage()),
                 self::STATUS_ERROR
             );
             $this->logger->log('Failed to render logs page', 'error', [
@@ -585,7 +580,7 @@ class Bema_Admin_Interface
     {
         try {
             // Set up required variables for the view
-            $admin = $this; // Pass $this as $admin
+            $admin = $this; 
             $current_settings = $this->get_settings();
             $has_sync = $this->has_sync_capability();
 

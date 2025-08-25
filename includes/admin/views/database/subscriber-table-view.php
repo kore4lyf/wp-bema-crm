@@ -1,5 +1,5 @@
 <?php
-use Bema\Campaign_subscribers_Database_Manager;
+use Bema\Subscribers_Database_Manager;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -7,23 +7,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 // Handle filter inputs.
 $selected_tier     = isset( $_GET['tier'] ) ? sanitize_text_field( wp_unslash( $_GET['tier'] ) ) : '';
-$selected_campaign = isset( $_GET['campaign'] ) ? absint( $_GET['campaign'] ) : '';
+$selected_campaign = isset( $_GET['campaign'] ) ? sanitize_text_field( wp_unslash( $_GET['campaign'] ) ) : '';
 $search_query      = isset( $_GET['search'] ) ? sanitize_text_field( wp_unslash( $_GET['search'] ) ) : '';
 
 // Fetch subscriber data with filters/pagination.
-$subscribers = new Campaign_subscribers_Database_Manager()->get_all_subscribers(); 
-echo var_dump($subscribers);
-/* array(
-	array(
-		'id'          => 1,
-		'email'       => 'example@example.com',
-		'name'        => 'John Doe',
-		'status'      => 'active',
-		'tier'        => 'Gold',
-		'purchase_id' => 123,
-	),
-);
-*/
+$subscriber_db = new Subscribers_Database_Manager();
+
 // Retrieve tiers from WordPress option.
 $tiers = get_option( 'bema_crm_tiers', []);
 
@@ -35,9 +24,23 @@ $paged    = isset( $_GET['paged'] ) ? max( 1, absint( $_GET['paged'] ) ) : 1;
 $per_page = 25;
 $offset   = ( $paged - 1 ) * $per_page;
 
-$total_items = count($subscribers);
-$total_pages = ceil( $total_items / $per_page );
+// Fetch subscribers with filters
+$subscribers = $subscriber_db->get_subscribers(
+    $per_page,
+    $offset,
+    $selected_campaign,
+    $selected_tier,
+    $search_query
+);
 
+// Get total count for pagination
+$total_items = $subscriber_db->count_subscribers(
+    $selected_campaign,
+    $selected_tier,
+    $search_query
+);
+
+$total_pages = max( 1, (int) ceil( $total_items / $per_page ) );
 ?>
 
 <div class="wrap">
@@ -85,7 +88,6 @@ $total_pages = ceil( $total_items / $per_page );
 				<select name="action" id="bulk-action-selector-top">
 					<option value="-1">Bulk actions</option>
 					<option value="resync">Resync</option>
-					<option value="delete">Delete</option>
 				</select>
 				<?php submit_button( 'Apply', '', 'doaction', false ); ?>
 			</div>
