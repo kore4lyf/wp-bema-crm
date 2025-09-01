@@ -1,6 +1,6 @@
 <?php
 
-namespace Bema;
+namespace Bema\Database;
 
 use Exception;
 use Bema\BemaCRMLogger;
@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * A class to manage the custom database table for campaigns, albums, artists, and years.
+ * A class to manage the custom database table for campaigns.
  */
 class Campaign_Database_Manager
 {
@@ -22,13 +22,14 @@ class Campaign_Database_Manager
     {
         global $wpdb;
         $this->wpdb = $wpdb;
-        // The table name remains the same for continuity.
         $this->table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
         $this->logger = $logger ?? new BemaCRMLogger();
     }
 
     /**
-     * Creates the custom database table with a unique key on 'campaign_id'.
+     * Creates the custom database table.
+     *
+     * Adds the product_id column to reference EDD products.
      *
      * @return bool
      */
@@ -40,17 +41,14 @@ class Campaign_Database_Manager
             }
 
             $charset_collate = $this->wpdb->get_charset_collate();
+            $posts_table = $this->wpdb->posts;
 
             $sql = "CREATE TABLE {$this->table_name} (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            campaign_id BIGINT UNSIGNED NOT NULL,
-            campaign VARCHAR(255) NOT NULL,
-            album VARCHAR(255) NULL,
-            artist VARCHAR(255) NULL,
-            year INT(4) NULL,
-
-            PRIMARY KEY (id),
-            UNIQUE KEY campaign_id (campaign_id)
+                id BIGINT UNSIGNED NOT NULL,
+                campaign VARCHAR(255) NOT NULL,
+                product_id BIGINT UNSIGNED NULL,
+                PRIMARY KEY (id),
+                CONSTRAINT fk_bemacrm_campaignsmeta_product FOREIGN KEY (product_id) REFERENCES {$posts_table}(ID) ON DELETE SET NULL
             ) $charset_collate;";
 
             dbDelta($sql);
@@ -69,33 +67,22 @@ class Campaign_Database_Manager
     /**
      * Inserts a new campaign record.
      *
-     * @param int         $campaign_id The unique ID for the campaign. A BIGINT is used.
+     * @param int         $id          The unique ID for the campaign.
      * @param string      $campaign    The name of the campaign.
-     * @param string|null $album       The album name.
-     * @param string|null $artist      The artist name.
-     * @param int|null    $year        The year.
+     * @param int|null    $product_id  The EDD product ID.
      * @return int|false The inserted row's ID on success, or false on failure.
      */
-    public function insert_campaign(int $campaign_id, string $campaign, ?string $album = null, ?string $artist = null, ?int $year = null): int|false
+    public function insert_campaign(int $id, string $campaign, ?int $product_id = null): int|false
     {
         try {
-            // Build data and format arrays dynamically to handle optional fields
             $data = [
-                'campaign_id' => absint($campaign_id),
+                'id' => absint($id),
                 'campaign' => sanitize_text_field($campaign)
             ];
             $format = ['%d', '%s'];
 
-            if (!is_null($album)) {
-                $data['album'] = sanitize_text_field($album);
-                $format[] = '%s';
-            }
-            if (!is_null($artist)) {
-                $data['artist'] = sanitize_text_field($artist);
-                $format[] = '%s';
-            }
-            if (!is_null($year)) {
-                $data['year'] = absint($year);
+            if (!is_null($product_id)) {
+                $data['product_id'] = absint($product_id);
                 $format[] = '%d';
             }
 
@@ -105,7 +92,7 @@ class Campaign_Database_Manager
                 throw new Exception('Failed to insert campaign: ' . $this->wpdb->last_error);
             }
 
-            return $this->wpdb->insert_id;
+            return absint($id);
         } catch (Exception $e) {
             $this->logger->log('insert_campaign Error: ' . $e->getMessage(), 'error');
             return false;
@@ -116,10 +103,10 @@ class Campaign_Database_Manager
      * Inserts or updates multiple campaigns into the database in a single query.
      *
      * This function uses MySQL's "INSERT ... ON DUPLICATE KEY UPDATE" syntax
-     * to efficiently handle both inserts and updates based on the unique 'campaign_id' key.
+     * to efficiently handle both inserts and updates based on the unique 'id' key.
      *
      * @param array $campaigns_to_upsert An array of associative arrays, where each inner array
-     * contains data for a campaign (e.g., 'campaign_id', 'campaign', 'album', 'artist', 'year').
+     * contains data for a campaign (e.g., 'id', 'campaign', 'product_id').
      * @return int|false The number of rows affected on success, or false on failure.
      */
     public function upsert_campaigns_bulk(array $campaigns_to_upsert): int|false
@@ -131,19 +118,16 @@ class Campaign_Database_Manager
         try {
             $placeholders = [];
             $values = [];
-            $update_columns = ['campaign', 'album', 'artist', 'year'];
+            $update_columns = ['campaign', 'product_id'];
 
             foreach ($campaigns_to_upsert as $campaign) {
-                if (empty($campaign['campaign_id'])) {
-                    // Skip campaigns without a unique ID.
+                if (empty($campaign['id'])) {
                     continue;
                 }
-                $placeholders[] = "(%d, %s, %s, %s, %d)";
-                $values[] = absint($campaign['campaign_id']);
+                $placeholders[] = "(%d, %s, %d)";
+                $values[] = absint($campaign['id']);
                 $values[] = sanitize_text_field($campaign['campaign'] ?? '');
-                $values[] = sanitize_text_field($campaign['album'] ?? '');
-                $values[] = sanitize_text_field($campaign['artist'] ?? '');
-                $values[] = absint($campaign['year'] ?? 0);
+                $values[] = absint($campaign['product_id'] ?? 0);
             }
 
             if (empty($placeholders)) {
@@ -156,7 +140,7 @@ class Campaign_Database_Manager
             }
             $update_clause = implode(', ', $update_parts);
 
-            $query = "INSERT INTO {$this->table_name} (campaign_id, campaign, album, artist, year) VALUES " .
+            $query = "INSERT INTO {$this->table_name} (id, campaign, product_id) VALUES " .
                 implode(', ', $placeholders) .
                 " ON DUPLICATE KEY UPDATE " . $update_clause;
 
@@ -175,13 +159,34 @@ class Campaign_Database_Manager
 
 
     /**
-     * Fetches a single campaign record by its unique campaign ID.
+     * Fetches a single campaign record by its unique campaign ID, including published product details.
      */
-    public function get_campaign_by_id(int $campaign_id): ?array
+    public function get_campaign_by_id(int $id): ?array
     {
+        $posts_table = $this->wpdb->posts;
+        $term_relationships_table = $this->wpdb->term_relationships;
+        $term_taxonomy_table = $this->wpdb->term_taxonomy;
+        $terms_table = $this->wpdb->terms;
+
         $query = $this->wpdb->prepare(
-            "SELECT * FROM {$this->table_name} WHERE campaign_id = %d LIMIT 1",
-            absint($campaign_id)
+            "
+            SELECT
+                t1.id,
+                t1.campaign,
+                t1.product_id,
+                t2.post_title AS album,
+                YEAR(t2.post_date) AS year,
+                (SELECT t4.name FROM {$term_relationships_table} AS t3
+                INNER JOIN {$term_taxonomy_table} AS t5 ON t3.term_taxonomy_id = t5.term_taxonomy_id
+                INNER JOIN {$terms_table} AS t4 ON t4.term_id = t5.term_id
+                WHERE t3.object_id = t1.product_id AND t5.taxonomy = 'download_category' AND t4.slug LIKE '%s' LIMIT 1) AS artist
+            FROM {$this->table_name} AS t1
+            LEFT JOIN {$posts_table} AS t2 ON t1.product_id = t2.ID
+            WHERE t1.id = %d AND (t2.post_status = 'publish' OR t1.product_id IS NULL)
+            LIMIT 1
+            ",
+            '%-artist',
+            absint($id)
         );
 
         $result = $this->wpdb->get_row($query, ARRAY_A);
@@ -189,33 +194,77 @@ class Campaign_Database_Manager
     }
 
     /**
-     * Fetches a single campaign record by its campaign name. Note: campaign names are not unique.
+     * Fetches a single campaign record by its campaign name, including published product details.
      */
-    public function get_campaign_by_name(string $campaign): ?array
+    public function get_campaign_by_name(string $campaign_name): ?array
     {
+        $posts_table = $this->wpdb->posts;
+        $term_relationships_table = $this->wpdb->term_relationships;
+        $term_taxonomy_table = $this->wpdb->term_taxonomy;
+        $terms_table = $this->wpdb->terms;
+
         $query = $this->wpdb->prepare(
-            "SELECT * FROM {$this->table_name} WHERE campaign = %s LIMIT 1",
-            sanitize_text_field($campaign)
+            "
+            SELECT
+                t1.id,
+                t1.campaign,
+                t1.product_id,
+                t2.post_title AS album,
+                YEAR(t2.post_date) AS year,
+                (SELECT t4.name FROM {$term_relationships_table} AS t3
+                INNER JOIN {$term_taxonomy_table} AS t5 ON t3.term_taxonomy_id = t5.term_taxonomy_id
+                INNER JOIN {$terms_table} AS t4 ON t4.term_id = t5.term_id
+                WHERE t3.object_id = t1.product_id AND t5.taxonomy = 'download_category' AND t4.slug LIKE '%s' LIMIT 1) AS artist
+            FROM {$this->table_name} AS t1
+            LEFT JOIN {$posts_table} AS t2 ON t1.product_id = t2.ID
+            WHERE t1.campaign = %s AND (t2.post_status = 'publish' OR t1.product_id IS NULL)
+            LIMIT 1
+            ",
+            '%-artist',
+            sanitize_text_field($campaign_name)
         );
 
         $result = $this->wpdb->get_row($query, ARRAY_A);
         return $result ?: null;
     }
 
-
     /**
-     * Retrieves all campaign records.
+     * Retrieves all published campaign records, including product details.
      */
     public function get_all_campaigns(): array
     {
-        $results = $this->wpdb->get_results("SELECT * FROM {$this->table_name}", ARRAY_A);
+        $posts_table = $this->wpdb->posts;
+        $term_relationships_table = $this->wpdb->term_relationships;
+        $term_taxonomy_table = $this->wpdb->term_taxonomy;
+        $terms_table = $this->wpdb->terms;
+
+        $query = $this->wpdb->prepare(
+            "
+            SELECT
+                t1.id,
+                t1.campaign,
+                t1.product_id,
+                t2.post_title AS album,
+                YEAR(t2.post_date) AS year,
+                (SELECT t4.name FROM {$term_relationships_table} AS t3
+                INNER JOIN {$term_taxonomy_table} AS t5 ON t3.term_taxonomy_id = t5.term_taxonomy_id
+                INNER JOIN {$terms_table} AS t4 ON t4.term_id = t5.term_id
+                WHERE t3.object_id = t1.product_id AND t5.taxonomy = 'download_category' AND t4.slug LIKE '%s' LIMIT 1) AS artist
+            FROM {$this->table_name} AS t1
+            LEFT JOIN {$posts_table} AS t2 ON t1.product_id = t2.ID
+            WHERE t2.post_status = 'publish' OR t1.product_id IS NULL
+            ",
+            '%-artist'
+        );
+
+        $results = $this->wpdb->get_results($query, ARRAY_A);
         return $results ?: [];
     }
 
     /**
      * Updates a campaign record based on the campaign ID.
      */
-    public function update_campaign_by_id(int $campaign_id, array $data): bool
+    public function update_campaign_by_id(int $id, array $data): bool
     {
         try {
             if (empty($data)) {
@@ -231,16 +280,8 @@ class Campaign_Database_Manager
                         $update_data['campaign'] = sanitize_text_field($value);
                         $format[] = '%s';
                         break;
-                    case 'album':
-                        $update_data['album'] = sanitize_text_field($value);
-                        $format[] = '%s';
-                        break;
-                    case 'artist':
-                        $update_data['artist'] = sanitize_text_field($value);
-                        $format[] = '%s';
-                        break;
-                    case 'year':
-                        $update_data['year'] = is_null($value) ? null : absint($value);
+                    case 'product_id':
+                        $update_data['product_id'] = is_null($value) ? null : absint($value);
                         $format[] = '%d';
                         break;
                 }
@@ -253,7 +294,7 @@ class Campaign_Database_Manager
             $updated = $this->wpdb->update(
                 $this->table_name,
                 $update_data,
-                ['campaign_id' => absint($campaign_id)],
+                ['id' => absint($id)],
                 $format,
                 ['%d']
             );
@@ -284,16 +325,8 @@ class Campaign_Database_Manager
 
             foreach ($data as $key => $value) {
                 switch ($key) {
-                    case 'album':
-                        $update_data['album'] = sanitize_text_field($value);
-                        $format[] = '%s';
-                        break;
-                    case 'artist':
-                        $update_data['artist'] = sanitize_text_field($value);
-                        $format[] = '%s';
-                        break;
-                    case 'year':
-                        $update_data['year'] = is_null($value) ? null : absint($value);
+                    case 'product_id':
+                        $update_data['product_id'] = is_null($value) ? null : absint($value);
                         $format[] = '%d';
                         break;
                 }
@@ -325,21 +358,19 @@ class Campaign_Database_Manager
     /**
      * Inserts or updates a campaign record.
      */
-    public function upsert_campaign(int $campaign_id, string $campaign, array $data): bool
+    public function upsert_campaign(int $id, string $campaign, array $data): bool
     {
         try {
-            $existing_campaign = $this->get_campaign_by_id($campaign_id);
+            $existing_campaign = $this->get_campaign_by_id($id);
 
             if ($existing_campaign) {
                 // If the campaign exists, update it with the new data.
-                return $this->update_campaign_by_id($campaign_id, $data);
+                return $this->update_campaign_by_id($id, $data);
             } else {
                 // If the campaign does not exist, insert a new record.
-                $album = $data['album'] ?? null;
-                $artist = $data['artist'] ?? null;
-                $year = $data['year'] ?? null;
+                $product_id = $data['product_id'] ?? null;
 
-                return $this->insert_campaign($campaign_id, $campaign, $album, $artist, $year);
+                return $this->insert_campaign($id, $campaign, $product_id) !== false;
             }
         } catch (Exception $e) {
             $this->logger->log('upsert_campaign Error: ' . $e->getMessage(), 'error');
@@ -351,12 +382,12 @@ class Campaign_Database_Manager
     /**
      * Deletes a campaign record by the campaign ID.
      */
-    public function delete_campaign_by_id(int $campaign_id): int|false
+    public function delete_campaign_by_id(int $id): int|false
     {
         try {
             $deleted = $this->wpdb->delete(
                 $this->table_name,
-                ['campaign_id' => absint($campaign_id)],
+                ['id' => absint($id)],
                 ['%d']
             );
 

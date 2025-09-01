@@ -1,6 +1,6 @@
 <?php
 
-namespace Bema;
+namespace Bema\Database;
 
 use Exception;
 use Bema\BemaCRMLogger;
@@ -27,12 +27,16 @@ class Sync_Database_Manager
     public function create_table()
     {
         try {
+            if (!function_exists('dbDelta')) {
+                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+            }
+            
             $charset_collate = $this->wpdb->get_charset_collate();
             $sql = "CREATE TABLE {$this->table_name} (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 sync_date DATE NOT NULL,
                 status VARCHAR(50) NOT NULL,
-                synced_users INT UNSIGNED NOT NULL,
+                synced_subscribers INT UNSIGNED NOT NULL,
                 notes TEXT,
                 data LONGBLOB,
                 PRIMARY KEY (id),
@@ -51,7 +55,7 @@ class Sync_Database_Manager
     /**
      * Inserts or updates a sync record based on sync_date.
      */
-    public function upsert_sync_record($status, $synced_users, $notes = '', $data = null)
+    public function upsert_sync_record($status, $synced_subscribers, $notes = '', $data = null)
     {
         try {
             $date_only = current_time('Y-m-d');
@@ -66,7 +70,7 @@ class Sync_Database_Manager
 
             $record_data = [
                 'status' => sanitize_text_field($status),
-                'synced_users' => absint($synced_users),
+                'synced_subscribers' => absint($synced_subscribers),
                 'notes' => sanitize_textarea_field($notes),
                 'data' => $data,
             ];
@@ -113,7 +117,7 @@ class Sync_Database_Manager
     public function get_sync_records_without_data()
     {
         return $this->wpdb->get_results(
-            "SELECT id, sync_date, status, synced_users, notes FROM {$this->table_name} ORDER BY sync_date DESC",
+            "SELECT id, sync_date, status, synced_subscribers, notes FROM {$this->table_name} ORDER BY sync_date DESC",
             ARRAY_A
         );
     }

@@ -1,3 +1,7 @@
 .text-center {
   text-align: center;
 }
+
+.bulk-pagination {
+  padding-bottom: 16px;
+}

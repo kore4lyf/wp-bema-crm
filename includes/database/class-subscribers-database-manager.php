@@ -1,6 +1,6 @@
 <?php
 
-namespace Bema;
+namespace Bema\Database;
 
 use Exception;
 use Bema\BemaCRMLogger;
@@ -9,12 +9,45 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * Manages the database operations for BemaCRM subscribers.
+ *
+ * This class handles the creation, insertion, retrieval, updating, and deletion of
+ * subscriber records in a custom WordPress database table. It also includes methods for
+ * bulk operations and syncing.
+ *
+ * @package Bema\Database
+ */
 class Subscribers_Database_Manager
 {
+    /**
+     * The name of the database table for subscribers.
+     *
+     * @var string
+     */
     private $table_name;
+
+    /**
+     * The WordPress database object.
+     *
+     * @var \wpdb
+     */
     private $wpdb;
+
+    /**
+     * The logger instance for logging errors.
+     *
+     * @var BemaCRMLogger
+     */
     private $logger;
 
+    /**
+     * Subscribers_Database_Manager constructor.
+     *
+     * Initializes the class by setting up the table name and the WordPress database object.
+     *
+     * @param BemaCRMLogger|null $logger An optional logger instance.
+     */
     public function __construct(?BemaCRMLogger $logger = null)
     {
         global $wpdb;
@@ -25,9 +58,13 @@ class Subscribers_Database_Manager
 
     /**
      * Creates the custom database table for subscribers.
-     * Only stores timestamps that actually contain values from MailerLite.
+     *
+     * This function uses the WordPress `dbDelta` function to create or update the table schema.
+     *
+     * @return bool True on success, false on failure.
+     * @throws Exception If the database table creation fails.
      */
-    public function create_table()
+    public function create_table(): bool
     {
         try {
             if (!function_exists('dbDelta')) {
@@ -37,8 +74,7 @@ class Subscribers_Database_Manager
             $charset_collate = $this->wpdb->get_charset_collate();
 
             $sql = "CREATE TABLE {$this->table_name} (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            subscriber_id BIGINT UNSIGNED NOT NULL,
+            id BIGINT UNSIGNED NOT NULL,
             email VARCHAR(255) NOT NULL,
             name VARCHAR(255),
             status ENUM('active', 'unsubscribed', 'unconfirmed', 'bounced', 'junk') NOT NULL DEFAULT 'unconfirmed',
@@ -48,7 +84,6 @@ class Subscribers_Database_Manager
             updated_at DATETIME NULL,
 
             PRIMARY KEY  (id),
-            UNIQUE KEY subscriber_id (subscriber_id),
             UNIQUE KEY email (email)
             ) $charset_collate;";
 
@@ -65,20 +100,31 @@ class Subscribers_Database_Manager
     }
 
     /**
-     * Insert a single subscriber.
+     * Inserts a single subscriber record into the database.
+     *
+     * @param int         $id              The unique ID of the subscriber.
+     * @param string      $email           The subscriber's email address.
+     * @param string      $name            The subscriber's name.
+     * @param string      $status          The status of the subscriber (e.g., 'active', 'unsubscribed').
+     * @param string|null $subscribed_at   The datetime when the subscriber was subscribed.
+     * @param string|null $unsubscribed_at The datetime when the subscriber was unsubscribed.
+     * @param string|null $updated_at      The datetime when the subscriber was last updated.
+     *
+     * @return bool True on success, false on failure.
+     * @throws Exception If the subscriber insertion fails.
      */
     public function insert_subscriber(
-        $subscriber_id,
+        $id,
         $email,
         $name,
         $status,
         $subscribed_at = null,
         $unsubscribed_at = null,
         $updated_at = null
-    ) {
+    ): bool {
         try {
             $data = [
-                'subscriber_id' => absint($subscriber_id),
+                'id' => absint($id),
                 'email' => sanitize_email($email),
                 'name' => sanitize_text_field($name),
                 'status' => sanitize_text_field($status),
@@ -111,7 +157,12 @@ class Subscribers_Database_Manager
     }
 
     /**
-     * Bulk insert subscribers.
+     * Inserts multiple subscriber records into the database in a single query.
+     *
+     * @param array $subscribers_to_insert An array of subscriber data arrays.
+     *
+     * @return int|false The number of affected rows on success, false on failure.
+     * @throws Exception If the bulk insertion fails.
      */
     public function insert_subscribers_bulk(array $subscribers_to_insert)
     {
@@ -124,7 +175,7 @@ class Subscribers_Database_Manager
             $values = [];
             foreach ($subscribers_to_insert as $s) {
                 $placeholders[] = "(%d, %s, %s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))";
-                $values[] = absint($s['subscriber_id']);
+                $values[] = absint($s['id']);
                 $values[] = sanitize_email($s['email']);
                 $values[] = sanitize_text_field($s['name'] ?? '');
                 $values[] = sanitize_text_field($s['status'] ?? 'unconfirmed');
@@ -134,7 +185,7 @@ class Subscribers_Database_Manager
             }
 
             $query = "INSERT INTO {$this->table_name}
-(subscriber_id, email, name, status, subscribed_at, unsubscribed_at, updated_at)
+(id, email, name, status, subscribed_at, unsubscribed_at, updated_at)
 VALUES " . implode(', ', $placeholders);
 
             $inserted = $this->wpdb->query($this->wpdb->prepare($query, $values));
@@ -150,7 +201,13 @@ VALUES " . implode(', ', $placeholders);
     }
 
     /**
-     * Update by email.
+     * Updates a subscriber record based on their email address.
+     *
+     * @param string $current_email The email address to identify the subscriber.
+     * @param array  $new           An associative array of new data for the subscriber.
+     *
+     * @return int|false The number of rows updated on success, false on failure.
+     * @throws Exception If the update operation fails.
      */
     public function update_subscriber_by_email($current_email, $new)
     {
@@ -160,8 +217,8 @@ VALUES " . implode(', ', $placeholders);
             $where = ['email' => sanitize_email($current_email)];
             $where_fmt = ['%s'];
 
-            if (isset($new['subscriber_id'])) {
-                $data['subscriber_id'] = absint($new['subscriber_id']);
+            if (isset($new['id'])) {
+                $data['id'] = absint($new['id']);
                 $fmt[] = '%d';
             }
             if (isset($new['email'])) {
@@ -207,7 +264,13 @@ VALUES " . implode(', ', $placeholders);
     }
 
     /**
-     * Update by primary key id.
+     * Updates a subscriber record based on their ID.
+     *
+     * @param int   $id  The ID of the subscriber to update.
+     * @param array $new An associative array of new data for the subscriber.
+     *
+     * @return int|false The number of rows updated on success, false on failure.
+     * @throws Exception If the update operation fails.
      */
     public function update_subscriber_by_id($id, $new)
     {
@@ -217,10 +280,6 @@ VALUES " . implode(', ', $placeholders);
             $where = ['id' => absint($id)];
             $where_fmt = ['%d'];
 
-            if (isset($new['subscriber_id'])) {
-                $data['subscriber_id'] = absint($new['subscriber_id']);
-                $fmt[] = '%d';
-            }
             if (isset($new['email'])) {
                 $data['email'] = sanitize_email($new['email']);
                 $fmt[] = '%s';
@@ -263,6 +322,14 @@ VALUES " . implode(', ', $placeholders);
         }
     }
 
+    /**
+     * Deletes a subscriber record by their email address.
+     *
+     * @param string $email The email address of the subscriber to delete.
+     *
+     * @return int|false The number of rows deleted on success, false on failure.
+     * @throws Exception If the deletion operation fails.
+     */
     public function delete_subscriber_by_email($email)
     {
         try {
@@ -282,6 +349,13 @@ VALUES " . implode(', ', $placeholders);
         }
     }
 
+    /**
+     * Retrieves a single subscriber record by their email address.
+     *
+     * @param string $email The email address to search for.
+     *
+     * @return array|null The subscriber data as an associative array, or null if not found.
+     */
     public function get_subscriber_by_email($email)
     {
         return $this->wpdb->get_row(
@@ -293,24 +367,44 @@ VALUES " . implode(', ', $placeholders);
         );
     }
 
-    public function get_subscriber_by_id($subscriber_id)
+    /**
+     * Retrieves a single subscriber record by their ID.
+     *
+     * @param int $id The ID to search for.
+     *
+     * @return array|null The subscriber data as an associative array, or null if not found.
+     */
+    public function get_subscriber_by_id($id)
     {
         return $this->wpdb->get_row(
             $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE subscriber_id = %d",
-                absint($subscriber_id)
+                "SELECT * FROM {$this->table_name} WHERE id = %d",
+                absint($id)
             ),
             ARRAY_A
         );
     }
 
-    public function get_all_subscribers()
+    /**
+     * Retrieves all subscriber records from the database.
+     *
+     * @return array An array of all subscriber data.
+     */
+    public function get_all_subscribers(): array
     {
         return $this->wpdb->get_results("SELECT * FROM {$this->table_name}", ARRAY_A);
     }
 
     /**
-     * Get subscribers with optional filters and pagination.
+     * Retrieves a paginated list of subscribers with optional filtering.
+     *
+     * @param int    $per_page      The number of subscribers to retrieve per page.
+     * @param int    $offset        The offset for the pagination.
+     * @param string $campaign_name Optional. Filters by campaign name.
+     * @param string $tier          Optional. Filters by campaign tier.
+     * @param string $search        Optional. Searches by email.
+     *
+     * @return array An array of subscriber records.
      */
     public function get_subscribers(
         int $per_page = 25,
@@ -322,7 +416,6 @@ VALUES " . implode(', ', $placeholders);
         $where = [];
         $params = [];
 
-        // Apply filters
         if ($campaign_name !== '') {
             $where[] = "c.campaign_name = %s";
             $params[] = $campaign_name;
@@ -349,9 +442,9 @@ VALUES " . implode(', ', $placeholders);
                 "SELECT s.*, c.tier, c.purchase_id
              FROM {$this->table_name} AS s
              INNER JOIN {$this->wpdb->prefix}bemacrm_campaign_subscribersmeta AS c
-                ON s.subscriber_id = c.subscriber_id
+               ON s.id = c.id
              {$where_sql}
-             ORDER BY s.id DESC
+             ORDER BY s.id ASC
              LIMIT %d OFFSET %d",
                 ...$params
             );
@@ -360,10 +453,9 @@ VALUES " . implode(', ', $placeholders);
             $params[] = $offset;
 
             $sql = $this->wpdb->prepare(
-                "SELECT * 
-             FROM {$this->table_name} AS s
+                "SELECT * FROM {$this->table_name} AS s
              {$where_sql}
-             ORDER BY s.id DESC
+             ORDER BY s.id ASC
              LIMIT %d OFFSET %d",
                 ...$params
             );
@@ -373,7 +465,13 @@ VALUES " . implode(', ', $placeholders);
     }
 
     /**
-     * Count subscribers with optional filters.
+     * Counts the total number of subscribers with optional filtering.
+     *
+     * @param string $campaign_name Optional. Filters by campaign name.
+     * @param string $tier          Optional. Filters by campaign tier.
+     * @param string $search        Optional. Searches by email.
+     *
+     * @return int The total number of subscribers that match the criteria.
      */
     public function count_subscribers(
         string $campaign_name = '',
@@ -383,7 +481,6 @@ VALUES " . implode(', ', $placeholders);
         $where = [];
         $params = [];
 
-        // Apply filters
         if ($campaign_name !== '') {
             $where[] = "c.campaign_name = %s";
             $params[] = $campaign_name;
@@ -406,7 +503,7 @@ VALUES " . implode(', ', $placeholders);
                 "SELECT COUNT(*)
              FROM {$this->table_name} AS s
              INNER JOIN {$this->wpdb->prefix}bemacrm_campaign_subscribersmeta AS c
-                ON s.subscriber_id = c.subscriber_id
+               ON s.id = c.id
              {$where_sql}",
                 ...$params
             );
@@ -422,11 +519,15 @@ VALUES " . implode(', ', $placeholders);
         return (int) $this->wpdb->get_var($sql);
     }
 
-
     /**
-     * Sync with source-of-truth dataset.
+     * Syncs subscriber data from an external source (e.g., MailerLite) with the database.
+     *
+     * @param array $mailerlite_subscribers_data An array of subscriber data to be synced.
+     *
+     * @return bool True on successful sync, false on failure.
+     * @throws Exception If the insert or update operation fails.
      */
-    public function sync_subscribers(array $mailerlite_subscribers_data)
+    public function sync_subscribers(array $mailerlite_subscribers_data): bool
     {
         if (empty($mailerlite_subscribers_data)) {
             $this->logger->log('No subscriber data received for sync.', 'notice');
@@ -434,7 +535,7 @@ VALUES " . implode(', ', $placeholders);
         }
 
         try {
-            $affected = $this->insert_or_update_subscribers($mailerlite_subscribers_data);
+            $affected = $this->upsert_subscribers($mailerlite_subscribers_data);
             if (false === $affected) {
                 throw new Exception('Failed to insert or update subscribers during sync.');
             }
@@ -446,9 +547,16 @@ VALUES " . implode(', ', $placeholders);
     }
 
     /**
-     * Bulk upsert using source-provided data.
+     * Inserts or updates multiple subscriber records in a single query.
+     *
+     * This private method handles the "upsert" logic using `ON DUPLICATE KEY UPDATE`.
+     *
+     * @param array $subscribers_to_process An array of subscriber data to process.
+     *
+     * @return int|false The number of affected rows on success, false on failure.
+     * @throws Exception If the upsert operation fails.
      */
-    private function insert_or_update_subscribers(array $subscribers_to_process)
+    private function upsert_subscribers(array $subscribers_to_process)
     {
         if (empty($subscribers_to_process)) {
             return false;
@@ -459,7 +567,7 @@ VALUES " . implode(', ', $placeholders);
             $values = [];
 
             foreach ($subscribers_to_process as $s) {
-                $subscriber_id = absint($s['id']);
+                $id = absint($s['id']);
                 $email = sanitize_email($s['email']);
                 $name = sanitize_text_field(trim(($s['fields']['name'] ?? '') . ' ' . ($s['fields']['last_name'] ?? '')));
                 $status = sanitize_text_field($s['status'] ?? 'unconfirmed');
@@ -469,7 +577,7 @@ VALUES " . implode(', ', $placeholders);
                 $updated_at = $s['updated_at'] ?? '';
 
                 $placeholders[] = "(%d, %s, %s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))";
-                $values[] = $subscriber_id;
+                $values[] = $id;
                 $values[] = $email;
                 $values[] = $name;
                 $values[] = $status;
@@ -479,15 +587,15 @@ VALUES " . implode(', ', $placeholders);
             }
 
             $query = "INSERT INTO {$this->table_name}
-(subscriber_id, email, name, status, subscribed_at, unsubscribed_at, updated_at)
-VALUES " . implode(', ', $placeholders) . "
-ON DUPLICATE KEY UPDATE
-email   = VALUES(email),
-name= VALUES(name),
-status  = VALUES(status),
-subscribed_at   = VALUES(subscribed_at),
-unsubscribed_at = VALUES(unsubscribed_at),
-updated_at  = VALUES(updated_at)";
+             (id, email, name, status, subscribed_at, unsubscribed_at, updated_at)
+             VALUES " . implode(', ', $placeholders) . "
+             ON DUPLICATE KEY UPDATE
+             email  = VALUES(email),
+             name = VALUES(name),
+             status = VALUES(status),
+             subscribed_at  = VALUES(subscribed_at),
+             unsubscribed_at = VALUES(unsubscribed_at),
+             updated_at = VALUES(updated_at)";
 
             $result = $this->wpdb->query($this->wpdb->prepare($query, $values));
 
@@ -502,6 +610,14 @@ updated_at  = VALUES(updated_at)";
         }
     }
 
+    /**
+     * Deletes the subscribers database table.
+     *
+     * This function should be used with caution, as it will permanently remove the table and all its data.
+     *
+     * @return bool True on success, false on failure.
+     * @throws Exception If the database table deletion fails.
+     */
     public function delete_table(): bool
     {
         try {

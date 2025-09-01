@@ -7,8 +7,8 @@ use WP_Object_Cache;
 use Bema\BemaCRMLogger;
 use Bema\Interfaces\Provider_Interface;
 use Bema\Exceptions\API_Exception;
-use Bema\Group_Database_Manager;
-use Bema\Field_Database_Manager;
+use Bema\Database\Group_Database_Manager;
+use Bema\Database\Field_Database_Manager;
 use function Bema\debug_to_file;
 
 if (!defined('ABSPATH')) {
@@ -980,6 +980,37 @@ class MailerLite implements Provider_Interface
             return [];
         }
     }
+    
+    /**
+     * Get all groups with full subscriber data
+     * @return array
+     */
+    public function getAllGroupsMap(): array
+    {
+        try {
+            $allGroups = $this->getGroups();
+            $groupData = [];
+
+            foreach ($allGroups as $group) {
+                $groupData[strtoupper($group['name'])] = [
+                    'group_id' => $group['id'],
+                    'name' => $group['name'],
+                    'active_count' => $group['active_count'] ?? 0,
+                    'created_at' => $group['created_at'] ?? null
+                ];
+
+                // Rate limiting
+                usleep($this->rateLimitDelay * 1000000);
+            }
+
+            return $groupData;
+        } catch (Exception $e) {
+            $this->logger->log('Failed to get groups with subscribers', 'error', [
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
 
     /**
      * Get group details with subscribers
@@ -1299,7 +1330,7 @@ class MailerLite implements Provider_Interface
      * @return array An associative array of campaign names and their corresponding IDs.
      * Returns an empty array on failure or if no campaigns are found.
      */
-    public function get_all_campaign_id_and_name(): array
+    public function get_campaigns_name_id_map(): array
     {
         $all_campaigns = $this->get_all_campaigns();
 

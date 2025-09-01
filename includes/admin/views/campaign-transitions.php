@@ -3,7 +3,7 @@
 
 <?php
 // Fetch current tab
-$current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'history';
+$current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'controls';
 ?>
 
 <div class="wrap bema-transitions">
@@ -16,14 +16,28 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'histor
 
     <!-- Navigation Tabs -->
     <nav class="nav-tab-wrapper">
+        <a href="?page=bema-transitions&tab=controls"
+        class="nav-tab <?php echo $current_tab === 'controls' ? 'nav-tab-active' : ''; ?>"> Controls </a>
         <a href="?page=bema-transitions&tab=history"
-            class="nav-tab <?php echo $current_tab === 'history' ? 'nav-tab-active' : ''; ?>"> History </a>
+        class="nav-tab <?php echo $current_tab === 'history' ? 'nav-tab-active' : ''; ?>"> History </a>
         <a href="?page=bema-transitions&tab=settings"
             class="nav-tab <?php echo $current_tab === 'settings' ? 'nav-tab-active' : ''; ?>"> Settings </a>
     </nav>
 
-    <?php if ($current_tab === 'history'): ?>
+    <?php if ($current_tab === 'controls'): ?>
 
+        <!-- Tiers  -->
+        <?php
+        $transition_controls_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'transition-controls-view.php';
+
+        if (file_exists($transition_controls_view_path)) {
+            include $transition_controls_view_path;
+        } else {
+            echo '<div class="notice notice-error"><p>Missing view file: transition-controls-view.php</p></div>';
+        }
+        ?>  
+
+    <?php elseif ($current_tab === 'history'): ?>
         <!-- Campaign Connections -->
         <div class="postbox">
             <h2 class="transitions-subtitle"><span><?php _e('Campaign Connections', 'bema-crm'); ?></span></h2>

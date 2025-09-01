@@ -8,9 +8,9 @@ use Bema\Utils;
 use Bema\BemaCRMLogger;
 use EDD\Orders\Order;
 use EDD_Customer;
-use Bema\Group_Database_Manager;
-use Bema\Field_Database_Manager;
-use Bema\Campaign_Database_Manager;
+use Bema\Database\Group_Database_Manager;
+use Bema\Database\Field_Database_Manager;
+use Bema\Database\Campaign_Database_Manager;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -20,20 +20,20 @@ class Triggers
     private MailerLite $mailerlite;
     private EM_Sync $em_sync;
     private Utils $utils;
-    private Group_Database_Manager $group_db_manager;
-    private Field_Database_Manager $field_db_manager;
+    private Group_Database_Manager $group_database;
+    private Field_Database_Manager $field_database;
     private BemaCRMLogger $logger;
     private array $deleted_album_details = [];
 
-    public function __construct(MailerLite $mailerlite, EM_Sync $em_sync, Utils $utils, Group_Database_Manager $group_db_manager, Field_Database_Manager $field_db_manager, ?BemaCRMLogger $logger = null)
+    public function __construct(MailerLite $mailerlite, EM_Sync $em_sync, Utils $utils, Group_Database_Manager $group_database, Field_Database_Manager $field_database, ?BemaCRMLogger $logger = null)
     {
         $this->mailerlite = $mailerlite;
         $this->em_sync = $em_sync;
         $this->utils = $utils;
-        $this->group_db_manager = $group_db_manager;
-        $this->field_db_manager = $field_db_manager;
+        $this->group_database = $group_database;
+        $this->field_database = $field_database;
         $this->logger = $logger ?? new BemaCRMLogger();
-        $this->campaign_db_manager = new Campaign_Database_Manager();
+        $this->campaign_database = new Campaign_Database_Manager();
     }
 
     /**
@@ -224,6 +224,9 @@ class Triggers
 
 
             if (!empty($group_name)) {
+                $campaign_name = $this->utils->get_campaign_name_from_text($group_name);
+                $campaign_id = $this->campaign_database->get_campaign_by_name($campaign_name)['id'];
+
                 // Create mailerlite subscriber group with post title
                 $this->logger->log("Creating group for: " . $group_name, 'info');
                 error_log("Creating group for: " . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
@@ -236,8 +239,9 @@ class Triggers
 
                 if ($group_id) {
                     $groups[] = [
+                        'id' => $group_id,
                         'group_name' => $group_name,
-                        'group_id' => $group_id
+                        'campaign_id' => $campaign_id
                     ];
                 }
             } else {
@@ -247,7 +251,7 @@ class Triggers
         }
 
         if (!empty($groups)) {
-            $this->group_db_manager->insert_groups_bulk($groups);
+            $this->group_database->upsert_groups_bulk($groups);
         }
 
         $this->logger->log('WP-Cron Trigger End: create subscriber groups', 'info');
@@ -310,8 +314,8 @@ class Triggers
         if (!empty($field_name)) {
             $field_id = $this->mailerlite->createField($field_name, 'number');
             $campaign_name = $this->utils->get_campaign_name_from_text($field_name);
-            $campaign_id = $this->campaign_db_manager->get_campaign_by_name($campaign_name)['id'];
-            $this->field_db_manager->upsert_field($field_id, $field_name, $campaign_id);
+            $campaign_id = $this->campaign_database->get_campaign_by_name($campaign_name)['id'];
+            $this->field_database->upsert_field($field_id, $field_name, $campaign_id);
 
             $this->logger->log("MailerLite field created and recorded in the database: field_name: {$field_name} , field_id: {$field_id}", 'info');
             error_log("MailerLite field created and recorded in the database: field_name: {$field_name} , field_id: {$field_id}" . "\n", 3, dirname(__FILE__) . '/debug.log');
@@ -408,7 +412,7 @@ class Triggers
         if ($is_field_deleted_on_mailerlite) {
             error_log('handle_deleted_album_fields: $is_field_deleted_on_mailerlite: successfully deleted on mailerlite' . "\n", 3, dirname(__FILE__) . '/debug.log');
             // Delete album field from local database
-            $this->field_db_manager->delete_field_by_name($field_name);
+            $this->field_database->delete_field_by_name($field_name);
             error_log('handle_deleted_album_fields: Delete field name from the database' . "\n", 3, dirname(__FILE__) . '/debug.log');
         }
 
@@ -453,7 +457,7 @@ class Triggers
                 error_log("MailerLite response for group: " . print_r($group_data, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
 
                 if ($is_group_deleted_on_mailerlite) {
-                    $this->group_db_manager->delete_group_by_name($group_name);
+                    $this->group_database->delete_group_by_name($group_name);
                     error_log('handle_deleted_album_groups: Delete field name from the database' . "\n", 3, dirname(__FILE__) . '/debug.log');
                 }
 

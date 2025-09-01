@@ -9,8 +9,8 @@ use Bema\BemaCRMLogger;
 use Bema\EM_Sync;
 use Bema\Utils;
 use Bema\Triggers;
-use Bema\Group_Database_Manager;
-use Bema\Field_Database_Manager;
+use Bema\Database\Group_Database_Manager;
+use Bema\Database\Field_Database_Manager;
 
 $logger = new BemaCRMLogger();
 

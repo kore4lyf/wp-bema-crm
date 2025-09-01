@@ -522,7 +522,7 @@ class Bema_Admin_Interface
             $progress = $total > 0 ? min(100, round(($processed / $total) * 100)) : 0;
 
             $failed_jobs = $this->get_failed_jobs();
-            $campaigns = $this->sync_instance ? $this->sync_instance->getGroups() : [];
+            $campaigns = [];
             $max_retries = $this->max_retries;
             $admin = $this;
 
@@ -565,7 +565,7 @@ class Bema_Admin_Interface
             $total_logs = $this->get_total_logs();
             $active_filters = $this->get_active_filters();
             $admin = $this; // Pass $this as $admin
-            $campaigns = $this->sync_instance ? $this->sync_instance->getGroups() : [];
+            $campaigns = [];
 
             require_once BEMA_PATH . 'includes/admin/views/database-management.php';
         } catch (Exception $e) {

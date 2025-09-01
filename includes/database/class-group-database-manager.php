@@ -1,75 +1,78 @@
 <?php
 
-namespace Bema;
+namespace Bema\Database;
 
 use Exception;
 use Bema\BemaCRMLogger;
 use wpdb;
 
-/**
- * Group_Database_Manager class.
- *
- * Handles database operations for the 'bemacrm_groupmeta' table.
- *
- */
 if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * Manages all database operations related to the `bemacrm_groupmeta` table.
+ */
 class Group_Database_Manager
 {
 
     /**
-     * The database table name.
-     *
-     * @var string
+     * @var string The name of the groups table.
      */
     private $table_name;
 
     /**
-     * The WordPress database object.
-     *
-     * @var wpdb
+     * @var string The name of the campaigns table.
+     */
+    private $campaign_table_name;
+
+    /**
+     * @var wpdb The WordPress database object.
      */
     private $wpdb;
 
     /**
-     * The logger instance.
-     *
-     * @var BemaCRMLogger
+     * @var BemaCRMLogger The logger instance for recording errors.
      */
     private BemaCRMLogger $logger;
 
     /**
      * Group_Database_Manager constructor.
+     *
+     * Initializes the class by setting up the table names and the WordPress database object.
+     *
+     * @param BemaCRMLogger|null $logger The logger instance. A new one is created if null.
      */
     public function __construct(?BemaCRMLogger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_groupmeta';
+        $this->campaign_table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
         $this->logger = $logger ?? new BemaCRMLogger();
     }
 
     /**
-     * Creates the custom database table.
+     * Creates the group meta table with 'id' as the primary key and no auto-increment.
      *
      * @return bool True on success, false on failure.
      */
-    public function create_table()
+    public function create_table(): bool
     {
         try {
+            if (!function_exists('dbDelta')) {
+                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+            }
 
             $charset_collate = $this->wpdb->get_charset_collate();
 
             $sql = "CREATE TABLE {$this->table_name} (
-                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                id BIGINT UNSIGNED NOT NULL,
                 group_name VARCHAR(255) NOT NULL,
-                group_id BIGINT UNSIGNED NOT NULL,
-
-                PRIMARY KEY  (id),
-                UNIQUE KEY group_name (group_name),
-                UNIQUE KEY group_id (group_id)
+                campaign_id BIGINT UNSIGNED NOT NULL,
+                
+                PRIMARY KEY (id),
+                CONSTRAINT fk_bemacrm_groupmeta_campaign_id FOREIGN KEY (campaign_id) REFERENCES {$this->campaign_table_name}(id) ON DELETE CASCADE
             ) $charset_collate;";
 
             $result = dbDelta($sql);
@@ -85,58 +88,57 @@ class Group_Database_Manager
     }
     
     /**
-     * Inserts or updates a group in the database based on group_name.
+     * Inserts or updates a group using the provided ID.
      *
-     * @param string $group_name The name of the group.
-     * @param int    $group_id   The ID of the group.
-     * @return int|false The ID of the affected row on success, or false on failure.
+     * @param int    $id          The group ID to update or insert.
+     * @param string $group_name  The name of the group.
+     * @param int    $campaign_id The ID of the campaign the group belongs to.
+     * @return int|false The group ID on success, or false on failure.
      */
-    public function upsert_group(string $group_name, int $group_id)
+    public function upsert_group(int $id, string $group_name, int $campaign_id)
     {
         try {
-            // First, sanitize the input data.
+            $sanitized_id = absint($id);
             $sanitized_group_name = sanitize_text_field($group_name);
-            $sanitized_group_id = absint($group_id);
+            $sanitized_campaign_id = absint($campaign_id);
 
-            // Check if a record with the same group_name already exists.
-            $existing_group = $this->get_group_by_name($sanitized_group_name);
+            $existing_group = $this->get_group_by_id($sanitized_id);
 
             if ($existing_group) {
-                // If it exists, update the group_id.
                 $updated = $this->wpdb->update(
                     $this->table_name,
                     [
-                        'group_id' => $sanitized_group_id,
+                        'group_name' => $sanitized_group_name,
+                        'campaign_id' => $sanitized_campaign_id,
                     ],
                     [
-                        'group_name' => $sanitized_group_name,
+                        'id' => $sanitized_id,
                     ],
-                    ['%d'],
-                    ['%s']
+                    ['%s', '%d'],
+                    ['%d']
                 );
                 
                 if (false === $updated) {
                     throw new Exception('Failed to update group: ' . $this->wpdb->last_error);
                 }
                 
-                // Return the affected row ID. Since it's an update, we can return the existing ID.
-                return $existing_group['id'];
+                return $sanitized_id;
 
             } else {
-                // If it doesn't exist, insert a new record.
                 $inserted = $this->wpdb->insert(
                     $this->table_name,
                     [
+                        'id' => $sanitized_id,
                         'group_name' => $sanitized_group_name,
-                        'group_id' => $sanitized_group_id,
+                        'campaign_id' => $sanitized_campaign_id,
                     ],
-                    ['%s', '%d']
+                    ['%d', '%s', '%d']
                 );
 
                 if (false === $inserted) {
                     throw new Exception('Failed to insert group: ' . $this->wpdb->last_error);
                 }
-                return $this->wpdb->insert_id;
+                return $sanitized_id;
             }
 
         } catch (Exception $e) {
@@ -146,14 +148,10 @@ class Group_Database_Manager
     }
 
     /**
-     * Inserts or updates multiple groups into the database in a single query.
+     * Bulk inserts or updates groups. The input array must now contain 'id' instead of 'group_id'.
      *
-     * This function uses MySQL's "INSERT ... ON DUPLICATE KEY UPDATE" syntax
-     * to efficiently handle both inserts and updates based on the unique 'group_name' key.
-     *
-     * @param array $groups_to_upsert An array of arrays, where each inner array
-     * contains 'group_name' and 'group_id'.
-     * @return int|false The number of rows affected on success, or false on failure.
+     * @param array $groups_to_upsert An array of group data arrays. Each array must contain 'id', 'group_name', and 'campaign_id'.
+     * @return int|false The number of affected rows on success, or false on failure.
      */
     public function upsert_groups_bulk(array $groups_to_upsert)
     {
@@ -167,20 +165,16 @@ class Group_Database_Manager
             $values = [];
             
             foreach ($groups_to_upsert as $group) {
-                // Use a placeholder pair for each row to be inserted.
-                $placeholders[] = "(%s, %d)";
-                // Add the sanitized values to the values array.
+                $placeholders[] = "(%d, %s, %d)";
+                $values[] = absint($group['id']);
                 $values[] = sanitize_text_field($group['group_name']);
-                $values[] = absint($group['group_id']);
+                $values[] = absint($group['campaign_id']);
             }
 
-            // Build the SQL query with placeholders and the ON DUPLICATE KEY UPDATE clause.
-            // This clause will update the group_id if the group_name already exists.
-            $query = "INSERT INTO {$this->table_name} (group_name, group_id) VALUES " .
+            $query = "INSERT INTO {$this->table_name} (id, group_name, campaign_id) VALUES " .
                      implode(', ', $placeholders) .
-                     " ON DUPLICATE KEY UPDATE group_id = VALUES(group_id)";
+                     " ON DUPLICATE KEY UPDATE group_name = VALUES(group_name), campaign_id = VALUES(campaign_id)";
 
-            // Prepare the query securely and execute it.
             $result = $this->wpdb->query($this->wpdb->prepare($query, $values));
 
             if (false === $result) {
@@ -196,10 +190,10 @@ class Group_Database_Manager
     }
 
     /**
-     * Deletes a group from the database by its group name.
+     * Deletes a group by its name.
      *
      * @param string $group_name The name of the group to delete.
-     * @return int|false The number of rows deleted on success, or false on failure.
+     * @return int|false The number of deleted rows on success, or false on failure.
      */
     public function delete_group_by_name($group_name)
     {
@@ -219,12 +213,36 @@ class Group_Database_Manager
             return false;
         }
     }
+    
+    /**
+     * Deletes a group using the provided ID.
+     *
+     * @param int $id The ID of the group to delete.
+     * @return int|false The number of deleted rows on success, or false on failure.
+     */
+    public function delete_group_by_id(int $id)
+    {
+        try {
+            $deleted = $this->wpdb->delete(
+                $this->table_name,
+                ['id' => absint($id)],
+                ['%d']
+            );
+            if (false === $deleted) {
+                throw new Exception('Failed to delete group: ' . $this->wpdb->last_error);
+            }
+            return $deleted;
+        } catch (Exception $e) {
+            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
+            return false;
+        }
+    }
 
     /**
-     * Retrieves a single group by its group name.
+     * Retrieves a group by its name.
      *
-     * @param string $group_name The name of the group to retrieve.
-     * @return array|null An associative array of the group on success, or null if not found.
+     * @param string $group_name The name of the group.
+     * @return array|object|null The group data as an associative array, or null if not found.
      */
     public function get_group_by_name(string $group_name)
     {
@@ -238,17 +256,34 @@ class Group_Database_Manager
     }
 
     /**
-     * Retrieves a single group by its group ID.
+     * Retrieves a group by its ID.
      *
-     * @param int $group_id The ID of the group to retrieve.
-     * @return array|null An associative array of the group on success, or null if not found.
+     * @param int $id The ID of the group to retrieve.
+     * @return array|object|null The group data as an associative array, or null if not found.
      */
-    public function get_group_by_id(int $group_id)
+    public function get_group_by_id(int $id)
     {
         return $this->wpdb->get_row(
             $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE group_id = %d",
-                absint($group_id)
+                "SELECT * FROM {$this->table_name} WHERE id = %d",
+                absint($id)
+            ),
+            ARRAY_A
+        );
+    }
+
+    /**
+     * Retrieves all groups associated with a specific campaign ID.
+     *
+     * @param int $campaign_id The ID of the campaign.
+     * @return array An array of group data, or an empty array if none found.
+     */
+    public function get_groups_by_campaign_id(int $campaign_id)
+    {
+        return $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->table_name} WHERE campaign_id = %d",
+                absint($campaign_id)
             ),
             ARRAY_A
         );
@@ -257,7 +292,7 @@ class Group_Database_Manager
     /**
      * Retrieves all groups from the database.
      *
-     * @return array An array of associative arrays on success, or an empty array if none found.
+     * @return array An array of all group data, or an empty array if none found.
      */
     public function get_all_groups()
     {
@@ -265,9 +300,9 @@ class Group_Database_Manager
     }
 
     /**
-     * Deletes the custom database table.
+     * Deletes the group meta table from the database.
      *
-     * @return bool True on success, false on failure.
+     * @return bool True if the table was successfully deleted, false otherwise.
      */
     public function delete_table(): bool
     {
@@ -275,7 +310,6 @@ class Group_Database_Manager
             $sql = "DROP TABLE IF EXISTS {$this->table_name}";
             $this->wpdb->query($sql);
 
-            // Check if the table was successfully dropped.
             if ($this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") !== $this->table_name) {
                 return true;
             }

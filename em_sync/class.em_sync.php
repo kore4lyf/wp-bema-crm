@@ -14,11 +14,12 @@ use Bema\SyncBatchProcessor;
 use Bema\Campaign_Manager;
 use Bema\Bema_Settings;
 use Bema\BemaCRMLogger;
-use Bema\Subscribers_Database_Manager;
-use Bema\Campaign_group_Subscribers_Database_Manager;
-use Bema\Sync_Database_Manager;
-use Bema\Group_Database_Manager;
-use Bema\Campaign_Database_Manager;
+use Bema\Database\Subscribers_Database_Manager;
+use Bema\Database\Campaign_group_Subscribers_Database_Manager;
+use Bema\Database\Sync_Database_Manager;
+use Bema\Database\Field_Database_Manager;
+use Bema\Database\Group_Database_Manager;
+use Bema\Database\Campaign_Database_Manager;
 use Bema\Utils;
 
 if (!defined('ABSPATH')) {
@@ -2707,37 +2708,56 @@ class EM_Sync
         // Albums are processed first, giving them priority.
         $all_campaigns = array_merge($albums, $custom_campaigns);
 
-        // Get the current list of campaigns from MailerLite.
-        $campaign_map = $this->mailerLiteInstance->get_all_campaign_id_and_name();
-
+        $campaign_store_map = [];
         $campaigns_to_upsert = [];
-        $processed_campaign_names = [];
 
-        // Process all campaigns in a single, unified loop to avoid duplicates.
-        foreach ($all_campaigns as $campaign_data) {
-            // Determine the campaign name based on the data source.
-            if (isset($campaign_data['album'])) {
-                $campaign_name = $this->utils->get_campaign_group_name(
-                    $campaign_data['year'],
-                    $campaign_data['artist'],
-                    $campaign_data['album']
-                );
+        // Collect all campaigns from custom campaigns
+        foreach ($custom_campaigns as $campaign) {
+            $campaign_store_map[$campaign['campaign']] = [
+                'name' => $campaign['campaign'],
+                'product_id' => $campaign['product_id'],
+                'album' => $campaign['album'],
+                'year' => $campaign['year'],
+                'artist' => $campaign['artist']
+            ];
+        }
+
+        // // Collect all campaigns from product list
+        foreach ($albums as $album) {
+            $campaign_name = $this->utils->get_campaign_group_name(
+                $album['year'],
+                $album['artist'],
+                $album['album']
+            );
+
+            $campaign_store_map[$campaign_name] = [
+                'name' => $campaign[$campaign_name],
+                'product_id' => $album['product_id'],
+                'album' => $album['album'],
+                'year' => $album['year'],
+                'artist' => $album['artist']
+            ];
+        }
+
+        // Get the current campaigns on MailerLite.
+        $mailerlite_campaign_map = $this->mailerLiteInstance->get_campaigns_name_id_map();
+
+        foreach ($campaign_store_map as $campaign) {
+            // Check if campaign name exits on mailerlite
+            $campaign_id = $mailerlite_campaign_map[$campaign['name']];
+
+            if (isset($campaign_id)) {
+                // Add the campaign to the upsert list and mark it as processed.
+                $campaigns_to_upsert[] = [
+                    'campaign' => strtoupper($campaign_name),
+                    'id' => $campaign_id,
+                    'product_id' => $campaign_data['product_id'] ?? null,
+                ];
             } else {
-                $campaign_name = $campaign_data['campaign'];
-            }
+                // Create new campaign, if campaign name does not exists on mailerlite.
 
-            // Use the processed_campaign_names hash set to prevent re-processing duplicates.
-            if (isset($processed_campaign_names[strtoupper($campaign_name)])) {
-                continue; // Skip if this campaign name has already been handled.
-            }
-
-            // Get the campaign ID from the initial map.
-            $campaign_id = $campaign_map[$campaign_name] ?? null;
-
-            // If the campaign doesn't exist, create it in MailerLite.
-            if (!$campaign_id) {
-                $subject = isset($campaign_data['album'])
-                    ? 'Music album: ' . $campaign_data['album'] . ' by ' . $campaign_data['artist']
+                $subject = isset($campaign['album'])
+                    ? 'Music album: ' . $campaign['album'] . ' by ' . $campaign['artist']
                     : 'Custom Campaign';
 
                 $response = $this->mailerLiteInstance->create_draft_campaign(
@@ -2746,22 +2766,18 @@ class EM_Sync
                     $subject
                 );
                 $campaign_id = $response['id'] ?? null;
-            }
 
-            // Add the campaign to the upsert list and mark it as processed.
-            if ($campaign_name && $campaign_id) {
-                $processed_campaign_names[strtoupper($campaign_name)] = true;
+                // Add the campaign to the upsert list and mark it as processed.
                 $campaigns_to_upsert[] = [
                     'campaign' => strtoupper($campaign_name),
-                    'campaign_id' => $campaign_id,
-                    'year' => $campaign_data['year'] ?? null,
-                    'artist' => $campaign_data['artist'] ?? null,
-                    'album' => $campaign_data['album'] ?? null
+                    'id' => $campaign_id,
+                    'product_id' => $campaign['product_id'] ?? null,
                 ];
+
             }
         }
 
-        // Perform a single bulk upsert.
+        // Perform a bulk upsert
         if (!empty($campaigns_to_upsert)) {
             $this->campaign_database->upsert_campaigns_bulk($campaigns_to_upsert);
         }
@@ -2820,7 +2836,7 @@ class EM_Sync
 
                 if ($new_field && isset($new_field['id'])) {
                     $fields_to_upsert[] = [
-                        'field_id' => $new_field['id'],
+                        'id' => $new_field['id'],
                         'field_name' => $new_field['name'],
                         'campaign_id' => $campaign_id
                     ];
@@ -2828,7 +2844,7 @@ class EM_Sync
             } else {
                 // The field already exists, so add its ID and name to the upsert list
                 $fields_to_upsert[] = [
-                    'field_id' => $mailerlite_fields_map[$field_name],
+                    'id' => $mailerlite_fields_map[$field_name],
                     'field_name' => $field_name,
                     'campaign_id' => $campaign_id
                 ];
@@ -2850,7 +2866,7 @@ class EM_Sync
 
 
         foreach ($campaign_name_list as $campaign_name) {
-            $all_campaign_group_names = array_merge($all_campaign_group_names, $this->utils->get_campaign_group_names($campaign_name));
+            $all_campaign_group_names[] = $this->utils->get_campaign_group_names($campaign_name);
         }
 
         // Fetch Mailerlite Group Data
@@ -2860,10 +2876,14 @@ class EM_Sync
         foreach ($mailerlite_group_data as $group) {
 
             if (in_array(strtoupper($group['name']), $all_campaign_group_names)) {
+                $campaign_name = $this->utils->get_campaign_name_from_text($group['name']);
+                $campaign_id = $this->campaign_database->get_campaign_by_name($campaign_name)['id'];
+
                 $group_names_found_on_mailerlite[] = strtoupper($group['name']);
                 $groups_to_upsert[] = [
-                    'group_id' => $group['id'],
+                    'id' => $group['id'],
                     'group_name' => $group['name'],
+                    'campaign_id' => $campaign_id
                 ];
             }
         }
@@ -2875,9 +2895,13 @@ class EM_Sync
                     $new_group = $this->mailerLiteInstance->createGroup($group_name);
 
                     if ($new_group && isset($new_group['id'])) {
+                        $campaign_name = $this->utils->get_campaign_name_from_text($new_group['name']);
+                        $campaign_id = $this->campaign_database->get_campaign_by_name($campaign_name)['id'];
+
                         $groups_to_upsert[] = [
-                            'group_id' => $new_group['id'],
+                            'id' => $new_group['id'],
                             'group_name' => $new_group['name'],
+                            'campaign_id' => $campaign_id
                         ];
                     }
                 }
@@ -2889,7 +2913,85 @@ class EM_Sync
         return true;
     }
 
-    // ---- SYNCHRONIZE ----
+    public function sync_subscribers(): int
+    {
+        $all_subscribers = $this->mailerLiteInstance->getSubscribers();
+        $subscribers_count = count($all_subscribers);
+
+        if (empty($all_subscribers)) {
+            return 0;
+        }
+
+        // Store all subscribers in the main table in a batch operation if possible
+        $this->subscribers_database->sync_subscribers($all_subscribers);
+        return $subscribers_count;
+    }
+
+    public function sync_campaign_group_subscribers()
+    {
+        // Prepare data for batch upsert into the campaign_group_subscribers_database
+        $campaign_subscribers_data = [];
+        $campaign_group_list = $this->group_database->get_all_groups();
+        $mailerlite_groups_map = $this->mailerLiteInstance->getAllGroupsMap();
+
+        foreach ($campaign_group_list as $group) {
+            // Get group details from the MailerLite list. The key for lookup is the group id.
+            $group_details = $mailerlite_groups_map[strtoupper($group['group_name'])];
+
+            // Check if group details were successfully retrieved from MailerLite.
+            if (!$group_details) {
+                continue;
+            }
+
+            // Fetch the subscribers for the MailerLite group.
+            $group_subscribers = $this->mailerLiteInstance->getGroupSubscribers($group['id']);
+
+            // Check if there are any subscribers in the group. If not, log it and move on.
+            if (empty($group_subscribers)) {
+                continue;
+            }
+
+            // Extract the campaign name from the group name.
+            $campaign_name = $this->utils->get_campaign_name_from_text($group['group_name']);
+
+            // Check if the campaign name was successfully extracted.
+            if (empty($campaign_name)) {
+                continue;
+            }
+
+            // Get the campaign ID from the database using the extracted name.
+            $campaign_data = $this->campaign_database->get_campaign_by_name($campaign_name);
+
+            // Check if the campaign ID was successfully retrieved from the database.
+            if (empty($campaign_data) || empty($campaign_data['id'])) {
+                continue;
+            }
+
+            $campaign_id = $campaign_data['id'];
+
+            foreach ($group_subscribers as $subscriber) {
+                $campaign_subscriber = [
+                    'campaign_id' => $campaign_id,
+                    'subscriber_id' => $subscriber['id'],
+                    'group_id' => $group['id'],
+                    'subscriber_tier' => ucwords(strtolower($this->utils->get_tier_from_group_name($group['name']))),
+                    'purchase_id' => $this->get_purchase_id_from_subscriber($subscriber, $campaign_name),
+                ];
+
+                $campaign_subscribers_data[] = $campaign_subscriber;
+            }
+        }
+
+
+        // Final batch upsert
+        if (!empty($campaign_subscribers_data)) {
+            $this->campaign_group_subscribers_database->upsert_campaign_subscribers_bulk($campaign_subscribers_data);
+            return true;
+        }
+
+        return false;
+    }
+
     /**
      * Synchronizes all MailerLite data, including campaigns, fields, groups, and subscribers.
      *
@@ -2901,101 +3003,52 @@ class EM_Sync
      * @throws Exception If any of the MailerLite API calls or database operations fail.
      */
     public function sync_all_mailerlite_data(): void
-{
-    // Define the log file path
-    $log_file = dirname(__FILE__) . '/debug.log';
+    {
+        try {
+            $sync_option_key = 'bema_crm_sync_status';
 
-    try {
-        error_log("Mailerlite Sync started. 🚀" . "\n", 3, $log_file);
-        $sync_option_key = 'bema_crm_sync_status';
+            // 1. Sync Album Campaigns
+            $this->update_sync_status('Running', 'Updating campaigns', 0, 3, $sync_option_key);
+            $is_campaign_database_updated = $this->sync_album_campaign_data();
 
-        // 1. Sync Album Campaigns
-        error_log("Attempting to sync album campaigns..." . "\n", 3, $log_file);
-        $this->update_sync_status('Running', 'Updating campaigns', 0, 3, $sync_option_key);
-        $is_campaign_database_updated = $this->sync_album_campaign_data();
-        if ($is_campaign_database_updated) {
-            error_log("Campaign database updated successfully. ✅" . "\n", 3, $log_file);
-        } else {
-            error_log("Campaign database update failed. ❌" . "\n", 3, $log_file);
+            // 2. Sync Fields
+            $this->update_sync_status('Running', 'Updating field database', 1, 3, $sync_option_key);
+            $this->sync_mailerlite_field_data();
+
+            // 3. Sync Groups
+            $this->update_sync_status('Running', 'Updating group database', 2, 3, $sync_option_key);
+            $this->sync_mailerlite_group_data();
+
+            // 4a. Sync Subscribers
+            $this->update_sync_status('Running', 'Fetching subscribers data', 3, 3, $sync_option_key);
+            $subscribers_count = $this->sync_subscribers();
+
+            // 4b. Sync Campaign Group subscribers
+            $this->sync_campaign_group_subscribers();
+
+            // 5. Final Status Update and History
+            $this->update_sync_status('Completed', 'Sync completed', 3, 3, $sync_option_key, $subscribers_count);
+            $this->sync_database->upsert_sync_record('Completed', $subscribers_count, "Successfully synced {$subscribers_count} subscribers.", null);
+            $this->logger->log('Final sync status and history record updated.', 'info');
+
+        } catch (Exception $e) {
+            $this->logger->log('Error Syncing mailerlite data', 'error', ['error' => $e->getMessage()]);
+            $this->update_sync_status('Idle', 'Sync failed.', 0, 3, $sync_option_key);
+            $this->sync_database->upsert_sync_record('Failed', 0, $e->getMessage(), null);
         }
-
-        // 2. Sync Fields
-        error_log("Attempting to sync mailerlite fields..." . "\n", 3, $log_file);
-        $this->update_sync_status('Running', 'Updating field database', 1, 3, $sync_option_key);
-        $is_field_database_updated = $this->sync_mailerlite_field_data();
-        if ($is_field_database_updated) {
-            error_log("Field database updated successfully. ✅" . "\n", 3, $log_file);
-        } else {
-            error_log("Field database update failed. ❌" . "\n", 3, $log_file);
-        }
-
-        // 3. Sync Groups
-        error_log("Attempting to sync mailerlite groups..." . "\n", 3, $log_file);
-        $this->update_sync_status('Running', 'Updating group database', 2, 3, $sync_option_key);
-        $is_group_database_updated = $this->sync_mailerlite_group_data();
-        if ($is_group_database_updated) {
-            error_log("Group database updated successfully. ✅" . "\n", 3, $log_file);
-        } else {
-            error_log("Group database update failed. ❌" . "\n", 3, $log_file);
-        }
-
-        // 4. Sync Subscribers and their Campaign Data (Optimized)
-        error_log("Fetching all subscribers..." . "\n", 3, $log_file);
-        $this->update_sync_status('Running', 'Fetching subscribers data', 3, 3, $sync_option_key);
-        $all_subscribers = $this->mailerLiteInstance->getSubscribers();
-        $subscribers_count = count($all_subscribers);
-        error_log("Total subscribers fetched: {$subscribers_count}." . "\n", 3, $log_file);
-
-        // Store all subscribers in the main table in a batch operation if possible
-        error_log("Syncing subscribers to the main database..." . "\n", 3, $log_file);
-        $this->subscribers_database->sync_subscribers($all_subscribers);
-        error_log('All subscribers stored in main database. ✅' . "\n", 3, $log_file);
-
-        // Prepare data for batch upsert into the campaign_group_subscribers_database
-        $campaign_subscribers_data = [];
-        $campaign_name_list = $this->utils->get_campaigns_names();
-        error_log("Preparing campaign subscriber data for batch upsert..." . "\n", 3, $log_file);
-
-        foreach ($all_subscribers as $subscriber) {
-            foreach ($subscriber['groups'] as $group) {
-                $campaign_name = $this->utils->get_campaign_name_from_group_name($group['name']);
-                if ($campaign_name) {
-                    $campaign_subscriber = [
-                        'campaign_name' => $campaign_name,
-                        'subscriber_id' => $subscriber['id'],
-                        'group_id' => $group['id'],
-                        'subscriber_tier' => ucwords(strtolower($this->utils->get_tier_from_group_name($group['name']))),
-                        'purchase_id' => $this->get_purchase_id_from_subscriber($subscriber, $campaign_name),
-                    ];
-                    $campaign_subscribers_data[] = $campaign_subscriber;
-                }
-            }
-        }
-        error_log("Data for " . count($campaign_subscribers_data) . " campaign subscribers prepared." . "\n", 3, $log_file);
-
-        // Final batch upsert
-        if (!empty($campaign_subscribers_data)) {
-            error_log("Starting final batch upsert for campaign subscribers..." . "\n", 3, $log_file);
-            $this->campaign_group_subscribers_database->upsert_campaign_subscribers_batch($campaign_subscribers_data);
-            error_log('Batch upsert for campaign subscribers completed. ✅' . "\n", 3, $log_file);
-        } else {
-            error_log("No campaign subscriber data to upsert. Skipping batch upsert." . "\n", 3, $log_file);
-        }
-
-        // 5. Final Status Update and History
-        error_log("Sync process completed. Updating final status. ✨" . "\n", 3, $log_file);
-        $this->update_sync_status('Completed', 'Sync completed', 3, 3, $sync_option_key, $subscribers_count);
-        $this->sync_database->upsert_sync_record('Completed', $subscribers_count, "Successfully synced {$subscribers_count} subscribers.", null);
-        error_log("Final sync status and history record updated. 🎉" . "\n", 3, $log_file);
-
-    } catch (Exception $e) {
-        // Handle failure
-        error_log("An error occurred during sync: " . $e->getMessage() . " 🚨" . "\n", 3, $log_file);
-        $this->logger->log('Error Syncing mailerlite data', 'error', ['error' => $e->getMessage()]);
-        $this->update_sync_status('Idle', 'Sync failed.', 0, 3, $sync_option_key);
-        $this->sync_database->upsert_sync_record('Failed', 0, $e->getMessage(), null);
     }
-}
+
+    public function transition_campaigns($source_campaign_name, $destination_campaign_name) {
+        $transition_rules = get_option('bema_crm_transition_matrix', []);
+
+        foreach ($transition_rules as $rule) {
+            $normalize_current_tier = str_replace(' ', '_', $rule['current_tier']);
+            $purchase_field = $source_campaign_name . strtoupper($normalize_current_tier);
+        }
+
+        // $sour
+
+    }
 
     /**
      * Updates the synchronization status in the database.

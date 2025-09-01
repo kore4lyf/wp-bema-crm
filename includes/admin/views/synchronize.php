@@ -19,7 +19,7 @@ $sync_state = get_option($sync_option_key, []);
     update_option($sync_option_key, $sync_state);
 
 // --- Ensure DB Manager Available ---
-$this->sync_db_manager = new \Bema\Sync_Database_Manager();
+$this->sync_db_manager = new \Bema\Database\Sync_Database_Manager();
 
 // --- Helper to Trigger Immediate Sync ---
 function trigger_immediate_sync() {
@@ -111,7 +111,7 @@ $sync_history = $this->sync_db_manager->get_sync_records_without_data();
             <tr>
                 <th>Date/Time</th>
                 <th>Status</th>
-                <th>Users</th>
+                <th>Subscribers</th>
                 <th>Notes</th>
                 <th>View</th>
                 <th>Restore</th>
@@ -125,7 +125,7 @@ $sync_history = $this->sync_db_manager->get_sync_records_without_data();
                     <tr>
                         <td><?php echo esc_html($record['sync_date']); ?></td>
                         <td><?php echo esc_html($record['status']); ?></td>
-                        <td><?php echo intval($record['synced_users']); ?></td>
+                        <td><?php echo intval($record['synced_subscribers']); ?></td>
                         <td><?php echo esc_html($record['notes']); ?></td>
                         <td><?php echo $record['status'] === 'Completed' ? '<a href="#" class="view-sync" data-id="' . intval($record['id']) . '">View</a>' : ''; ?></td>
                         <td><?php echo $record['status'] === 'Completed' ? '<a href="#" class="restore-sync" data-id="' . intval($record['id']) . '">Restore</a>' : ''; ?></td>

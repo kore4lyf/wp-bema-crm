@@ -1,6 +1,6 @@
 <?php
 
-namespace Bema;
+namespace Bema\Database;
 
 use Exception;
 use Bema\BemaCRMLogger;
@@ -10,28 +10,50 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * Manages all database operations for the BemaCRM Field Meta table.
+ *
+ * This class provides a set of methods to interact with the custom database table
+ * for storing field metadata, including creating the table, inserting, updating,
+ * deleting, and retrieving field records.
+ */
 class Field_Database_Manager
 {
     /**
+     * The name of the custom database table for fields.
+     *
      * @var string
      */
     private $table_name;
     
     /**
+     * The name of the campaigns meta table, used for foreign key constraints.
+     *
      * @var string
      */
     private $campaign_table_name;
 
     /**
+     * The WordPress database access object.
+     *
      * @var wpdb
      */
     private $wpdb;
 
     /**
+     * The logging utility for handling errors and messages.
+     *
      * @var BemaCRMLogger
      */
     private $logger;
 
+    /**
+     * Constructs the Field_Database_Manager object.
+     *
+     * Initializes the database table names and the logger instance.
+     *
+     * @param BemaCRMLogger|null $logger An optional logger instance. If not provided, a new one is created.
+     */
     public function __construct(?BemaCRMLogger $logger = null)
     {
         global $wpdb;
@@ -42,11 +64,11 @@ class Field_Database_Manager
     }
 
     /**
-     * Creates the custom database table.
+     * Creates the custom database table for fields.
      *
-     * The 'campaign_id' column is now an integer to serve as a proper foreign key.
+     * Uses the `dbDelta` function for safe table creation and updates.
      *
-     * @return bool
+     * @return bool True on success, false on failure.
      */
     public function create_table()
     {
@@ -57,19 +79,13 @@ class Field_Database_Manager
 
             $charset_collate = $this->wpdb->get_charset_collate();
 
-            // Added a FOREIGN KEY constraint to the SQL.
-            // NOTE: The WordPress dbDelta function ignores FOREIGN KEY constraints.
-            // The relationship is handled logically in the application.
-            // Using the new $this->campaign_table_name property.
             $sql = "CREATE TABLE {$this->table_name} (
-                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                id BIGINT UNSIGNED NOT NULL,
                 field_name VARCHAR(255) NOT NULL,
-                field_id BIGINT UNSIGNED NOT NULL,
                 campaign_id BIGINT UNSIGNED NOT NULL,
                 
                 PRIMARY KEY (id),
-                UNIQUE KEY field_id (field_id),
-                FOREIGN KEY (campaign_id) REFERENCES {$this->campaign_table_name}(id)
+                CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES {$this->campaign_table_name}(id) ON DELETE CASCADE
             ) $charset_collate;";
 
             $result = dbDelta($sql);
@@ -86,27 +102,24 @@ class Field_Database_Manager
     }
 
     /**
-     * Inserts or updates a single field.
+     * Inserts a new field record or updates an existing one based on the primary key.
      *
-     * The method now accepts an integer campaign ID instead of a string.
-     *
-     * @param string|int $field_id The unique ID of the field.
-     * @param string $field_name The name of the field.
-     * @param int $campaign_id The ID of the campaign.
+     * @param int    $id          The unique ID of the field.
+     * @param string $field_name  The name of the field.
+     * @param int    $campaign_id The ID of the associated campaign.
      * @return int|false The number of affected rows on success, or false on failure.
      */
-    public function upsert_field($field_id, $field_name, $campaign_id)
+    public function upsert_field($id, $field_name, $campaign_id)
     {
         try {
-            // Updated query to use 'campaign_id' and the %d placeholder.
-            $query = "INSERT INTO {$this->table_name} (field_name, field_id, campaign_id) VALUES (%s, %d, %d) " .
+            $query = "INSERT INTO {$this->table_name} (id, field_name, campaign_id) VALUES (%d, %s, %d) " .
                      "ON DUPLICATE KEY UPDATE field_name = VALUES(field_name), campaign_id = VALUES(campaign_id)";
 
             $result = $this->wpdb->query(
                 $this->wpdb->prepare(
                     $query,
+                    absint($id),
                     sanitize_text_field($field_name),
-                    absint($field_id),
                     absint($campaign_id)
                 )
             );
@@ -123,12 +136,9 @@ class Field_Database_Manager
     }
 
     /**
-     * Inserts or updates multiple fields in a single bulk query.
+     * Performs a bulk insert or update for multiple field records.
      *
-     * The method now expects an integer campaign ID in the input array.
-     *
-     * @param array $fields_to_upsert An array of associative arrays, where each
-     * array contains 'field_name', 'field_id', and the new 'campaign_id'.
+     * @param array $fields_to_upsert An array of associative arrays, each representing a field with keys 'id', 'field_name', and 'campaign_id'.
      * @return int|false The number of affected rows on success, or false on failure.
      */
     public function upsert_fields_bulk(array $fields_to_upsert)
@@ -141,16 +151,14 @@ class Field_Database_Manager
             $placeholders = [];
             $values = [];
             
-            // Updated loop to get the 'campaign_id' integer value.
             foreach ($fields_to_upsert as $field) {
-                $placeholders[] = "(%s, %d, %d)";
+                $placeholders[] = "(%d, %s, %d)";
+                $values[] = absint($field['id']);
                 $values[] = sanitize_text_field($field['field_name']);
-                $values[] = absint($field['field_id']);
                 $values[] = absint($field['campaign_id']);
             }
 
-            // Updated query to include the 'campaign_id' column.
-            $query = "INSERT INTO {$this->table_name} (field_name, field_id, campaign_id) VALUES " .
+            $query = "INSERT INTO {$this->table_name} (id, field_name, campaign_id) VALUES " .
                      implode(', ', $placeholders) .
                      " ON DUPLICATE KEY UPDATE field_name = VALUES(field_name), campaign_id = VALUES(campaign_id)";
 
@@ -168,10 +176,10 @@ class Field_Database_Manager
     }
 
     /**
-     * Delete a field by its field_name.
+     * Deletes a field record from the database by its name.
      *
-     * @param string $field_name
-     * @return int|false
+     * @param string $field_name The name of the field to delete.
+     * @return int|false The number of deleted rows on success, or false on failure.
      */
     public function delete_field_by_name($field_name)
     {
@@ -194,27 +202,27 @@ class Field_Database_Manager
     }
 
     /**
-     * Get a field by its field_id.
+     * Retrieves a single field record by its ID.
      *
-     * @param string|int $field_id
-     * @return array|null
+     * @param int $id The ID of the field to retrieve.
+     * @return array|object|null A row object or array on success, null if no row is found.
      */
-    public function get_field_by_id($field_id)
+    public function get_field_by_id($id)
     {
         return $this->wpdb->get_row(
             $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE field_id = %d",
-                absint($field_id)
+                "SELECT * FROM {$this->table_name} WHERE id = %d",
+                absint($id)
             ),
             ARRAY_A
         );
     }
 
     /**
-     * Get a field by its field_name.
+     * Retrieves a single field record by its name.
      *
-     * @param string $field_name
-     * @return array|null
+     * @param string $field_name The name of the field to retrieve.
+     * @return array|object|null A row object or array on success, null if no row is found.
      */
     public function get_field_by_name($field_name)
     {
@@ -228,10 +236,10 @@ class Field_Database_Manager
     }
 
     /**
-     * Get a field by its campaign_id.
+     * Retrieves all field records associated with a specific campaign ID.
      *
-     * @param int $campaign_id
-     * @return array|null
+     * @param int $campaign_id The ID of the campaign.
+     * @return array|object|null An array of row objects or arrays on success, null if no rows are found.
      */
     public function get_field_by_campaign_id($campaign_id)
     {
@@ -245,9 +253,9 @@ class Field_Database_Manager
     }
 
     /**
-     * Get all fields.
+     * Retrieves all field records from the database.
      *
-     * @return array
+     * @return array|object|null An array of row objects or arrays on success, null if no rows are found.
      */
     public function get_all_fields()
     {
@@ -255,9 +263,9 @@ class Field_Database_Manager
     }
 
     /**
-     * Deletes the custom database table.
+     * Deletes the entire field meta table.
      *
-     * @return bool True on success, false on failure.
+     * @return bool True if the table was successfully dropped, false otherwise.
      */
     public function delete_table(): bool
     {
@@ -265,7 +273,6 @@ class Field_Database_Manager
             $sql = "DROP TABLE IF EXISTS {$this->table_name}";
             $this->wpdb->query($sql);
 
-            // Check if the table was successfully dropped.
             if ($this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") !== $this->table_name) {
                 return true;
             }
@@ -279,9 +286,9 @@ class Field_Database_Manager
     }
 
     /**
-     * Deletes all fields associated with a specific campaign ID.
+     * Deletes all field records associated with a specific campaign ID.
      *
-     * @param int $campaign_id The ID of the campaign whose fields need to be deleted.
+     * @param int $campaign_id The ID of the campaign whose fields should be deleted.
      * @return int|false The number of deleted rows on success, or false on failure.
      */
     public function delete_fields_by_campaign_id(int $campaign_id)

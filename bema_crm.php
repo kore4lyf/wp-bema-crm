@@ -61,14 +61,14 @@ if (!function_exists('Bema\\debug_to_file')) {
 spl_autoload_register(function ($class) {
     try {
         $namespace = 'Bema\\';
+        $base_dir = BEMA_PATH . 'includes/';
 
-        // If the class is not in our namespace, we ignore it.
+        // If the class is not in our namespace, ignore it.
         if (strpos($class, $namespace) !== 0) {
             return;
         }
 
         // A map of core class names to their file paths (relative to BEMA_PATH).
-        // This is the most robust way to ensure critical classes are found.
         $class_file_map = [
             'Bema_CRM' => 'bema_crm.php',
             'BemaCRMLogger' => 'includes/bema-crm-logger.php',
@@ -82,28 +82,40 @@ spl_autoload_register(function ($class) {
         // Remove the namespace prefix from the class name.
         $relative_class_name = str_replace($namespace, '', $class);
 
-        // Check if the class exists in our map.
+        // Check the explicit map first.
         if (isset($class_file_map[$relative_class_name])) {
             $file_path = BEMA_PATH . $class_file_map[$relative_class_name];
-
-            // If the file exists, we require it.
             if (file_exists($file_path)) {
                 require_once $file_path;
                 return;
             }
         }
+        
+        // Convert class name to file path with subdirectory and underscore handling.
+        // e.g., 'Bema\Database\Group_Database_Manager' becomes 'database/class-group-database-manager.php'
+        $parts = explode('\\', $relative_class_name);
+        $last_part = array_pop($parts);
+        
+        // Convert underscores in the class name to hyphens for the filename.
+        $file_name = 'class-' . strtolower(str_replace('_', '-', $last_part)) . '.php';
+        
+        // Build the subdirectory path from the remaining parts.
+        $sub_dir = implode(DIRECTORY_SEPARATOR, array_map('strtolower', $parts));
 
-        // If the class is not in the map, we fall back to a more general naming convention search.
-        $file_name = str_replace('_', '-', strtolower($relative_class_name));
-        $file_path = BEMA_PATH . 'includes/class-' . $file_name . '.php';
+        // Construct the full file path.
+        $file_path = $base_dir . $sub_dir . DIRECTORY_SEPARATOR . $file_name;
 
-        if (file_exists($file_path)) {
-            require_once $file_path;
-            return;
+        // Normalize the path and require the file if it exists.
+        $normalized_path = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $file_path);
+
+        if (file_exists($normalized_path)) {
+            require_once $normalized_path;
         }
 
     } catch (Exception $e) {
-        debug_to_file("Autoloader error: {$e->getMessage()}", 'AUTOLOADER_ERROR');
+        if (function_exists('debug_to_file')) {
+            debug_to_file("Autoloader error: {$e->getMessage()}", 'AUTOLOADER_ERROR');
+        }
     }
 });
 
@@ -120,12 +132,6 @@ class Bema_CRM
     private $admin_interface;
     private $settings;
     private $db_manager;
-    private $sync_db_manager;
-    private $campaign_group_subscriber_db_manager;
-    private $campaign_db_manager;
-    private $group_db_manager;
-    private $field_db_manager;
-    private $subscriber_db_manager;
     private $component_registry = [];
     private $initialized = false;
     private static $instance_creating = false;
@@ -510,21 +516,26 @@ class Bema_CRM
                 $this->initialize_admin_components();
             }
 
+            // create transition db instance
+            $this->transition_db_manager = new \Bema\Database\Transition_Database_Manager();
+            // create transition db instance
+            $this->transition_subscribers_db_manager = new \Bema\Database\Transition_Subscribers_Database_Manager();
             // create campaign db instance
-            $this->campaign_db_manager = new \Bema\Campaign_Database_Manager();
+            $this->campaign_db_manager = new \Bema\Database\Campaign_Database_Manager();
             // create group db instance
-            $this->group_db_manager = new \Bema\Group_Database_Manager();
+            $this->group_db_manager = new \Bema\Database\Group_Database_Manager();
             // create field db instance
-            $this->field_db_manager = new \Bema\Field_Database_Manager();
+            $this->field_db_manager = new \Bema\Database\Field_Database_Manager();
             // create subscriber db instance
-            $this->subscriber_db_manager = new \Bema\Subscribers_Database_Manager();
+            $this->subscriber_db_manager = new \Bema\Database\Subscribers_Database_Manager();
             // create campaign subscriber db instance
-            $this->campaign_group_subscriber_db_manager = new \Bema\Campaign_Group_Subscribers_Database_Manager();
+            $this->campaign_group_subscribers_db_manager = new \Bema\Database\Campaign_Group_Subscribers_Database_Manager();
             // create sync db instance
-            $this->sync_db_manager = new \Bema\Sync_Database_Manager();
+            $this->sync_db_manager = new \Bema\Database\Sync_Database_Manager();
 
-            $this->field_db_manager->create_table();
-            $this->campaign_db_manager->create_table();
+            
+            // Create campaign subscriber Table
+            $this->campaign_group_subscribers_db_manager->create_table();
 
             $this->initialized = true;
         } catch (Exception $e) {
@@ -741,9 +752,8 @@ class Bema_CRM
             $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager, $this->logger);
             $triggers->init();
 
-            // --- Register Cron Hook (fires the actual sync) ---
+            // Register sync cron Hook
             add_action('bema_crm_sync_cron_job', function () {
-                error_log("Admin is in CRON" . "" . "\n", 3, dirname(__FILE__) . '/debug.log');
                 // Perform the sync
                 $this->sync_instance->sync_all_mailerlite_data();
             });
@@ -1008,9 +1018,13 @@ class Bema_CRM
             // Create subscriber Table
             $this->subscriber_db_manager->create_table();
             // Create campaign subscriber Table
-            $this->campaign_group_subscriber_db_manager->create_table();
+            $this->campaign_group_subscribers_db_manager->create_table();
             // Create sync Table
-            $this->$sync_db_manager->create_table();
+            $this->sync_db_manager->create_table();
+            // Create transition Table
+            $this->transition_db_manager->create_table();
+            // Create transition subscribers Table
+            $this->transition_subscribers_db_manager->create_table();
 
             // Clear rewrite rules
             flush_rewrite_rules();
@@ -1066,16 +1080,23 @@ class Bema_CRM
             // Clear sync status
             update_option('bema_sync_running', false);
 
-            // create campaign Table
-            $this->campaign_db_manager->create_table();
-            // create group Table
+
+            // Delete campaign Table
+            $this->campaign_db_manager->delete_table();
+            // Delete group Table
             $this->group_db_manager->delete_table();
-            // create field Table
+            // Delete field Table
             $this->field_db_manager->delete_table();
-            // create subscriber Table
+            // Delete subscriber Table
             $this->subscriber_db_manager->delete_table();
-            // create campaign subscriber Table
-            $this->campaign_group_subscriber_db_manager->delete_table();
+            // Delete campaign subscriber Table
+            $this->campaign_group_subscribers_db_manager->delete_table();
+            // Delete sync Table
+            $this->sync_db_manager->delete_table();
+            // Delete transition Table
+            $this->transition_db_manager->delete_table();
+            // Delete transition subscribers Table
+            $this->transition_subscribers_db_manager->delete_table();
             debug_to_file('Plugin database tables removed');
 
             // Clear rewrite rules

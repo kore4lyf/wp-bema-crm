@@ -108,65 +108,67 @@ class Utils
 
 
   /**
-   * Retrieves all albums from the database, along with their artist and release year.
-   *
-   * @return array{0: array{album: string, artist: string, year: string}} An array of album details.
-   */
-  public function get_all_albums(): array
-  {
+ * Retrieves all albums from the database, along with their artist, release year, and product ID.
+ *
+ * @return array{0: array{id: int, album: string, artist: string, year: string}} An array of album details.
+ */
+public function   get_all_albums(): array
+{
     global $wpdb;
 
     // Use a single query to retrieve all downloads (albums) and their associated artists.
     // This is more efficient than looping and running separate queries for each album.
     $query = $wpdb->prepare(
-      "
-        SELECT 
+        "
+        SELECT
+            p.ID AS product_id,
             p.post_title AS album_name,
             p.post_date AS release_date,
             t.name AS artist_name
         FROM {$wpdb->posts} AS p
-        INNER JOIN {$wpdb->term_relationships} AS tr 
+        INNER JOIN {$wpdb->term_relationships} AS tr
             ON p.ID = tr.object_id
-        INNER JOIN {$wpdb->term_taxonomy} AS tt 
+        INNER JOIN {$wpdb->term_taxonomy} AS tt
             ON tr.term_taxonomy_id = tt.term_taxonomy_id
-        INNER JOIN {$wpdb->terms} AS t 
+        INNER JOIN {$wpdb->terms} AS t
             ON tt.term_id = t.term_id
-        WHERE 
+        WHERE
             p.post_type = 'download'
             AND p.post_status = 'publish'
             AND tt.taxonomy = 'download_category'
             AND t.slug LIKE %s
-        ORDER BY 
+        ORDER BY
             p.post_date DESC
         ",
-      '%-artist'
+        '%-artist'
     );
 
     $albums = $wpdb->get_results($query, ARRAY_A);
 
     if (empty($albums)) {
-      return [];
+        return [];
     }
 
     $all_albums = [];
 
     // Loop through the results and format the data.
     foreach ($albums as $album) {
-      $release_year = '0';
-      if (!empty($album['release_date'])) {
-        $dateArr = explode('-', $album['release_date']);
-        $release_year = $dateArr[0];
-      }
+        $release_year = '0';
+        if (!empty($album['release_date'])) {
+            $dateArr = explode('-', $album['release_date']);
+            $release_year = $dateArr[0];
+        }
 
-      $all_albums[] = [
-        'album' => $album['album_name'],
-        'artist' => $album['artist_name'],
-        'year' => $release_year,
-      ];
+        $all_albums[] = [
+            'product_id' => (int)$album['product_id'],
+            'album' => $album['album_name'],
+            'artist' => $album['artist_name'],
+            'year' => $release_year,
+        ];
     }
 
     return $all_albums;
-  }
+}
 
 
   public function get_campaigns_names(): array
@@ -209,16 +211,16 @@ class Utils
     return $tier;
   }
 
-  public function get_campaign_name_from_text($group_name)
+  public function get_campaign_name_from_text($text)
   {
-    $group_name_list = explode('_', $group_name);
-    $group_name_size = count($group_name_list);
+    $text_list = explode('_', $text);
+    $text_size = count($text_list);
 
-    if ($group_name_size < 3) {
+    if ($text_size < 3) {
       return '';
     }
 
-    return $group_name_list[0] . '_' . $group_name_list[1] . '_' . $group_name_list[2];
+    return $text_list[0] . '_' . $text_list[1] . '_' . $text_list[2];
   }
 
 
@@ -249,12 +251,14 @@ class Utils
     $album = $wpdb->get_row($query, ARRAY_A);
 
     if (empty($album)) {
-      return [
-        'artist' => '',
-        'year' => '0',
-      ];
+        return [
+            'product_id' => 0,
+            'artist' => '',
+            'year' => '0',
+        ];
     }
 
+    $product_id = (int)$album['ID'];
     $release_year = '0';
     if (!empty($album['post_date'])) {
       $dateArr = explode('-', $album['post_date']);
@@ -283,12 +287,13 @@ class Utils
     );
 
     if (!empty($artist_term['name'])) {
-      $artist_name = $artist_term['name'];
+        $artist_name = $artist_term['name'];
     }
 
     return [
-      'artist' => $artist_name,
-      'year' => $release_year,
+        'product_id' => $product_id,
+        'artist' => $artist_name,
+        'year' => $release_year,
     ];
   }
 }

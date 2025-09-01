@@ -125,7 +125,9 @@ class Database_Migrations
     public function install(): bool
     {
         try {
-            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            if (!function_exists('dbDelta')) {
+                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+            }
 
             $this->logger->log('Starting database installation', 'info');
 
