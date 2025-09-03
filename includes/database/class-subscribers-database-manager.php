@@ -325,25 +325,35 @@ VALUES " . implode(', ', $placeholders);
     /**
      * Deletes a subscriber record by their email address.
      *
+     * This method deletes a subscriber from the main subscribers table.
+     * Due to the foreign key with ON DELETE CASCADE, all associated
+     * campaign subscriber records in the `bemacrm_campaign_subscribersmeta` table
+     * will also be automatically deleted to maintain data integrity.
+     *
      * @param string $email The email address of the subscriber to delete.
      *
-     * @return int|false The number of rows deleted on success, false on failure.
+     * @return int|false The number of rows deleted on success, or false on failure.
      * @throws Exception If the deletion operation fails.
      */
     public function delete_subscriber_by_email($email)
     {
         try {
+            // Use wpdb->delete() to safely remove the subscriber record.
             $deleted = $this->wpdb->delete(
                 $this->table_name,
                 ['email' => sanitize_email($email)],
                 ['%s']
             );
 
+            // Check if the deletion failed.
             if (false === $deleted) {
                 throw new Exception('Failed to delete subscriber: ' . $this->wpdb->last_error);
             }
+
+            // Return the number of rows that were deleted.
             return $deleted;
         } catch (Exception $e) {
+            // Log the error and return false on failure.
             $this->logger->log('Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;
         }
@@ -398,13 +408,17 @@ VALUES " . implode(', ', $placeholders);
     /**
      * Retrieves a paginated list of subscribers with optional filtering.
      *
+     * This method joins the subscribers, campaign subscribers, and campaigns tables
+     * to allow filtering by campaign name and tier. It supports pagination and
+     * searching by email address.
+     *
      * @param int    $per_page      The number of subscribers to retrieve per page.
      * @param int    $offset        The offset for the pagination.
      * @param string $campaign_name Optional. Filters by campaign name.
      * @param string $tier          Optional. Filters by campaign tier.
      * @param string $search        Optional. Searches by email.
      *
-     * @return array An array of subscriber records.
+     * @return array An array of subscriber records with associated campaign data.
      */
     public function get_subscribers(
         int $per_page = 25,
@@ -413,54 +427,58 @@ VALUES " . implode(', ', $placeholders);
         string $tier = '',
         string $search = ''
     ): array {
+        // Start with the base SELECT and FROM clauses.
+        $sql_select = "SELECT s.*, c.tier, c.purchase_id, t.campaign";
+        $sql_from = "FROM {$this->table_name} AS s";
+
+        // Initialize WHERE clause conditions and parameters for prepared statements.
         $where = [];
         $params = [];
 
+        // Conditionally add INNER JOINs to access campaign and tier data.
+        // Joins are only added if a campaign or tier filter is present,
+        // which optimizes the query for non-filtered calls.
+        if ($campaign_name !== '' || $tier !== '') {
+            $sql_from .= " INNER JOIN {$this->wpdb->prefix}bemacrm_campaign_subscribersmeta AS c ON s.id = c.subscriber_id";
+            $sql_from .= " INNER JOIN {$this->wpdb->prefix}bemacrm_campaignsmeta AS t ON c.campaign_id = t.id";
+        }
+
+        // Build the WHERE clause based on the provided filters.
         if ($campaign_name !== '') {
-            $where[] = "c.campaign_name = %s";
+            // Add condition for filtering by campaign name.
+            $where[] = "t.campaign = %s";
             $params[] = $campaign_name;
         }
 
         if ($tier !== '') {
+            // Add condition for filtering by campaign tier.
             $where[] = "c.tier = %s";
             $params[] = $tier;
         }
 
         if ($search !== '') {
+            // Add condition for searching by email using LIKE.
             $where[] = "s.email LIKE %s";
             $params[] = '%' . $this->wpdb->esc_like($search) . '%';
         }
 
+        // Construct the full WHERE clause string.
         $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
+        // Combine all parameters for the prepared statement.
+        $final_params = array_merge($params, [$per_page, $offset]);
 
-        if ($campaign_name !== '') {
-            $params[] = $per_page;
-            $params[] = $offset;
+        // Prepare the final SQL query string.
+        $sql = $this->wpdb->prepare(
+            "{$sql_select}
+         {$sql_from}
+         {$where_sql}
+         ORDER BY s.id DESC
+         LIMIT %d OFFSET %d",
+            ...$final_params
+        );
 
-            $sql = $this->wpdb->prepare(
-                "SELECT s.*, c.tier, c.purchase_id
-             FROM {$this->table_name} AS s
-             INNER JOIN {$this->wpdb->prefix}bemacrm_campaign_subscribersmeta AS c
-               ON s.id = c.id
-             {$where_sql}
-             ORDER BY s.id ASC
-             LIMIT %d OFFSET %d",
-                ...$params
-            );
-        } else {
-            $params[] = $per_page;
-            $params[] = $offset;
-
-            $sql = $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} AS s
-             {$where_sql}
-             ORDER BY s.id ASC
-             LIMIT %d OFFSET %d",
-                ...$params
-            );
-        }
-
+        // Execute the query and return the results as an associative array.
         return $this->wpdb->get_results($sql, ARRAY_A);
     }
 

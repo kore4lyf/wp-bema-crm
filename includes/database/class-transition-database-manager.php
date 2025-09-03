@@ -80,16 +80,16 @@ class Transition_Database_Manager
     }
 
     /**
-     * Inserts a new transition record.
+     * Inserts a new transition record and returns its ID.
      *
-     * @param int    $source_id The ID of the source campaign.
-     * @param int    $destination_id The ID of the destination campaign.
+     * @param int $source_id The ID of the source campaign.
+     * @param int $destination_id The ID of the destination campaign.
      * @param string $status The status of the transition ('Complete' or 'Failed').
-     * @param int    $subscribers    The number of subscribers involved in the transition.
+     * @param int $subscribers The number of subscribers involved in the transition.
      *
-     * @return bool True on success, false on failure.
+     * @return int|false The ID of the new record on success, or false on failure.
      */
-    public function insert_record(int $source_id, int $destination_id, string $status, int $subscribers): bool
+    public function insert_record(int $source_id, int $destination_id, string $status, int $subscribers)
     {
         try {
             $record_data = [
@@ -100,17 +100,17 @@ class Transition_Database_Manager
                 'transition_date' => current_time('mysql'),
             ];
 
-            $this->wpdb->insert(
+            $inserted = $this->wpdb->insert(
                 $this->table_name,
                 $record_data,
                 ['%d', '%d', '%s', '%d', '%s']
             );
 
-            if ($this->wpdb->last_error) {
+            if ($inserted === false || $this->wpdb->last_error) {
                 throw new Exception($this->wpdb->last_error);
             }
 
-            return true;
+            return $this->wpdb->insert_id;
         } catch (Exception $e) {
             $this->logger->log('Transition_Database_Manager Error: ' . $e->getMessage(), 'error');
             return false;

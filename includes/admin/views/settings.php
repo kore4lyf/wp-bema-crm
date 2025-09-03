@@ -3,19 +3,9 @@
 namespace Bema\Admin\Views;
 
 use function Bema\debug_to_file;
-use Bema\Providers\MailerLite;
-use Bema\Providers\EDD;
 use Bema\BemaCRMLogger;
-use Bema\EM_Sync;
-use Bema\Utils;
-use Bema\Triggers;
-use Bema\Database\Group_Database_Manager;
-use Bema\Database\Field_Database_Manager;
 
 $logger = new BemaCRMLogger();
-
-
-
 
 if (!defined('ABSPATH')) {
     exit;
@@ -29,59 +19,6 @@ if (!isset($admin) || !($admin instanceof \Bema\Admin\Bema_Admin_Interface)) {
 $current_settings = $admin->get_settings();
 $has_sync = $admin->has_sync_capability();
 $sync_disabled = !$has_sync;
-
-//
-// REMOVE ME
-//
-
-$apiKey = $current_settings['api']['edd_api_key'];
-$token = $current_settings['api']['edd_token'];
-$mailerlite_key = $current_settings['api']['mailerlite_api_key'];
-
-// Instantiate the EDD provider
-$edd = new EDD($apiKey, $token, $admin->logger);
-$mailerlite = new MailerLite($mailerlite_key, $admin->logger);
-$utils = new Utils();
-$group_db_manager = new Group_Database_Manager();
-$field_db_manager = new Field_Database_Manager();
-
-$triggers = new Triggers($mailerlite, $this->sync_instance, $utils, $group_db_manager, $field_db_manager,  $this->logger);
-
-class WP_Post {
-    public $post_type;
-    public $post_title;
-}
-
-// Initial data for a successful function call
-$new_status = 'publish';
-$old_status = 'draft';
-
-// Create a mock WP_Post object
-$post = new WP_Post();
-$post->post_type = 'download';
-$post->post_title = 'Wurrdie Tripwire';
-
-// $triggers->create_subscriber_purchase_field_on_album_publish($new_status,$old_status,$post);
-// echo get_option('bema_crm_settings')['api']['mailerlite_api_key'];
-
-// echo var_dump($mailerlite->createField('korede', 'text'));
-$is_field_deleted_on_mailerlite = "Hi";
-// $is_field_deleted_on_mailerlite = $mailerlite->deleteField('2025_ETB_GIG_PURCHASE');
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // Debug logging to verify values
 debug_to_file([
@@ -115,7 +52,6 @@ if ($test_results && is_array($test_results['messages'])) {
 
 <div class="wrap bema-settings">
     <h1 class="wp-heading-inline"><?php echo esc_html(get_admin_page_title()); ?></h1>
-<?php echo var_dump($is_field_deleted_on_mailerlite); ?>
 
     <?php
     $sync_disabled = !$has_sync;

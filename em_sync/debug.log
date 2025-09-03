@@ -5982,3 +5982,16 @@ Starting final batch upsert for campaign subscribers...
 Batch upsert for campaign subscribers completed.
 Sync process completed. Updating final status
 Final sync status and history record updated.
+Group Created: Array
+(
+    [data] => Array
+        (
+            [id] => 926309
+            [name] => 2025_ETB_GIG_PURCHASE
+            [key] => 2025_etb_gig_purchase
+            [type] => number
+            [is_default] => 
+        )
+
+)
+

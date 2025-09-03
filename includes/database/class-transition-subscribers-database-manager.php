@@ -158,20 +158,18 @@ class Transition_Subscribers_Database_Manager
      * @param array $records An array of records, where each record is an array with 'transition_id' and 'subscriber_id'.
      * @return bool True on success, false on failure.
      */
-    public function bulk_upsert(array $records): bool
+    public function bulk_upsert(array $records, ?int $transition_id): bool
     {
         try {
             $values = [];
             $placeholders = [];
-            $log_messages = [];
 
-            // A string of column names, which are needed for the ON DUPLICATE KEY UPDATE clause.
             $column_names = 'transition_id, subscriber_id';
 
             foreach ($records as $record) {
-                if (isset($record['transition_id']) && isset($record['subscriber_id'])) {
-                    $values[] = absint($record['transition_id']);
-                    $values[] = absint($record['subscriber_id']);
+                if ((isset($record['transition_id']) || !isempty($transition_id)) && isset($record['subscriber_id'])) {
+                    $values[] = !is_empty($transition_id) ? $transition_id : absint($record['transition_id']);
+                    $values[] = absint($record['id']);
                     $placeholders[] = "(%d, %d)";
                 }
             }
@@ -181,7 +179,7 @@ class Transition_Subscribers_Database_Manager
             }
 
             $query = "INSERT INTO {$this->table_name} ($column_names) VALUES " . implode(', ', $placeholders) . " ON DUPLICATE KEY UPDATE id=id";
-            $sql = $this->wpdb->prepare($query, ...$values);
+            $sql = $this->wpdb->prepare($query, $values);
             $this->wpdb->query($sql);
 
             if ($this->wpdb->last_error) {

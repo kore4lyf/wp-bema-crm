@@ -945,7 +945,8 @@ class Bema_Admin_Interface
         $view_data = [
             'campaigns' => $this->campaign_manager->get_all_valid_campaigns(),
             'campaign_connections' => $this->get_campaign_connections(),
-            'edd_instance' => $this->sync_instance->getMailerLiteInstance()
+            'edd_instance' => $this->sync_instance->getMailerLiteInstance(),
+            'admin' => $this
         ];
 
         // Extract data to make it available in view scope

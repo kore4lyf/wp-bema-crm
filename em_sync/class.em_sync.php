@@ -20,6 +20,8 @@ use Bema\Database\Sync_Database_Manager;
 use Bema\Database\Field_Database_Manager;
 use Bema\Database\Group_Database_Manager;
 use Bema\Database\Campaign_Database_Manager;
+use Bema\Database\Transition_Database_Manager;
+use Bema\Database\Transition_Subscribers_Database_Manager;
 use Bema\Utils;
 
 if (!defined('ABSPATH')) {
@@ -134,6 +136,12 @@ class EM_Sync
 
             $this->campaign_group_subscribers_database = new Campaign_Group_Subscribers_Database_Manager();
             debug_to_file('Campaign Subscribers Database instance stored');
+
+            $this->transition_database = new Transition_Database_Manager();
+            debug_to_file('Transition Database instance stored');
+
+            $this->transition_subscribers_database = new Transition_Subscribers_Database_Manager();
+            debug_to_file('Transition Subscribers Database instance stored');
 
 
 
@@ -2722,7 +2730,7 @@ class EM_Sync
             ];
         }
 
-        // // Collect all campaigns from product list
+        // Collect all campaigns from product list
         foreach ($albums as $album) {
             $campaign_name = $this->utils->get_campaign_group_name(
                 $album['year'],
@@ -2731,7 +2739,7 @@ class EM_Sync
             );
 
             $campaign_store_map[$campaign_name] = [
-                'name' => $campaign[$campaign_name],
+                'name' => $campaign_name,
                 'product_id' => $album['product_id'],
                 'album' => $album['album'],
                 'year' => $album['year'],
@@ -2749,7 +2757,7 @@ class EM_Sync
             if (isset($campaign_id)) {
                 // Add the campaign to the upsert list and mark it as processed.
                 $campaigns_to_upsert[] = [
-                    'campaign' => strtoupper($campaign_name),
+                    'campaign' => strtoupper($campaign['name']),
                     'id' => $campaign_id,
                     'product_id' => $campaign_data['product_id'] ?? null,
                 ];
@@ -2761,7 +2769,7 @@ class EM_Sync
                     : 'Custom Campaign';
 
                 $response = $this->mailerLiteInstance->create_draft_campaign(
-                    $campaign_name,
+                    $campaign['name'],
                     'regular',
                     $subject
                 );
@@ -2769,7 +2777,7 @@ class EM_Sync
 
                 // Add the campaign to the upsert list and mark it as processed.
                 $campaigns_to_upsert[] = [
-                    'campaign' => strtoupper($campaign_name),
+                    'campaign' => strtoupper(),
                     'id' => $campaign_id,
                     'product_id' => $campaign['product_id'] ?? null,
                 ];
@@ -2866,7 +2874,7 @@ class EM_Sync
 
 
         foreach ($campaign_name_list as $campaign_name) {
-            $all_campaign_group_names[] = $this->utils->get_campaign_group_names($campaign_name);
+            $all_campaign_group_names = array_merge($all_campaign_group_names, $this->utils->get_campaign_group_names($campaign_name));
         }
 
         // Fetch Mailerlite Group Data
@@ -3009,7 +3017,7 @@ class EM_Sync
 
             // 1. Sync Album Campaigns
             $this->update_sync_status('Running', 'Updating campaigns', 0, 3, $sync_option_key);
-            $is_campaign_database_updated = $this->sync_album_campaign_data();
+            $this->sync_album_campaign_data();
 
             // 2. Sync Fields
             $this->update_sync_status('Running', 'Updating field database', 1, 3, $sync_option_key);
@@ -3038,16 +3046,229 @@ class EM_Sync
         }
     }
 
-    public function transition_campaigns($source_campaign_name, $destination_campaign_name) {
-        $transition_rules = get_option('bema_crm_transition_matrix', []);
+    /**
+     * Checks if a given purchase ID is valid and complete.
+     *
+     * This function validates a purchase ID by checking if the corresponding payment exists
+     * and has a 'complete' status using the Easy Digital Downloads (EDD) plugin functions.
+     * It's designed to be used with form field data.
+     *
+     * @param string $purchase_field The key of the purchase ID field in the form data.
+     * @param array $field_list An array of form field data, typically $_POST or similar.
+     * @return bool True if the purchase ID is valid and the payment is complete, otherwise false.
+     */
+    function is_subscriber_purchase_id_valid($purchase_field, $field_list)
+    {
 
-        foreach ($transition_rules as $rule) {
-            $normalize_current_tier = str_replace(' ', '_', $rule['current_tier']);
-            $purchase_field = $source_campaign_name . strtoupper($normalize_current_tier);
+        if (!function_exists('edd_get_payment')) {
+            $this->logger->log('EDD function edd_get_payment() not found. Is Easy Digital Downloads active?', 'error');
+            return false;
         }
 
-        // $sour
+        if (!isset($field_list[$purchase_field]) || empty($field_list[$purchase_field])) {
+            return false;
+        }
 
+        $purchase_id = sanitize_text_field($field_list[$purchase_field]);
+
+        $payment = edd_get_payment($purchase_id);
+
+        if (!$payment) {
+            return false;
+        }
+
+        if ($payment->status === 'complete') {
+            return true;
+        }
+
+        return false;
+    }
+
+
+    /**
+     * Checks if a campaign with the given name exists.
+     *
+     * This function queries the MailerLite API to see if a campaign exists
+     * with a specific name.
+     *
+     * @param string $campaign_name The name of the campaign to check.
+     * @return bool Returns true if the campaign exists, otherwise returns false.
+     */
+    private function is_campaign_exists(string $campaign_name): bool
+    {
+        // Query the MailerLite instance for a campaign by its name.
+        $result = $this->mailerLiteInstance->get_campaign_by_name($campaign_name);
+
+        // Check if the result is not empty, indicating the campaign was found.
+        if ($result) {
+            return true;
+        }
+
+        // If the result is empty, the campaign does not exist.
+        return false;
+    }
+
+    /**
+     * Ensures a campaign with the given name exists in MailerLite.
+     *
+     * If a campaign with the specified name does not already exist, this function
+     * creates a new draft campaign using the MailerLite API.
+     *
+     * @param string $campaign_name The name of the campaign to check for and potentially create.
+     * @return int|null
+     */
+    private function ensure_campaign_exists(string $campaign_name): int|null
+    {
+        // Check if the campaign already exists in MailerLite.
+        $is_campaign_exists = $this->is_campaign_exists();
+
+        // If the campaign doesn't exist, create a new draft campaign.
+        if (!$is_campaign_exists) {
+            $result = $this->mailerLiteInstance->create_draft_campaign($campaign_name);
+            return (int) $result['id'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Transitions subscribers from a source campaign to a destination campaign based on predefined rules.
+     *
+     * This function iterates through a set of transition rules, identifies subscribers in the source campaign,
+     * and transfers them to the corresponding group in the destination campaign. It handles an optional
+     * requirement for a valid purchase ID and logs all actions and errors.
+     *
+     * @param string $source_campaign_name The name of the campaign to transition subscribers from.
+     * @param string $destination_campaign_name The name of the campaign to transition subscribers to.
+     * @throws \Exception If the source or destination campaign cannot be found, or for any other API/database error.
+     */
+    public function transition_campaigns(string $source_campaign_name, string $destination_campaign_name)
+    {
+        echo "Starting campaign transition from '{$source_campaign_name}' to '{$destination_campaign_name}'.\n";
+        try {
+            echo "Attempting to get transition rules from options.\n";
+            // Get transition rules from options. If none exist, log and exit.
+            $transition_rules = get_option('bema_crm_transition_matrix', []);
+            if (empty($transition_rules)) {
+                $this->logger->log('Transition rules are not defined.', 'info');
+                echo "No transition rules found. Exiting.\n";
+                return;
+            }
+            echo "Transition rules successfully retrieved.\n";
+
+            echo "Retrieving source campaign details.\n";
+            // Retrieve source campaign details from the database.
+            $source_campaign = $this->campaign_database->get_campaign_by_name($source_campaign_name);
+            if (!$source_campaign) {
+                echo "Error: Source campaign '{$source_campaign_name}' not found.\n";
+                throw new \Exception("Source campaign '{$source_campaign_name}' not found.");
+            }
+            $source_campaign_id = $source_campaign['id'];
+            echo "Source campaign '{$source_campaign_name}' (ID: {$source_campaign_id}) found.\n";
+
+            echo "Retrieving destination campaign details.\n";
+            // Retrieve destination campaign details from the database.
+            $destination_campaign = $this->campaign_database->get_campaign_by_name($destination_campaign_name);
+            if (!$destination_campaign) {
+                echo "Error: Destination campaign '{$destination_campaign_name}' not found.\n";
+                throw new \Exception("Destination campaign '{$destination_campaign_name}' not found.");
+            }
+            $destination_campaign_id = $destination_campaign['id'];
+            echo "Destination campaign '{$destination_campaign_name}' (ID: {$destination_campaign_id}) found.\n";
+
+            // Iterate through each defined transition rule.
+            foreach ($transition_rules as $rule) {
+                echo "Processing transition rule for tier '{$rule['current_tier']}'.\n";
+                $normalize_current_tier = strtoupper(str_replace(' ', '_', $rule['current_tier']));
+                $source_purchase_field = $source_campaign_name . 'PURCHASE';
+
+                echo "Looking for source group.\n";
+                // Find the source group by name.
+                $source_group_name = $source_campaign_name . '_' . $normalize_current_tier;
+                $source_campaign_group = $this->group_database->get_group_by_name($source_group_name);
+                if (!$source_campaign_group) {
+                    $this->logger->log("Source group '{$source_group_name}' not found. Skipping.", 'warning');
+                    echo "Source group '{$source_group_name}' not found. Skipping to next rule.\n";
+                    continue;
+                }
+                $source_campaign_group_id = $source_campaign_group['id'];
+                echo "Source group '{$source_group_name}' (ID: {$source_campaign_group_id}) found.\n";
+
+                echo "Looking for destination group.\n";
+                // Find the destination group by name.
+                $destination_group_name = $destination_campaign_name . '_' . $normalize_current_tier;
+                $destination_campaign_group = $this->group_database->get_group_by_name($destination_group_name);
+                if (!$destination_campaign_group) {
+                    $this->logger->log("Destination group '{$destination_group_name}' not found. Skipping.", 'warning');
+                    echo "Destination group '{$destination_group_name}' not found. Skipping to next rule.\n";
+                    continue;
+                }
+                $destination_campaign_group_id = $destination_campaign_group['id'];
+                echo "Destination group '{$destination_group_name}' (ID: {$destination_campaign_group_id}) found.\n";
+
+                echo "Getting subscribers from source group '{$source_group_name}'.\n";
+                // Get all subscribers from the source campaign group.
+                $source_campaign_subscribers = $this->mailerLiteInstance->getGroupSubscribers($source_campaign_group_id);
+                $subscriber_count = count($source_campaign_subscribers);
+                echo "Found {$subscriber_count} subscribers in source group '{$source_group_name}'.\n";
+
+                // If no subscribers are found, log and move to the next rule.
+                if (empty($source_campaign_subscribers)) {
+                    $this->logger->log("No subscribers found in group '{$source_group_name}'. Skipping.", 'info');
+                    echo "No subscribers found in source group '{$source_group_name}'. Skipping to next rule.\n";
+                    continue;
+                }
+
+                $subscribers_to_transfer = [];
+                echo "Checking if a purchase is required for this rule.\n";
+                // Check if the transition rule requires a purchase.
+                if ($rule['requires_purchase']) {
+                    echo "Purchase is required. Filtering subscribers with a valid purchase ID.\n";
+                    // Filter subscribers who have a valid purchase ID.
+                    foreach ($source_campaign_subscribers as $subscriber) {
+                        // Check if the purchase field exists and its value is valid.
+                        if (isset($subscriber['fields'][$source_purchase_field]) && is_subscriber_purchase_id_valid($subscriber['fields'][$source_purchase_field])) {
+                            $subscribers_to_transfer[] = $subscriber;
+                        }
+                    }
+                } else {
+                    echo "Purchase is not required. All subscribers will be considered for transfer.\n";
+                    // If no purchase is required, transfer all subscribers.
+                    $subscribers_to_transfer = $source_campaign_subscribers;
+                }
+
+                $transfer_count = count($subscribers_to_transfer);
+                echo "Found {$transfer_count} subscribers to transfer.\n";
+                // If no subscribers meet the criteria, log and skip.
+                if (empty($subscribers_to_transfer)) {
+                    $this->logger->log("No subscribers to transfer for group '{$source_group_name}' based on rules.", 'info');
+                    echo "No subscribers to transfer for group '{$source_group_name}' based on rules. Skipping to next rule.\n";
+                    continue;
+                }
+
+                echo "Performing bulk import of {$transfer_count} subscribers to destination group '{$destination_group_name}' (ID: {$destination_campaign_group_id}).\n";
+                // Perform the bulk import of subscribers to the new group.
+                $this->mailerLiteInstance->importBulkSubscribersToGroup($subscribers_to_transfer, $destination_campaign_group_id);
+                echo "Bulk import complete.\n";
+
+                echo "Logging the transition record in the database.\n";
+                // Log the transition in the database.
+                $transition_id = $this->transition_database->insert_record($source_campaign_id, $destination_campaign_id, "Complete", count($subscribers_to_transfer));
+                echo "Transition record logged with ID: {$transition_id}.\n";
+
+                echo "Bulk upserting transitioned subscribers into the database.\n";
+                // Bulk upsert the transitioned subscribers into the transition subscribers table.
+                $this->transition_subscribers_database->bulk_upsert($subscribers_to_transfer, $transition_id);
+                echo "Subscribers successfully upserted.\n";
+            }
+            echo "Campaign transition process completed successfully.\n";
+
+        } catch (\Exception $e) {
+            echo "An error occurred during campaign transition: " . $e->getMessage() . "\n";
+            // Log the error with details and re-throw the exception.
+            $this->logger->log('Error transitioning campaigns', 'error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            throw $e;
+        }
     }
 
     /**

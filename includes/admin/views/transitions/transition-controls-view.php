@@ -16,7 +16,6 @@ $transition_history = $transition_database->get_all_records();
  * Handles the form submission for campaign transition.
  */
 function handle_campaign_transition() {
-    echo "FORM SUBMITTED!";
 
     // Retrieve the values from the select options
     $source_campaign = isset($_POST['source_campaign']) ? sanitize_text_field($_POST['source_campaign']) : '';
@@ -24,13 +23,14 @@ function handle_campaign_transition() {
 
     echo "Source Campaign: " . $source_campaign . "<br>";
     echo "Destination Campaign: " . $destination_campaign . "<br>";
+
+    $admin->sync_instance->transition_campaigns($source_campaign, $destination_campaign);
 }
 
 // Check if the form has been submitted by checking for the submit button's name.
 if (isset($_POST['submit_transition_button'])) {
     handle_campaign_transition();
 }
-
 
 ?>
 
@@ -102,10 +102,16 @@ if (isset($_POST['submit_transition_button'])) {
                 <?php endforeach; ?>
             <?php else : ?>
                 <tr>
-                    <td colspan="3">No transition history found.</td>
+                    <td class="text-center" colspan="5">No transition history found.</td>
                 </tr>
             <?php endif; ?>
         </tbody>
     </table>
 </div>
 
+
+<style>
+    .text-center {
+        text-align: center;
+    }
+</style>

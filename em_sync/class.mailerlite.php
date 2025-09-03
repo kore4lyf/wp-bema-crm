@@ -980,7 +980,7 @@ class MailerLite implements Provider_Interface
             return [];
         }
     }
-    
+
     /**
      * Get all groups with full subscriber data
      * @return array
@@ -1145,6 +1145,45 @@ class MailerLite implements Provider_Interface
                 $e->getCode(),
                 true
             );
+        }
+    }
+
+    /**
+     * Imports a list of subscribers to a group in bulk.
+     *
+     * This function sends subscriber data to the API for bulk import. It returns
+     * `false` if the `$subscribers` array is empty or if an API request error occurs.
+     * On success, it returns `true`. The process includes rate limiting and logging
+     * for both successful and failed attempts.
+     *
+     * @param array $subscribers A list of subscriber data.
+     * @param string $groupId The ID of the group to import subscribers into.
+     * @return bool `true` on success, `false` on failure.
+     */
+    public function importBulkSubscribersToGroup(array $subscribers, string $groupId): bool
+    {
+        if (empty($subscribers)) {
+            $this->logger->log('No subscribers provided for bulk import.', 'warning', ['group_id' => $groupId]);
+            return false;
+        }
+
+        try {
+            $this->waitForRateLimit();
+            $endpoint = "groups/{$groupId}/subscribers/import";
+            $data = ['subscribers' => $subscribers];
+            $this->makeRequest($endpoint, 'POST', $data);
+            $this->logger->log('Successfully initiated bulk import for group.', 'info', [
+                'group_id' => $groupId,
+                'subscriber_count' => count($subscribers)
+            ]);
+            return true;
+        } catch (Exception $e) {
+            $this->logger->log('Failed to initiate bulk import for group.', 'error', [
+                'group_id' => $groupId,
+                'subscriber_count' => count($subscribers),
+                'error' => $e->getMessage()
+            ]);
+            return false;
         }
     }
 
