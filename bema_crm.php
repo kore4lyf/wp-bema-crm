@@ -71,7 +71,8 @@ spl_autoload_register(function ($class) {
         // A map of core class names to their file paths (relative to BEMA_PATH).
         $class_file_map = [
             'Bema_CRM' => 'bema_crm.php',
-            'BemaCRMLogger' => 'includes/bema-crm-logger.php',
+            'Bema_CRM_Logger' => 'includes/class-bema-crm-logger.php',
+            'BemaCRMLogger' => 'includes/class-bema-logger.php',
             'Campaign_Manager' => 'em_sync/class.campaign_manager.php',
             'EM_Sync' => 'em_sync/class.em_sync.php',
             'EDD' => 'em_sync/class.edd.php',
@@ -476,6 +477,11 @@ class Bema_CRM
                 $this->component_registry['logger'] = $this->logger;
             }
 
+            if (!isset($this->system_logger)) {
+                $this->system_logger = new Bema_CRM_Logger('system');
+                $this->component_registry['system_logger'] = $this->system_logger;
+            }
+
             // Initialize utils
             if (!isset($this->utils)) {
                 $this->utils = new Utils;
@@ -535,7 +541,7 @@ class Bema_CRM
 
             
             // Create campaign subscriber Table
-            $this->campaign_group_subscribers_db_manager->create_table();
+            $this->campaign_db_manager->create_table();
 
             $this->initialized = true;
         } catch (Exception $e) {

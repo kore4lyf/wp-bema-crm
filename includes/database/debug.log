@@ -322,3 +322,16 @@ Query results: Array
 
 )
 
+Starting upsert_fields_bulk. Number of fields to upsert: 1
+Processing field: id=911139, field_name=2024_WURRDIE_WT_PURCHASE, campaign_id=164255228922693408
+Generated 1 placeholders and 3 values.
+Prepared SQL Query: INSERT INTO wp_bemacrm_fieldmeta (id, field_name, campaign_id) VALUES (911139, '2024_WURRDIE_WT_PURCHASE', 164255228922693408) ON DUPLICATE KEY UPDATE field_name = VALUES(field_name), campaign_id = VALUES(campaign_id)
+Bulk upsert successful. Affected rows: 0
+Starting upsert_fields_bulk. Number of fields to upsert: 0
+Aborting upsert_fields_bulk: Input array is empty.
+Starting upsert_fields_bulk. Number of fields to upsert: 2
+Processing field: id=927383, field_name=2025_ETB_GIG_PURCHASE, campaign_id=164614072654890627
+Processing field: id=927384, field_name=2024_WURRDIE_WT_PURCHASE, campaign_id=163667485400237380
+Generated 2 placeholders and 6 values.
+Prepared SQL Query: INSERT INTO wp_bemacrm_fieldmeta (id, field_name, campaign_id) VALUES (927383, '2025_ETB_GIG_PURCHASE', 164614072654890627), (927384, '2024_WURRDIE_WT_PURCHASE', 163667485400237380) ON DUPLICATE KEY UPDATE field_name = VALUES(field_name), campaign_id = VALUES(campaign_id)
+Bulk upsert successful. Affected rows: 2

@@ -44,7 +44,7 @@ class Triggers
     function init(): void
     {
         add_action('edd_after_order_actions', [$this, 'update_purchase_field_on_order_complete'], 10, 3);
-        add_action( 'transition_post_status', [ $this, 'create_subscriber_groups_on_album_publish' ], 10, 3 ); 
+        add_action('transition_post_status', [$this, 'create_subscriber_groups_on_album_publish'], 10, 3);
         add_action('transition_post_status', [$this, 'create_subscriber_purchase_field_on_album_publish'], 10, 3);
         // Capture album title before deletion
         add_action('before_delete_post', [$this, 'capture_deleted_album_title']);
@@ -59,7 +59,7 @@ class Triggers
         add_action('bema_handle_order_purchase_field_update', [$this, 'handle_order_purchase_field_update_via_cron'], 10, 3);
 
         // WP-Cron hook to handle the creation of purchase field asynchronously
-        add_action( 'bema_create_groups_on_album_publish', [ $this, 'handle_create_groups_via_cron' ], 10, 1 );
+        add_action('bema_create_groups_on_album_publish', [$this, 'handle_create_groups_via_cron'], 10, 1);
 
         // WP-Cron hook to handle the creation of purchase field on mailerlite
         add_action('bema_create_purchase_field_on_album_publish', [$this, 'handle_create_purchase_field_via_cron'], 10, 1);
@@ -186,10 +186,9 @@ class Triggers
     }
 
     /**
-     * This new method is the WP-Cron handler for creating subscriber groups.
-     * It contains the original API logic and runs in the background.
+     * Handles the creation of subscriber groups via a WP-Cron event.
      *
-     * @param int $post_id The ID of the post to process.
+     * @param int $post_id The ID of the post for which to create groups.
      * @return void
      */
     public function handle_create_groups_via_cron(int $post_id): void
@@ -222,7 +221,6 @@ class Triggers
                 $tier
             );
 
-
             if (!empty($group_name)) {
                 $campaign_name = $this->utils->get_campaign_name_from_text($group_name);
                 $campaign_id = $this->campaign_database->get_campaign_by_name($campaign_name)['id'];
@@ -234,15 +232,15 @@ class Triggers
                 $this->logger->log("MailerLite response for group: " . print_r($group_data, true), 'info');
                 error_log("MailerLite response for group: " . print_r($group_data, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
 
-                $group_id = $group_data['id'] ?? null;
-                error_log("group id: " . $group_id . "\n", 3, dirname(__FILE__) . '/debug.log');
-
-                if ($group_id) {
+                if (!empty($group_data) && isset($group_data['id'])) {
                     $groups[] = [
-                        'id' => $group_id,
+                        'id' => $group_data['id'],
                         'group_name' => $group_name,
                         'campaign_id' => $campaign_id
                     ];
+                } else {
+                    $this->logger->log('Failed to create group via MailerLite API for: ' . $group_name, 'error');
+                    error_log('Failed to create group via MailerLite API for: ' . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
                 }
             } else {
                 $this->logger->log('Group name could not be generated for tier: ' . $tier, 'warning');
@@ -344,15 +342,15 @@ class Triggers
             $this->deleted_album_details[$post_id] = [
                 'album_name' => $post->post_title,
                 'album_details' => [
-                    'year' =>  '2025',
+                    'year' => '2025',
                     'artist' => 'Eko the beat'
-                ] 
+                ]
             ];
         }
-        
+
 
         error_log('capture_deleted_album_title:  $this->deleted_album_details is set' . print_r($this->deleted_album_details, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
-        
+
         error_log('capture_deleted_album_title: ended ' . "\n", 3, dirname(__FILE__) . '/debug.log');
     }
 
@@ -390,7 +388,7 @@ class Triggers
     private function handle_deleted_album_fields(string $album_name, array $album_details): void
     {
         error_log('handle_deleted_album_fields: Start' . "\n", 3, dirname(__FILE__) . '/debug.log');
-        error_log('handle_deleted_album_fields: Recieved - album_name: ' . $album_name . ' - album_details: ' . print_r($album_details, true) .  "\n", 3, dirname(__FILE__) . '/debug.log');
+        error_log('handle_deleted_album_fields: Recieved - album_name: ' . $album_name . ' - album_details: ' . print_r($album_details, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
 
         $album_release_year = $album_details['year'] ?? '';
         $album_artist = $album_details['artist'] ?? '';
@@ -403,7 +401,7 @@ class Triggers
             'PURCHASE'
         );
         error_log('handle_deleted_album_fields: $field_name: ' . $field_name . "\n", 3, dirname(__FILE__) . '/debug.log');
-        
+
         // Delete album purchase field on MailerLite
         $is_field_deleted_on_mailerlite = $this->mailerlite->deleteField($field_name);
 

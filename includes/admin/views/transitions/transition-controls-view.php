@@ -32,6 +32,14 @@ if (isset($_POST['submit_transition_button'])) {
     handle_campaign_transition();
 }
 
+$admin->sync_instance->sync_album_campaign_data();
+
+// $admin->system_logger->debug("Utils All Albums: ", $util_albums);
+// $admin->system_logger->debug("Campaign Database - Campaigns: ", $campaigns);
+
+
+
+
 ?>
 
 <div>

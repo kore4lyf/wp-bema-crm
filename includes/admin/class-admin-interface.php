@@ -52,6 +52,7 @@ class Bema_Admin_Interface
         $this->settings = $settings;
         $this->sync_instance = $sync_instance;
         $this->sync_scheduler = $sync_scheduler;
+        $this->system_logger = new \Bema\Bema_CRM_Logger('system');
         $this->utils = new \Bema\Utils();
         $this->current_tab = $_GET['tab'] ?? 'general';
 

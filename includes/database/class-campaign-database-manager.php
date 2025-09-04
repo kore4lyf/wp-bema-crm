@@ -48,7 +48,8 @@ class Campaign_Database_Manager
                 campaign VARCHAR(255) NOT NULL,
                 product_id BIGINT UNSIGNED NULL,
                 PRIMARY KEY (id),
-                CONSTRAINT fk_bemacrm_campaignsmeta_product FOREIGN KEY (product_id) REFERENCES {$posts_table}(ID) ON DELETE SET NULL
+                UNIQUE KEY campaign_unique (campaign),
+                CONSTRAINT fk_bemacrm_campaignsmeta_product FOREIGN KEY (product_id) REFERENCES {$posts_table}(ID) ON DELETE CASCADE
             ) $charset_collate;";
 
             dbDelta($sql);
@@ -226,6 +227,28 @@ class Campaign_Database_Manager
 
         $result = $this->wpdb->get_row($query, ARRAY_A);
         return $result ?: null;
+    }
+
+    /**
+     * Retrieves all unique campaign names from the database.
+     *
+     * @return array An array of campaign names, or an empty array on failure.
+     */
+    public function get_all_campaign_names(): array
+    {
+        try {
+            $query = "SELECT campaign FROM {$this->table_name}";
+            $results = $this->wpdb->get_col($query);
+
+            if (is_wp_error($results)) {
+                throw new Exception("Database query failed: " . $results->get_error_message());
+            }
+            
+            return $results ?: [];
+        } catch (Exception $e) {
+            $this->logger->log('get_only_campaigns Error: ' . $e->getMessage(), 'error');
+            return [];
+        }
     }
 
     /**

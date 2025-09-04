@@ -108,18 +108,18 @@ class Utils
 
 
   /**
- * Retrieves all albums from the database, along with their artist, release year, and product ID.
- *
- * @return array{0: array{id: int, album: string, artist: string, year: string}} An array of album details.
- */
-public function   get_all_albums(): array
-{
+   * Retrieves all albums from the database, along with their artist, release year, and product ID.
+   *
+   * @return array{0: array{id: int, album: string, artist: string, year: string}} An array of album details.
+   */
+  public function get_all_albums(): array
+  {
     global $wpdb;
 
     // Use a single query to retrieve all downloads (albums) and their associated artists.
     // This is more efficient than looping and running separate queries for each album.
     $query = $wpdb->prepare(
-        "
+      "
         SELECT
             p.ID AS product_id,
             p.post_title AS album_name,
@@ -140,35 +140,36 @@ public function   get_all_albums(): array
         ORDER BY
             p.post_date DESC
         ",
-        '%-artist'
+      '%-artist'
     );
 
     $albums = $wpdb->get_results($query, ARRAY_A);
 
     if (empty($albums)) {
-        return [];
+      return [];
     }
 
     $all_albums = [];
 
     // Loop through the results and format the data.
     foreach ($albums as $album) {
-        $release_year = '0';
-        if (!empty($album['release_date'])) {
-            $dateArr = explode('-', $album['release_date']);
-            $release_year = $dateArr[0];
-        }
+      $release_year = '0';
+      if (!empty($album['release_date'])) {
+        $dateArr = explode('-', $album['release_date']);
+        $release_year = $dateArr[0];
+      }
 
-        $all_albums[] = [
-            'product_id' => (int)$album['product_id'],
-            'album' => $album['album_name'],
-            'artist' => $album['artist_name'],
-            'year' => $release_year,
-        ];
+      $all_albums[] = [
+        'product_id' => (int) $album['product_id'],
+        'album' => $album['album_name'],
+        'campaign' => $this->get_campaign_group_name($release_year, $album['artist_name'], $album['album_name']),
+        'artist' => $album['artist_name'],
+        'year' => $release_year,
+      ];
     }
 
     return $all_albums;
-}
+  }
 
 
   public function get_campaigns_names(): array
@@ -251,14 +252,14 @@ public function   get_all_albums(): array
     $album = $wpdb->get_row($query, ARRAY_A);
 
     if (empty($album)) {
-        return [
-            'product_id' => 0,
-            'artist' => '',
-            'year' => '0',
-        ];
+      return [
+        'product_id' => 0,
+        'artist' => '',
+        'year' => '0',
+      ];
     }
 
-    $product_id = (int)$album['ID'];
+    $product_id = (int) $album['ID'];
     $release_year = '0';
     if (!empty($album['post_date'])) {
       $dateArr = explode('-', $album['post_date']);
@@ -287,13 +288,48 @@ public function   get_all_albums(): array
     );
 
     if (!empty($artist_term['name'])) {
-        $artist_name = $artist_term['name'];
+      $artist_name = $artist_term['name'];
     }
 
     return [
-        'product_id' => $product_id,
-        'artist' => $artist_name,
-        'year' => $release_year,
+      'product_id' => $product_id,
+      'artist' => $artist_name,
+      'year' => $release_year,
     ];
+  }
+
+  /**
+   * Merges multiple associative arrays into a single array, using a specific key
+   * from each array to group them.
+   *
+   * @param string $mergeKey The key to use for merging and grouping the arrays.
+   * @param array ...$arrays The associative arrays to be merged.
+   * @return array A new associative array where keys are the values of the mergeKey,
+   * and the values are the merged arrays.
+   */
+  function merge_arrays_by_key(string $mergeKey, array ...$arrays): array
+  {
+    $merged = [];
+    foreach ($arrays as $array) {
+      if (!is_array($array)) {
+        // Skip non-array inputs.
+        continue;
+      }
+
+      foreach ($array as $item) {
+        if (!is_array($item) || !isset($item[$mergeKey])) {
+          // Skip items that are not arrays or don't have the merge key.
+          continue;
+        }
+
+        $key = $item[$mergeKey];
+        if (!isset($merged[$key])) {
+          $merged[$key] = $item;
+        } else {
+          $merged[$key] = array_merge($merged[$key], $item);
+        }
+      }
+    }
+    return $merged;
   }
 }

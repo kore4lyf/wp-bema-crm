@@ -1318,43 +1318,72 @@ class MailerLite implements Provider_Interface
     }
 
     /**
-     * Gets a list of all campaigns from MailerLite, handling pagination.
+     * Retrieves all campaigns from the MailerLite API across multiple statuses.
      *
-     * This function performs a GET request to the campaigns endpoint to retrieve
-     * a list of all campaigns. It automatically loops through all available pages
-     * to ensure all campaigns are fetched, regardless of the default API limit.
+     * This function iterates through a predefined list of campaign statuses ('sent', 'draft', 'ready') and
+     * fetches all campaigns for each status, handling pagination to ensure all data is retrieved.
+     * It makes successive API calls until all pages for a given status have been processed,
+     * then merges the results into a single array.
      *
-     * @return array|null The `data` array containing all campaign objects on success, or null on failure.
-     * @throws Exception If the underlying makeRequest method throws an exception.
+     * @return array|null An array containing all campaigns across all specified statuses, or null on failure.
      */
     public function get_all_campaigns(): ?array
     {
         try {
+            // Define the statuses to retrieve campaigns for.
+            $statuses = ['sent', 'draft', 'ready'];
+            // Initialize an array to hold all campaigns.
             $all_campaigns = [];
-            $page = 1;
-            $has_next_page = true;
 
-            while ($has_next_page) {
-                $response = $this->makeRequest('campaigns?page=' . $page, 'GET');
+            // Loop through each campaign status.
+            foreach ($statuses as $status) {
+                // Initialize pagination variables for the current status.
+                $page = 1;
+                $has_next_page = true;
+                $limit = 100; // Assuming a limit of 100 campaigns per page.
 
-                if (isset($response['data']) && is_array($response['data'])) {
-                    $all_campaigns = array_merge($all_campaigns, $response['data']);
-                }
+                // Loop to handle pagination for the current status.
+                while ($has_next_page) {
+                    // Build the query string for the API request, including status and page number.
+                    $query = http_build_query([
+                        'filter[status]' => $status,
+                        'page' => $page,
+                        'limit' => $limit,
+                    ]);
+                    // Construct the full URL for the API endpoint.
+                    $url = 'campaigns?' . $query;
 
-                // Check if there is a next page to fetch.
-                if (isset($response['meta']['last_page']) && $page < $response['meta']['last_page']) {
-                    $page++;
-                } else {
-                    $has_next_page = false;
+                    // Make the API request to retrieve campaigns.
+                    $response = $this->makeRequest($url, 'GET');
+
+                    // Check if the response contains campaign data and merge it into the main array.
+                    if (isset($response['data']) && is_array($response['data'])) {
+                        $all_campaigns = array_merge($all_campaigns, $response['data']);
+                    }
+
+                    // Check for pagination to determine if there are more pages to fetch.
+                    if (
+                        isset($response['meta']['current_page'], $response['meta']['last_page']) &&
+                        $response['meta']['current_page'] < $response['meta']['last_page']
+                    ) {
+                        // Increment the page number to fetch the next page.
+                        $page++;
+                    } else {
+                        // No more pages, so exit the pagination loop for the current status.
+                        $has_next_page = false;
+                    }
                 }
             }
 
+            // Return the combined array of all campaigns.
             return $all_campaigns;
+
         } catch (Exception $e) {
-            // Log the error and return null.
+            // Log the error with a descriptive message and the exception details.
             $this->logger->log('Failed to retrieve all MailerLite campaigns', 'error', [
                 'error_message' => $e->getMessage()
             ]);
+            // Return null to indicate failure.
             return null;
         }
     }

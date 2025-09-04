@@ -144,8 +144,6 @@ class EM_Sync
             debug_to_file('Transition Subscribers Database instance stored');
 
 
-
-
             // Initialize campaign manager
             $this->campaign_manager = new Campaign_Manager($mailerLiteInstance, $this->logger);
 
@@ -2697,41 +2695,71 @@ class EM_Sync
     }
 
     /**
-     * Synchronizes album and custom campaign data with an external service (MailerLite) and a local database.
+     * Synchronizes album and custom campaign data with MailerLite.
      *
-     * This function processes all campaigns (from albums and custom entries) in a single
-     * unified loop to prevent the creation of duplicate campaigns in MailerLite. It
-     * ensures that for each unique campaign name, there is a single, corresponding
-     * record with a campaign_id.
+     * Retrieves all albums and custom campaigns, merges them,
+     * checks for their existence on MailerLite, creates drafts for missing ones,
+     * and bulk upserts them into the local database.
      *
-     * @return bool Returns true on successful synchronization.
+     * @return bool True if the sync process is successful, false otherwise.
      */
     public function sync_album_campaign_data(): bool
     {
-        // Fetch all necessary data upfront
+        // Fetch albums from local system (e.g., WordPress posts or DB table).
         $albums = $this->utils->get_all_albums();
+
+        // Fetch custom campaigns stored in local DB.
         $custom_campaigns = $this->campaign_database->get_all_campaigns();
 
-        // Combine all campaign sources into a single array for unified processing.
-        // Albums are processed first, giving them priority.
-        $all_campaigns = array_merge($albums, $custom_campaigns);
+        // Prepare a combined map of all campaign data.
+        $campaign_store_map = $this->prepare_campaign_store($albums, $custom_campaigns);
 
+        // Retrieve all campaigns from MailerLite (name => id map).
+        $mailerlite_campaign_map = $this->mailerLiteInstance->get_campaigns_name_id_map();
+
+        // Abort if MailerLite campaigns could not be retrieved.
+        if (!is_array($mailerlite_campaign_map) || empty($mailerlite_campaign_map)) {
+            return false;
+        }
+
+        // Check campaigns against MailerLite, create missing drafts, and collect data for DB.
+        $campaigns_to_upsert = $this->process_campaigns($campaign_store_map, $mailerlite_campaign_map);
+
+        // Bulk upsert the collected campaigns into the local database.
+        if (!empty($campaigns_to_upsert)) {
+            $this->campaign_database->upsert_campaigns_bulk($campaigns_to_upsert);
+        }
+
+        return true;
+    }
+
+    /**
+     * Builds a campaign store from albums and custom campaigns.
+     *
+     * Ensures both sources (albums + custom) are represented in a unified array.
+     *
+     * @param array $albums            List of album records from local system.
+     * @param array $custom_campaigns  List of custom campaigns from DB.
+     * @return array                   Campaigns mapped by campaign name.
+     */
+    private function prepare_campaign_store(array $albums, array $custom_campaigns): array
+    {
         $campaign_store_map = [];
-        $campaigns_to_upsert = [];
 
-        // Collect all campaigns from custom campaigns
+        // Add custom campaigns into the store.
         foreach ($custom_campaigns as $campaign) {
             $campaign_store_map[$campaign['campaign']] = [
                 'name' => $campaign['campaign'],
                 'product_id' => $campaign['product_id'],
                 'album' => $campaign['album'],
                 'year' => $campaign['year'],
-                'artist' => $campaign['artist']
+                'artist' => $campaign['artist'],
             ];
         }
 
-        // Collect all campaigns from product list
+        // Add album campaigns into the store.
         foreach ($albums as $album) {
+            // Generate a standardized campaign name (e.g., "2024_Artist_Album").
             $campaign_name = $this->utils->get_campaign_group_name(
                 $album['year'],
                 $album['artist'],
@@ -2743,125 +2771,253 @@ class EM_Sync
                 'product_id' => $album['product_id'],
                 'album' => $album['album'],
                 'year' => $album['year'],
-                'artist' => $album['artist']
+                'artist' => $album['artist'],
             ];
         }
 
-        // Get the current campaigns on MailerLite.
-        $mailerlite_campaign_map = $this->mailerLiteInstance->get_campaigns_name_id_map();
+        return $campaign_store_map;
+    }
+
+    /**
+     * Checks campaigns against MailerLite and prepares data for DB upsert.
+     *
+     * - If campaign exists on MailerLite → add with ID.
+     * - If campaign does not exist → create a draft, then add with new ID.
+     *
+     * @param array $campaign_store_map      Local prepared campaigns.
+     * @param array $mailerlite_campaign_map MailerLite campaigns (name => id).
+     * @return array                         List of campaigns ready for DB upsert.
+     */
+    private function process_campaigns(array $campaign_store_map, array $mailerlite_campaign_map): array
+    {
+        $campaigns_to_upsert = [];
 
         foreach ($campaign_store_map as $campaign) {
-            // Check if campaign name exits on mailerlite
-            $campaign_id = $mailerlite_campaign_map[$campaign['name']];
+            // Check if campaign already exists on MailerLite.
+            $campaign_id = $mailerlite_campaign_map[$campaign['name']] ?? null;
 
-            if (isset($campaign_id)) {
-                // Add the campaign to the upsert list and mark it as processed.
-                $campaigns_to_upsert[] = [
-                    'campaign' => strtoupper($campaign['name']),
-                    'id' => $campaign_id,
-                    'product_id' => $campaign_data['product_id'] ?? null,
-                ];
+            if ($campaign_id) {
+                // Campaign exists → add to upsert list.
+                $campaigns_to_upsert[] = $this->format_campaign_for_upsert($campaign, $campaign_id);
             } else {
-                // Create new campaign, if campaign name does not exists on mailerlite.
+                // Campaign missing → create new draft on MailerLite.
+                $campaign_id = $this->create_new_mailerlite_campaign($campaign);
 
-                $subject = isset($campaign['album'])
-                    ? 'Music album: ' . $campaign['album'] . ' by ' . $campaign['artist']
-                    : 'Custom Campaign';
-
-                $response = $this->mailerLiteInstance->create_draft_campaign(
-                    $campaign['name'],
-                    'regular',
-                    $subject
-                );
-                $campaign_id = $response['id'] ?? null;
-
-                // Add the campaign to the upsert list and mark it as processed.
-                $campaigns_to_upsert[] = [
-                    'campaign' => strtoupper(),
-                    'id' => $campaign_id,
-                    'product_id' => $campaign['product_id'] ?? null,
-                ];
-
+                // If creation was successful → add to upsert list.
+                if ($campaign_id) {
+                    $campaigns_to_upsert[] = $this->format_campaign_for_upsert($campaign, $campaign_id);
+                }
             }
         }
 
-        // Perform a bulk upsert
-        if (!empty($campaigns_to_upsert)) {
-            $this->campaign_database->upsert_campaigns_bulk($campaigns_to_upsert);
-        }
+        return $campaigns_to_upsert;
+    }
+
+    /**
+     * Creates a new draft campaign in MailerLite.
+     *
+     * @param array $campaign Campaign data (name, album, artist, etc.).
+     * @return string|null    The created campaign ID, or null on failure.
+     */
+    private function create_new_mailerlite_campaign(array $campaign): ?string
+    {
+        // Prepare a subject line depending on whether it's an album campaign.
+        $subject = isset($campaign['album'])
+            ? 'Music album: ' . $campaign['album'] . ' by ' . $campaign['artist']
+            : 'Custom campaign with no album';
+
+        // Call MailerLite API to create a draft campaign.
+        $response = $this->mailerLiteInstance->create_draft_campaign(
+            $campaign['name'],
+            'regular', // Campaign type.
+            $subject
+        );
+
+        // Return the new campaign ID if available.
+        return $response['id'] ?? null;
+    }
+
+    /**
+     * Formats campaign data into the structure expected for DB upsert.
+     *
+     * @param array  $campaign    Campaign details from local system.
+     * @param string $campaign_id The MailerLite campaign ID.
+     * @return array              Normalized campaign data for DB.
+     */
+    private function format_campaign_for_upsert(array $campaign, string $campaign_id): array
+    {
+        return [
+            'campaign' => strtoupper($campaign['name']), // Normalize name (uppercase).
+            'id' => $campaign_id,
+            'product_id' => $campaign['product_id'] ?? null,
+        ];
+    }
+
+
+    /**
+     * Synchronizes campaign purchase fields with MailerLite and the local database.
+     *
+     * This function orchestrates the entire synchronization process by:
+     * 1. Generating a list of required campaign purchase field names.
+     * 2. Creating any fields that are missing in MailerLite and preparing the data
+     * for a database upsert.
+     * 3. Upserting the collected field data (both existing and newly created) into the
+     * local database.
+     *
+     * @return bool Returns true on successful completion of the synchronization.
+     */
+    public function sync_mailerlite_field_data(): bool
+    {
+        // Generate the list of required purchase field names from existing campaigns.
+        $required_fields = $this->get_required_fields();
+
+        // Process the fields, creating any missing ones in MailerLite and preparing
+        // the data for the local database.
+        $fields_to_upsert = $this->prepare_field_data_for_upsert($required_fields);
+
+
+        // Perform a bulk upsert operation on the local database with the collected field data.
+        $this->field_database->upsert_fields_bulk($fields_to_upsert);
 
         return true;
     }
 
     /**
-     * Synchronizes campaign purchase fields with MailerLite and the local database.
+     * Generates a list of required purchase field names based on existing campaigns.
      *
-     * This function performs the following steps:
-     * 1. Fetches a list of all existing campaign names.
-     * 2. Generates a list of required purchase fields (e.g., "CAMPAIGN_NAME_PURCHASE").
-     * 3. Fetches all existing fields from MailerLite to check for duplicates efficiently.
-     * 4. Iterates through the required purchase fields, creating any that are missing
-     * in MailerLite.
-     * 5. Collects the IDs and names of both existing and newly created fields.
-     * 6. Upserts (inserts or updates) all collected field data into the local database
-     * for future use.
+     * It fetches all campaign names and appends a '_purchase' suffix to each to
+     * create the standard field name.
      *
-     * @return bool Returns true on successful completion of the synchronization process.
+     * @return array A list of required field names (e.g., ['CAMPAIGN_NAME_PURCHASE']).
      */
-    public function sync_mailerlite_field_data(): bool
+    private function get_required_fields(): array
     {
-        // Fetch campaign names
+        // Fetch all campaign names from the utility service.
         $campaign_names = $this->utils->get_campaigns_names();
+
+        // Get custom campaign names from the database
+        $custom_campaigns = $this->campaign_database->get_all_campaign_names();
+
+        $all_campaign_names = array_merge($campaign_names, $custom_campaigns);
+        $all_campaign_names = array_unique($all_campaign_names);
+        $all_campaign_names = array_values($all_campaign_names); // Reindex array
+
         $purchase_fields = [];
-        $fields_to_upsert = [];
 
-        // Use a hash map for efficient lookups. The key will be the field name.
-        $mailerlite_fields_map = [];
-
-        // Add purchase tag to each campaign
-        foreach ($campaign_names as $campaign_name) {
+        // Iterate through campaign names and format them into the required field names.
+        foreach ($all_campaign_names as $campaign_name) {
             $purchase_fields[] = strtoupper($campaign_name . '_purchase');
         }
 
-        // Fetch all Fields data from MailerLite
-        $mailerlite_field_data = $this->mailerLiteInstance->getFields();
+        return $purchase_fields;
+    }
 
-        // Populate the hash map with existing MailerLite fields for quick lookups
-        foreach ($mailerlite_field_data as $field) {
-            $normalized_name = strtoupper($field['name']);
-            $mailerlite_fields_map[$normalized_name] = $field['id'];
-        }
+    /**
+     * Prepares a data array for a bulk database upsert by processing a list of required fields.
+     *
+     * This is the main orchestrator function. It fetches existing fields, checks each required
+     * field for existence, creates it if necessary, and then formats the data for a database upsert.
+     *
+     * @param array $required_fields An array of field names that need to exist in MailerLite.
+     * @return array An array of field data, ready for bulk upserting into the local database.
+     */
+    private function prepare_field_data_for_upsert(array $required_fields): array
+    {
 
-        // Create missing fields on MailerLite and collect data for upsert
-        foreach ($purchase_fields as $field_name) {
-            $campaign_name = $this->utils->get_campaign_name_from_text($field_name);
-            $campaign_id = $this->campaign_database->get_campaign_by_name($campaign_name)['id'];
+        $fields_to_upsert = [];
 
-            // Check if the field already exists in our hash map
-            if (!isset($mailerlite_fields_map[$field_name])) {
-                // The field is missing, so create it
-                $new_field = $this->mailerLiteInstance->createField($field_name, 'number');
+        // Fetch all MailerLite fields and create a quick-lookup map.
+        $mailerlite_fields_map = $this->get_mailerlite_fields_map();
 
-                if ($new_field && isset($new_field['id'])) {
-                    $fields_to_upsert[] = [
-                        'id' => $new_field['id'],
-                        'field_name' => $new_field['name'],
-                        'campaign_id' => $campaign_id
-                    ];
+        // Loop through each required field to ensure it exists and collect its data.
+        foreach ($required_fields as $field_name) {
+
+            // Get the field ID, creating the field in MailerLite if it doesn't exist.
+            $field_id = $this->get_or_create_field($field_name, $mailerlite_fields_map);
+
+            // If a valid field ID was obtained, proceed to get campaign data and build the upsert array.
+            if ($field_id) {
+                $campaign_id = $this->get_campaign_id_for_field($field_name);
+                if ($campaign_id) {
+                    $fields_to_upsert[] = $this->build_field_data_array($field_id, $field_name, $campaign_id);
                 }
-            } else {
-                // The field already exists, so add its ID and name to the upsert list
-                $fields_to_upsert[] = [
-                    'id' => $mailerlite_fields_map[$field_name],
-                    'field_name' => $field_name,
-                    'campaign_id' => $campaign_id
-                ];
             }
         }
 
-        // Push all collected data to the database
-        $this->field_database->upsert_fields_bulk($fields_to_upsert);
-        return true;
+        return $fields_to_upsert;
+    }
+
+    /**
+     * Fetches all existing MailerLite fields and creates a hash map for efficient lookups.
+     *
+     * @return array A key-value map of MailerLite field names (normalized) to their IDs.
+     */
+    private function get_mailerlite_fields_map(): array
+    {
+        $mailerlite_fields = $this->mailerLiteInstance->getFields();
+        $fields_map = [];
+
+        // Normalize field names to uppercase for case-insensitive matching.
+        foreach ($mailerlite_fields as $field) {
+            $normalized_name = strtoupper($field['name']);
+            $fields_map[$normalized_name] = $field['id'];
+        }
+
+        return $fields_map;
+    }
+
+    /**
+     * Checks if a field exists in MailerLite and creates it if it's missing.
+     *
+     * @param string $field_name The name of the field to check or create.
+     * @param array $fields_map A hash map of existing MailerLite fields.
+     * @return string|null The ID of the existing or newly created field, or null on failure.
+     */
+    private function get_or_create_field(string $field_name, array $fields_map): ?string
+    {
+        // Check if the field already exists in the pre-fetched map.
+        if (isset($fields_map[$field_name])) {
+            return $fields_map[$field_name];
+        }
+
+        // Field is missing; create it in MailerLite with a 'number' type.
+        $new_field = $this->mailerLiteInstance->createField($field_name, 'number');
+        return $new_field['id'] ?? null;
+    }
+
+    /**
+     * Retrieves the campaign ID associated with a given field name.
+     *
+     * @param string $field_name The name of the field.
+     * @return string|null The ID of the associated campaign, or null if not found.
+     */
+    private function get_campaign_id_for_field(string $field_name): ?string
+    {
+        // Extract the campaign name from the field name using a utility method.
+        $campaign_name = $this->utils->get_campaign_name_from_text($field_name);
+
+        // Look up the campaign in the local database.
+        $campaign = $this->campaign_database->get_campaign_by_name($campaign_name);
+
+        return $campaign['id'] ?? null;
+    }
+
+    /**
+     * Formats field data into an associative array for upserting.
+     *
+     * @param string $field_id The ID of the MailerLite field.
+     * @param string $field_name The name of the MailerLite field.
+     * @param string $campaign_id The ID of the associated campaign.
+     * @return array The formatted data array.
+     */
+    private function build_field_data_array(string $field_id, string $field_name, string $campaign_id): array
+    {
+        // Return a structured array matching the local database schema.
+        return [
+            'id' => $field_id,
+            'field_name' => $field_name,
+            'campaign_id' => $campaign_id
+        ];
     }
 
     public function sync_mailerlite_group_data(): bool
@@ -2935,7 +3091,7 @@ class EM_Sync
         return $subscribers_count;
     }
 
-    public function sync_campaign_group_subscribers()
+    public function sync_mailerlite_campaign_group_subscribers()
     {
         // Prepare data for batch upsert into the campaign_group_subscribers_database
         $campaign_subscribers_data = [];
@@ -3032,7 +3188,7 @@ class EM_Sync
             $subscribers_count = $this->sync_subscribers();
 
             // 4b. Sync Campaign Group subscribers
-            $this->sync_campaign_group_subscribers();
+            $this->sync_mailerlite_campaign_group_subscribers();
 
             // 5. Final Status Update and History
             $this->update_sync_status('Completed', 'Sync completed', 3, 3, $sync_option_key, $subscribers_count);
@@ -3057,7 +3213,7 @@ class EM_Sync
      * @param array $field_list An array of form field data, typically $_POST or similar.
      * @return bool True if the purchase ID is valid and the payment is complete, otherwise false.
      */
-    function is_subscriber_purchase_id_valid($purchase_field, $field_list)
+    public function is_subscriber_purchase_id_valid($purchase_field, $field_list)
     {
 
         if (!function_exists('edd_get_payment')) {

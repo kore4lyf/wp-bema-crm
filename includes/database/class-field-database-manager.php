@@ -83,7 +83,7 @@ class Field_Database_Manager
                 id BIGINT UNSIGNED NOT NULL,
                 field_name VARCHAR(255) NOT NULL,
                 campaign_id BIGINT UNSIGNED NOT NULL,
-                
+
                 PRIMARY KEY (id),
                 CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES {$this->campaign_table_name}(id) ON DELETE CASCADE
             ) $charset_collate;";
@@ -136,44 +136,63 @@ class Field_Database_Manager
     }
 
     /**
-     * Performs a bulk insert or update for multiple field records.
-     *
-     * @param array $fields_to_upsert An array of associative arrays, each representing a field with keys 'id', 'field_name', and 'campaign_id'.
-     * @return int|false The number of affected rows on success, or false on failure.
-     */
-    public function upsert_fields_bulk(array $fields_to_upsert)
-    {
-        if (empty($fields_to_upsert)) {
-            return false;
-        }
+ * Performs a bulk insert or update for multiple field records.
+ *
+ * @param array $fields_to_upsert An array of associative arrays, each representing a field with keys 'id', 'field_name', and 'campaign_id'.
+ * @return int|false The number of affected rows on success, or false on failure.
+ */
+public function upsert_fields_bulk(array $fields_to_upsert)
+{
+    error_log('Starting upsert_fields_bulk. Number of fields to upsert: ' . count($fields_to_upsert) . "\n", 3, dirname(__FILE__) . '/debug.log');
 
-        try {
-            $placeholders = [];
-            $values = [];
-            
-            foreach ($fields_to_upsert as $field) {
-                $placeholders[] = "(%d, %s, %d)";
-                $values[] = absint($field['id']);
-                $values[] = sanitize_text_field($field['field_name']);
-                $values[] = absint($field['campaign_id']);
-            }
-
-            $query = "INSERT INTO {$this->table_name} (id, field_name, campaign_id) VALUES " .
-                     implode(', ', $placeholders) .
-                     " ON DUPLICATE KEY UPDATE field_name = VALUES(field_name), campaign_id = VALUES(campaign_id)";
-
-            $result = $this->wpdb->query($this->wpdb->prepare($query, $values));
-
-            if (false === $result) {
-                throw new Exception('Failed to bulk upsert fields: ' . $this->wpdb->last_error);
-            }
-
-            return $result;
-        } catch (Exception $e) {
-            $this->logger->log('Field_Database_Manager Error: ' . $e->getMessage(), 'error');
-            return false;
-        }
+    if (empty($fields_to_upsert)) {
+        error_log('Aborting upsert_fields_bulk: Input array is empty.' . "\n", 3, dirname(__FILE__) . '/debug.log');
+        return false;
     }
+
+    try {
+        $placeholders = [];
+        $values = [];
+        
+        foreach ($fields_to_upsert as $field) {
+            $sanitized_id = absint($field['id']);
+            $sanitized_field_name = sanitize_text_field($field['field_name']);
+            $sanitized_campaign_id = absint($field['campaign_id']);
+
+            error_log('Processing field: id=' . $sanitized_id . ', field_name=' . $sanitized_field_name . ', campaign_id=' . $sanitized_campaign_id . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+            $placeholders[] = "(%d, %s, %d)";
+            $values[] = $sanitized_id;
+            $values[] = $sanitized_field_name;
+            $values[] = $sanitized_campaign_id;
+        }
+
+        error_log('Generated ' . count($placeholders) . ' placeholders and ' . count($values) . ' values.' . "\n", 3, dirname(__FILE__) . '/debug.log');
+        
+        $query = "INSERT INTO {$this->table_name} (id, field_name, campaign_id) VALUES " .
+                 implode(', ', $placeholders) .
+                 " ON DUPLICATE KEY UPDATE field_name = VALUES(field_name), campaign_id = VALUES(campaign_id)";
+
+        // Log the prepared query before execution
+        $prepared_query = $this->wpdb->prepare($query, $values);
+        error_log('Prepared SQL Query: ' . $prepared_query . "\n", 3, dirname(__FILE__) . '/debug.log');
+
+        $result = $this->wpdb->query($prepared_query);
+
+        if (false === $result) {
+            error_log('Bulk upsert failed. Last database error: ' . $this->wpdb->last_error . "\n", 3, dirname(__FILE__) . '/debug.log');
+            throw new Exception('Failed to bulk upsert fields: ' . $this->wpdb->last_error);
+        }
+
+        error_log('Bulk upsert successful. Affected rows: ' . $result . "\n", 3, dirname(__FILE__) . '/debug.log');
+        return $result;
+    } catch (Exception $e) {
+        $this->logger->log('Field_Database_Manager Error: ' . $e->getMessage(), 'error');
+        error_log('Exception caught: ' . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+        return false;
+    }
+}
+
 
     /**
      * Deletes a field record from the database by its name.
