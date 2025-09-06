@@ -91,15 +91,15 @@ spl_autoload_register(function ($class) {
                 return;
             }
         }
-        
+
         // Convert class name to file path with subdirectory and underscore handling.
         // e.g., 'Bema\Database\Group_Database_Manager' becomes 'database/class-group-database-manager.php'
         $parts = explode('\\', $relative_class_name);
         $last_part = array_pop($parts);
-        
+
         // Convert underscores in the class name to hyphens for the filename.
         $file_name = 'class-' . strtolower(str_replace('_', '-', $last_part)) . '.php';
-        
+
         // Build the subdirectory path from the remaining parts.
         $sub_dir = implode(DIRECTORY_SEPARATOR, array_map('strtolower', $parts));
 
@@ -112,7 +112,6 @@ spl_autoload_register(function ($class) {
         if (file_exists($normalized_path)) {
             require_once $normalized_path;
         }
-
     } catch (Exception $e) {
         if (function_exists('debug_to_file')) {
             debug_to_file("Autoloader error: {$e->getMessage()}", 'AUTOLOADER_ERROR');
@@ -129,6 +128,15 @@ class Bema_CRM
     private $logger;
     private $sync_instance;
     private $utils;
+    private $system_logger;
+    private $transition_db_manager;
+    private $transition_subscribers_db_manager;
+    private $campaign_db_manager;
+    private $group_db_manager;
+    private $field_db_manager;
+    private $subscriber_db_manager;
+    private $campaign_group_subscribers_db_manager;
+    private $sync_db_manager;
     private $sync_scheduler;
     private $admin_interface;
     private $settings;
@@ -216,8 +224,6 @@ class Bema_CRM
             debug_to_file("Database instance");
 
             debug_to_file("Initialization complete");
-
-
         } catch (Exception $e) {
             debug_to_file("Initialization error: " . $e->getMessage());
             $this->handle_initialization_error($e);
@@ -538,10 +544,6 @@ class Bema_CRM
             $this->campaign_group_subscribers_db_manager = new \Bema\Database\Campaign_Group_Subscribers_Database_Manager();
             // create sync db instance
             $this->sync_db_manager = new \Bema\Database\Sync_Database_Manager();
-
-            
-            // Create campaign subscriber Table
-            $this->campaign_db_manager->create_table();
 
             $this->initialized = true;
         } catch (Exception $e) {
@@ -1015,23 +1017,24 @@ class Bema_CRM
                 $instance->clear_plugin_cache();
             }
 
-            // Create campaign Table
-            $this->campaign_db_manager->create_table();
+            
+            // Create campaign table
+            (new \Bema\Database\Campaign_Database_Manager())->create_table();
             // Create group Table
-            $this->group_db_manager->create_table();
+            (new \Bema\Database\Group_Database_Manager())->create_table();
             // Create field Table
-            $this->field_db_manager->create_table();
+            (new \Bema\Database\Field_Database_Manager())->create_table();
             // Create subscriber Table
-            $this->subscriber_db_manager->create_table();
+            (new \Bema\Database\Subscribers_Database_Manager())->create_table();
             // Create campaign subscriber Table
-            $this->campaign_group_subscribers_db_manager->create_table();
+            (new \Bema\Database\Campaign_Group_Subscribers_Database_Manager())->create_table();
             // Create sync Table
-            $this->sync_db_manager->create_table();
-            // Create transition Table
-            $this->transition_db_manager->create_table();
-            // Create transition subscribers Table
-            $this->transition_subscribers_db_manager->create_table();
-
+            (new \Bema\Database\Sync_Database_Manager())->create_table();
+            // Create transition table
+            (new \Bema\Database\Transition_Database_Manager())->create_table();           
+            // Create transition subscribers table
+            (new \Bema\Database\Transition_Subscribers_Database_Manager())->create_table();
+            
             // Clear rewrite rules
             flush_rewrite_rules();
 
@@ -1086,24 +1089,22 @@ class Bema_CRM
             // Clear sync status
             update_option('bema_sync_running', false);
 
-
-            // Delete campaign Table
-            $this->campaign_db_manager->delete_table();
-            // Delete group Table
-            $this->group_db_manager->delete_table();
-            // Delete field Table
-            $this->field_db_manager->delete_table();
-            // Delete subscriber Table
-            $this->subscriber_db_manager->delete_table();
-            // Delete campaign subscriber Table
-            $this->campaign_group_subscribers_db_manager->delete_table();
+            // Delete transition subscribers table
+            (new \Bema\Database\Transition_Subscribers_Database_Manager())->delete_table();
+            // Delete transition table
+            (new \Bema\Database\Transition_Database_Manager())->delete_table();            
             // Delete sync Table
-            $this->sync_db_manager->delete_table();
-            // Delete transition Table
-            $this->transition_db_manager->delete_table();
-            // Delete transition subscribers Table
-            $this->transition_subscribers_db_manager->delete_table();
-            debug_to_file('Plugin database tables removed');
+            (new \Bema\Database\Sync_Database_Manager())->delete_table();
+            // Delete campaign subscriber Table
+            (new \Bema\Database\Campaign_Group_Subscribers_Database_Manager())->delete_table();
+            // Delete subscriber Table
+            (new \Bema\Database\Subscribers_Database_Manager())->delete_table();
+            // Delete field Table
+            (new \Bema\Database\Field_Database_Manager())->delete_table();
+            // Delete group Table
+            (new \Bema\Database\Group_Database_Manager())->delete_table();
+            // Delete campaign table
+            (new \Bema\Database\Campaign_Database_Manager())->delete_table();
 
             // Clear rewrite rules
             flush_rewrite_rules();
@@ -1295,9 +1296,7 @@ class Bema_CRM
         }
     }
 
-    private function __clone()
-    {
-    }
+    private function __clone() {}
 
     public function __wakeup()
     {

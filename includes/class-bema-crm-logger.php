@@ -3,9 +3,9 @@ namespace Bema;
 /**
  * Bema_CRM_Logger class.
  *
- * A simple, file-based logger for WordPress. This class handles logging messages
- * to a dedicated file within the WordPress uploads directory, with features
- * for log rotation, cleanup, and security.
+ * A simple, file-based logger for WordPress with environment-specific logging.
+ * Handles logging messages to a dedicated file within the WordPress uploads directory,
+ * with features for log rotation, cleanup, and security.
  *
  * @since 1.0.0
  */
@@ -59,6 +59,7 @@ class Bema_CRM_Logger
     private $default_config = [
         'max_file_size_mb' => 5,
         'max_file_age_days' => 90,
+        'log_level' => 'warning', // Default to warning for production
     ];
 
     /**
@@ -76,6 +77,11 @@ class Bema_CRM_Logger
 
         // Merge user-provided config with defaults.
         $this->config = array_merge($this->default_config, $config);
+
+        // Set log level based on environment
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            $this->config['log_level'] = self::DEBUG; // Verbose in development
+        }
 
         // Define log directory and file paths.
         $this->log_dir = WP_CONTENT_DIR . '/uploads/bema-crm/' . $this->identifier;
@@ -109,6 +115,31 @@ class Bema_CRM_Logger
     }
 
     /**
+     * Determines if a log message should be written based on the current log level.
+     *
+     * @param string $level The log level to check.
+     * @return bool True if the message should be logged, false otherwise.
+     */
+    private function should_log($level)
+    {
+        $levels = [
+            self::EMERGENCY => 7,
+            self::ALERT => 6,
+            self::CRITICAL => 5,
+            self::ERROR => 4,
+            self::WARNING => 3,
+            self::NOTICE => 2,
+            self::INFO => 1,
+            self::DEBUG => 0,
+        ];
+
+        $current_level = isset($levels[$this->config['log_level']]) ? $levels[$this->config['log_level']] : $levels[self::WARNING];
+        $message_level = isset($levels[$level]) ? $levels[$level] : $levels[self::DEBUG];
+
+        return $message_level >= $current_level;
+    }
+
+    /**
      * Writes a log message to the log file.
      *
      * @param string $level   The log level (e.g., 'error', 'info').
@@ -118,6 +149,11 @@ class Bema_CRM_Logger
      */
     private function log($level, $message, array $context = [])
     {
+        // Check if the message should be logged based on the environment's log level
+        if (!$this->should_log($level)) {
+            return;
+        }
+
         // Rotate the log file if it exceeds the maximum size.
         $this->rotate_file_if_needed();
 
@@ -129,8 +165,11 @@ class Bema_CRM_Logger
             touch($this->log_file);
         }
 
-        // Append the message to the log file.
+        // Append the message to the log file and WP_DEBUG log in development
         error_log($formatted_message, 3, $this->log_file);
+        if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+            error_log($formatted_message);
+        }
     }
 
     /**
@@ -145,7 +184,8 @@ class Bema_CRM_Logger
     {
         // Get the current time in WordPress's configured timezone.
         $timestamp = current_time('mysql');
-        // Encode context array to JSON for logging.
+        // Encode context array to JSON for logging, sanitize to avoid sensitive data.
+        $context = array_map('sanitize_text_field', $context);
         $context_str = empty($context) ? '' : ' ' . wp_json_encode($context);
 
         return sprintf(
@@ -359,5 +399,4 @@ class Bema_CRM_Logger
 
         return $success;
     }
-
 }

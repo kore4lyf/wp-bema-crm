@@ -127,8 +127,8 @@ class Transition_Database_Manager
         $sql = $this->wpdb->prepare("
             SELECT
             t.id,
-            s.campaign_name AS source,
-            d.campaign_name AS destination,
+            s.campaign AS source,
+            d.campaign AS destination,
             t.status,
             t.subscribers,
             t.transition_date

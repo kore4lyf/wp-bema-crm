@@ -62,11 +62,15 @@ if ($test_results && is_array($test_results['messages'])) {
     <?php endif; ?>
 
     <form method="post" action="options.php" id="bema-settings-form" class="settings-form">
+        <?php
+            settings_fields('bema_crm_settings');
+        ?>
 
         <div class="settings-container">
             <!-- API Configuration Section -->
             <div class="settings-section<?php echo $sync_disabled ? ' disabled' : ''; ?>">
                 <h2><?php _e('API Configuration', 'bema-crm'); ?></h2>
+
                 <table class="form-table">
                     <tr>
                         <th scope="row">

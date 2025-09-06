@@ -3203,42 +3203,61 @@ class EM_Sync
     }
 
     /**
-     * Checks if a given purchase ID is valid and complete.
-     *
-     * This function validates a purchase ID by checking if the corresponding payment exists
-     * and has a 'complete' status using the Easy Digital Downloads (EDD) plugin functions.
-     * It's designed to be used with form field data.
-     *
-     * @param string $purchase_field The key of the purchase ID field in the form data.
-     * @param array $field_list An array of form field data, typically $_POST or similar.
-     * @return bool True if the purchase ID is valid and the payment is complete, otherwise false.
-     */
-    public function is_subscriber_purchase_id_valid($purchase_field, $field_list)
-    {
+ * Validate an EDD customer order by ID and email.
+ * Compatible with both EDD 2.x (edd_payment) and 3.x+ (edd_get_order).
+ *
+ * @param int    $order_id The EDD order ID (required).
+ * @param string $email    The customer's email address (required).
+ * @return bool True if valid match, false otherwise.
+ */
+function validate_edd_order_and_customer(int $order_id, string $email): bool
+{
+    // Sanitize inputs
+    echo "Debugging: Starting validation for Order ID: {$order_id} and Email: {$email}\n";
+    $order_id = absint($order_id);
+    $email = sanitize_email($email);
+    echo "Debugging: Sanitized Order ID: {$order_id} and Sanitized Email: {$email}\n";
 
-        if (!function_exists('edd_get_payment')) {
-            $this->logger->log('EDD function edd_get_payment() not found. Is Easy Digital Downloads active?', 'error');
-            return false;
-        }
-
-        if (!isset($field_list[$purchase_field]) || empty($field_list[$purchase_field])) {
-            return false;
-        }
-
-        $purchase_id = sanitize_text_field($field_list[$purchase_field]);
-
-        $payment = edd_get_payment($purchase_id);
-
-        if (!$payment) {
-            return false;
-        }
-
-        if ($payment->status === 'complete') {
-            return true;
-        }
-
+    if ($order_id <= 0 || empty($email)) {
+        echo "Debugging: Invalid input. Order ID is not positive or email is empty.\n";
         return false;
     }
+
+    $order_email = '';
+
+    // EDD 3.x and newer
+    if (function_exists('edd_get_order')) {
+        echo "Debugging: EDD 3.x detected. Attempting to get order.\n";
+        $order = edd_get_order($order_id);
+        if (!$order) {
+            echo "Debugging: Order not found for ID: {$order_id}\n";
+            return false;
+        }
+        $order_email = !empty($order->email) ? sanitize_email($order->email) : '';
+        echo "Debugging: Found order email (3.x): {$order_email}\n";
+    }
+    // EDD 2.x (legacy)
+    elseif (function_exists('edd_get_payment')) {
+        echo "Debugging: EDD 2.x detected. Attempting to get payment.\n";
+        $payment = edd_get_payment($order_id);
+        if (!$payment) {
+            echo "Debugging: Payment not found for ID: {$order_id}\n";
+            return false;
+        }
+        $order_email = !empty($payment->email) ? sanitize_email($payment->email) : '';
+        echo "Debugging: Found order email (2.x): {$order_email}\n";
+    } else {
+        // EDD not available
+        echo "Debugging: EDD core functions not found.\n";
+        return false;
+    }
+
+    // Compare email case-insensitively
+    $comparison_result = strcasecmp($order_email, $email) === 0;
+    echo "Debugging: Comparing emails '{$order_email}' and '{$email}'. Result: " . ($comparison_result ? 'Match' : 'No Match') . "\n";
+    return $comparison_result;
+}
+
 
 
     /**
@@ -3300,91 +3319,80 @@ class EM_Sync
      */
     public function transition_campaigns(string $source_campaign_name, string $destination_campaign_name)
     {
-        echo "Starting campaign transition from '{$source_campaign_name}' to '{$destination_campaign_name}'.\n";
         try {
-            echo "Attempting to get transition rules from options.\n";
             // Get transition rules from options. If none exist, log and exit.
             $transition_rules = get_option('bema_crm_transition_matrix', []);
             if (empty($transition_rules)) {
                 $this->logger->log('Transition rules are not defined.', 'info');
-                echo "No transition rules found. Exiting.\n";
                 return;
             }
-            echo "Transition rules successfully retrieved.\n";
 
-            echo "Retrieving source campaign details.\n";
             // Retrieve source campaign details from the database.
             $source_campaign = $this->campaign_database->get_campaign_by_name($source_campaign_name);
             if (!$source_campaign) {
-                echo "Error: Source campaign '{$source_campaign_name}' not found.\n";
                 throw new \Exception("Source campaign '{$source_campaign_name}' not found.");
             }
             $source_campaign_id = $source_campaign['id'];
-            echo "Source campaign '{$source_campaign_name}' (ID: {$source_campaign_id}) found.\n";
 
-            echo "Retrieving destination campaign details.\n";
             // Retrieve destination campaign details from the database.
             $destination_campaign = $this->campaign_database->get_campaign_by_name($destination_campaign_name);
             if (!$destination_campaign) {
-                echo "Error: Destination campaign '{$destination_campaign_name}' not found.\n";
                 throw new \Exception("Destination campaign '{$destination_campaign_name}' not found.");
             }
             $destination_campaign_id = $destination_campaign['id'];
-            echo "Destination campaign '{$destination_campaign_name}' (ID: {$destination_campaign_id}) found.\n";
 
             // Iterate through each defined transition rule.
             foreach ($transition_rules as $rule) {
-                echo "Processing transition rule for tier '{$rule['current_tier']}'.\n";
                 $normalize_current_tier = strtoupper(str_replace(' ', '_', $rule['current_tier']));
-                $source_purchase_field = $source_campaign_name . 'PURCHASE';
+                $source_purchase_field = strtolower($source_campaign_name . '_' . 'PURCHASE');
 
-                echo "Looking for source group.\n";
                 // Find the source group by name.
                 $source_group_name = $source_campaign_name . '_' . $normalize_current_tier;
                 $source_campaign_group = $this->group_database->get_group_by_name($source_group_name);
                 if (!$source_campaign_group) {
                     $this->logger->log("Source group '{$source_group_name}' not found. Skipping.", 'warning');
-                    echo "Source group '{$source_group_name}' not found. Skipping to next rule.\n";
                     continue;
                 }
                 $source_campaign_group_id = $source_campaign_group['id'];
-                echo "Source group '{$source_group_name}' (ID: {$source_campaign_group_id}) found.\n";
 
-                echo "Looking for destination group.\n";
                 // Find the destination group by name.
                 $destination_group_name = $destination_campaign_name . '_' . $normalize_current_tier;
                 $destination_campaign_group = $this->group_database->get_group_by_name($destination_group_name);
+
                 if (!$destination_campaign_group) {
                     $this->logger->log("Destination group '{$destination_group_name}' not found. Skipping.", 'warning');
-                    echo "Destination group '{$destination_group_name}' not found. Skipping to next rule.\n";
                     continue;
                 }
-                $destination_campaign_group_id = $destination_campaign_group['id'];
-                echo "Destination group '{$destination_group_name}' (ID: {$destination_campaign_group_id}) found.\n";
 
-                echo "Getting subscribers from source group '{$source_group_name}'.\n";
+                $destination_campaign_group_id = $destination_campaign_group['id'];
+
                 // Get all subscribers from the source campaign group.
                 $source_campaign_subscribers = $this->mailerLiteInstance->getGroupSubscribers($source_campaign_group_id);
-                $subscriber_count = count($source_campaign_subscribers);
-                echo "Found {$subscriber_count} subscribers in source group '{$source_group_name}'.\n";
 
                 // If no subscribers are found, log and move to the next rule.
                 if (empty($source_campaign_subscribers)) {
                     $this->logger->log("No subscribers found in group '{$source_group_name}'. Skipping.", 'info');
-                    echo "No subscribers found in source group '{$source_group_name}'. Skipping to next rule.\n";
                     continue;
                 }
 
                 $subscribers_to_transfer = [];
-                echo "Checking if a purchase is required for this rule.\n";
                 // Check if the transition rule requires a purchase.
                 if ($rule['requires_purchase']) {
-                    echo "Purchase is required. Filtering subscribers with a valid purchase ID.\n";
                     // Filter subscribers who have a valid purchase ID.
                     foreach ($source_campaign_subscribers as $subscriber) {
+                        echo "Checking subscriber ID: {$subscriber['id']} for valid purchase ID.\n";
+                        echo "Checking subscriber Email: {$subscriber['email']} for valid purchase ID.\n";
+                        echo "Subscriber fields: " . json_encode($subscriber['fields']) . "\n";
+                        echo "Order id: " . ($subscriber['fields'][$source_purchase_field] ?? 'Not Set') . "\n";
+                        echo "Source Purchase Field: {$source_purchase_field}\n";
+
+                        echo "Looking for purchase field '{$source_purchase_field}'.\n";
                         // Check if the purchase field exists and its value is valid.
-                        if (isset($subscriber['fields'][$source_purchase_field]) && is_subscriber_purchase_id_valid($subscriber['fields'][$source_purchase_field])) {
+                        if (isset($subscriber['fields'][$source_purchase_field]) && $this->validate_edd_order_and_customer($subscriber['fields'][$source_purchase_field], $subscriber['email'])) {
                             $subscribers_to_transfer[] = $subscriber;
+                            echo "Subscriber ID: {$subscriber['id']} has a valid purchase ID. Marked for transfer.\n";
+                        } else {
+                            echo "Subscriber ID: {$subscriber['id']} does not have a valid purchase ID. Skipping.\n";
                         }
                     }
                 } else {

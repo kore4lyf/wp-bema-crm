@@ -15,7 +15,7 @@ $transition_history = $transition_database->get_all_records();
 /**
  * Handles the form submission for campaign transition.
  */
-function handle_campaign_transition() {
+function handle_campaign_transition($sync_instance) {
 
     // Retrieve the values from the select options
     $source_campaign = isset($_POST['source_campaign']) ? sanitize_text_field($_POST['source_campaign']) : '';
@@ -24,20 +24,24 @@ function handle_campaign_transition() {
     echo "Source Campaign: " . $source_campaign . "<br>";
     echo "Destination Campaign: " . $destination_campaign . "<br>";
 
-    $admin->sync_instance->transition_campaigns($source_campaign, $destination_campaign);
+    echo "<pre>";
+    $sync_instance->transition_campaigns($source_campaign, $destination_campaign);
 }
 
 // Check if the form has been submitted by checking for the submit button's name.
 if (isset($_POST['submit_transition_button'])) {
-    handle_campaign_transition();
+    handle_campaign_transition($admin->sync_instance);
 }
 
-$admin->sync_instance->sync_album_campaign_data();
+echo "<pre>";
+// echo 'Validate EDD Order: ' . var_dump(validate_edd_order_customer( 4, 'utejoe.ju@gmail.com'));
+
+echo "</pre>";
+
+// $admin->sync_instance->transition_campaigns('2024_WURRDIE_WT', '2025_ETB_GIG');
 
 // $admin->system_logger->debug("Utils All Albums: ", $util_albums);
 // $admin->system_logger->debug("Campaign Database - Campaigns: ", $campaigns);
-
-
 
 
 ?>
