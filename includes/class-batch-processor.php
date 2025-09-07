@@ -32,7 +32,7 @@ class SyncBatchProcessor
     const MIN_MEMORY_REQUIRED = 64 * 1024 * 1024; // 64MB
 
     public function __construct(
-        BemaCRMLogger $logger,
+        Bema_CRM_Logger $logger,
         callable $processor,
         ?callable $progressCallback = null,
         ?callable $failureCallback = null
@@ -239,7 +239,7 @@ class SyncBatchProcessor
 
     private function handleBatchError(Exception $e, array &$results): void
     {
-        $this->logger->log('Batch processing error', 'error', [
+        $this->logger->error('Batch processing error', [
             'error' => $e->getMessage(),
             'results' => $results
         ]);

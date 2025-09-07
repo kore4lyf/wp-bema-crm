@@ -2,7 +2,7 @@
 
 namespace Bema\Validators;
 
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use Bema\Providers\MailerLite;
 use Exception;
 
@@ -29,7 +29,7 @@ class Campaign_Validator extends Base_Validator
     private $minCampaignInterval = 30; // days
     private $campaignHistory = [];
 
-    public function __construct(\Bema\Providers\MailerLite $mailerLite, \Bema\BemaCRMLogger $logger)
+    public function __construct(\Bema\Providers\MailerLite $mailerLite, \Bema\Bema_CRM_Logger $logger)
     {
         parent::__construct($logger);
         $this->mailerLite = $mailerLite;

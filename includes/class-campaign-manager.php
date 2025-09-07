@@ -47,7 +47,7 @@ class Campaign_Manager
         'bronze_purchased' => 'optin'
     ];
 
-    public function __construct(Providers\MailerLite $mailerLiteInstance, BemaCRMLogger $logger)
+    public function __construct(Providers\MailerLite $mailerLiteInstance, Bema_CRM_Logger $logger)
     {
         $this->mailerLiteInstance = $mailerLiteInstance;
         $this->logger = $logger;
@@ -343,7 +343,7 @@ class Campaign_Manager
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Tier structure validation failed', 'error', [
+            $this->logger->error('Tier structure validation failed', [
                 'campaign' => $campaign_code,
                 'error' => $e->getMessage()
             ]);

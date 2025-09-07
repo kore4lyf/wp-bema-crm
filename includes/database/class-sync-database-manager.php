@@ -3,7 +3,7 @@
 namespace Bema\Database;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -16,12 +16,17 @@ class Sync_Database_Manager
     private $logger;
     private $max_records = 10;
 
-    public function __construct(?BemaCRMLogger $logger = null)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_sync_log';
-        $this->logger = $logger ?? new BemaCRMLogger();
+        if ($logger) {
+            $this->logger = $logger;
+            $this->logger->setIdentifier('sync-database');
+        } else {
+            $this->logger = Bema_CRM_Logger::create('sync-database');
+        }
     }
 
     public function create_table()
@@ -45,9 +50,19 @@ class Sync_Database_Manager
 
             dbDelta($sql);
 
+            // INFO: Log successful table creation for monitoring
+            $this->logger->info('Sync log table created successfully', [
+                'table_name' => $this->table_name,
+                'max_records' => $this->max_records
+            ]);
+
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Sync_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to create sync log table', [
+                'table_name' => $this->table_name,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -104,9 +119,27 @@ class Sync_Database_Manager
                 )
             ");
 
-            return $existing ?: $this->wpdb->insert_id;
+            $record_id = $existing ?: $this->wpdb->insert_id;
+            
+            // INFO: Log sync record operation for monitoring
+            $this->logger->info('Sync record upserted', [
+                'record_id' => $record_id,
+                'operation' => $existing ? 'update' : 'insert',
+                'status' => $status,
+                'synced_subscribers' => $synced_subscribers,
+                'date' => $date_only
+            ]);
+            
+            return $record_id;
         } catch (Exception $e) {
-            $this->logger->log('Sync_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to upsert sync record', [
+                'status' => $status,
+                'synced_subscribers' => $synced_subscribers,
+                'date' => $date_only ?? 'unknown',
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -147,9 +180,26 @@ class Sync_Database_Manager
     {
         try {
             $this->wpdb->query("DROP TABLE IF EXISTS {$this->table_name}");
-            return $this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") !== $this->table_name;
+            $table_exists = $this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") === $this->table_name;
+            
+            if (!$table_exists) {
+                // CRITICAL: Log table deletion for security monitoring
+                $this->logger->critical('Sync log table deleted', [
+                    'table_name' => $this->table_name,
+                    'user_id' => get_current_user_id(),
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                ]);
+                return true;
+            }
+            
+            return false;
         } catch (Exception $e) {
-            $this->logger->log('Database Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to delete sync log table', [
+                'table_name' => $this->table_name,
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }

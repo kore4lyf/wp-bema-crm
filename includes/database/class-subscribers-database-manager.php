@@ -3,7 +3,7 @@
 namespace Bema\Database;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -37,7 +37,7 @@ class Subscribers_Database_Manager
     /**
      * The logger instance for logging errors.
      *
-     * @var BemaCRMLogger
+     * @var Bema_CRM_Logger
      */
     private $logger;
 
@@ -46,14 +46,19 @@ class Subscribers_Database_Manager
      *
      * Initializes the class by setting up the table name and the WordPress database object.
      *
-     * @param BemaCRMLogger|null $logger An optional logger instance.
+     * @param Bema_CRM_Logger|null $logger An optional logger instance.
      */
-    public function __construct(?BemaCRMLogger $logger = null)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_subscribersmeta';
-        $this->logger = $logger ?? new BemaCRMLogger();
+        if ($logger) {
+            $this->logger = $logger;
+            $this->logger->setIdentifier('subscribers-database');
+        } else {
+            $this->logger = Bema_CRM_Logger::create('subscribers-database');
+        }
     }
 
     /**
@@ -92,9 +97,18 @@ class Subscribers_Database_Manager
             if (!$result) {
                 throw new Exception('Failed to create the database table.');
             }
+            
+            // INFO: Log successful table creation for monitoring
+            $this->logger->info('Subscribers table created successfully', [
+                'table_name' => $this->table_name
+            ]);
+            
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to create subscribers table', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -151,7 +165,12 @@ class Subscribers_Database_Manager
             }
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to insert subscriber', [
+                'id' => $id ?? 'unknown',
+                'email' => $email ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -193,9 +212,21 @@ VALUES " . implode(', ', $placeholders);
             if (false === $inserted) {
                 throw new Exception('Failed to bulk insert subscribers: ' . $this->wpdb->last_error);
             }
+            
+            // INFO: Log successful bulk operation for monitoring
+            $this->logger->info('Bulk subscriber insert completed', [
+                'inserted_count' => $inserted,
+                'batch_size' => count($subscribers_to_insert)
+            ]);
+            
             return $inserted;
         } catch (Exception $e) {
-            $this->logger->log('Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to bulk insert subscribers', [
+                'batch_size' => count($subscribers_to_insert),
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -256,9 +287,23 @@ VALUES " . implode(', ', $placeholders);
             if (false === $updated) {
                 throw new Exception('Failed to update subscriber: ' . $this->wpdb->last_error);
             }
+            // DEBUG: Log update details in development only
+            if (WP_DEBUG && $updated > 0) {
+                $this->logger->debug('Subscriber updated by email', [
+                    'updated_count' => $updated,
+                    'updated_fields' => array_keys($data)
+                ]);
+            }
+            
             return $updated;
         } catch (Exception $e) {
-            $this->logger->log('Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to update subscriber by email', [
+                'email_hash' => md5($current_email), // Hash for privacy
+                'update_fields' => array_keys($data ?? []),
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -315,9 +360,24 @@ VALUES " . implode(', ', $placeholders);
             if (false === $updated) {
                 throw new Exception('Failed to update subscriber: ' . $this->wpdb->last_error);
             }
+            // DEBUG: Log update details in development only
+            if (WP_DEBUG && $updated > 0) {
+                $this->logger->debug('Subscriber updated by ID', [
+                    'id' => $id,
+                    'updated_count' => $updated,
+                    'updated_fields' => array_keys($data)
+                ]);
+            }
+            
             return $updated;
         } catch (Exception $e) {
-            $this->logger->log('Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to update subscriber by ID', [
+                'id' => $id,
+                'update_fields' => array_keys($data ?? []),
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -350,11 +410,24 @@ VALUES " . implode(', ', $placeholders);
                 throw new Exception('Failed to delete subscriber: ' . $this->wpdb->last_error);
             }
 
+            // INFO: Log successful deletion for monitoring (privacy-safe)
+            if ($deleted > 0) {
+                $this->logger->info('Subscriber deleted', [
+                    'deleted_count' => $deleted,
+                    'email_hash' => md5($email) // Hash for privacy
+                ]);
+            }
+            
             // Return the number of rows that were deleted.
             return $deleted;
         } catch (Exception $e) {
-            // Log the error and return false on failure.
-            $this->logger->log('Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            // ERROR: Log deletion failure with privacy-safe context
+            $this->logger->error('Failed to delete subscriber by email', [
+                'email_hash' => md5($email), // Hash for privacy
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -548,7 +621,7 @@ VALUES " . implode(', ', $placeholders);
     public function sync_subscribers(array $mailerlite_subscribers_data): bool
     {
         if (empty($mailerlite_subscribers_data)) {
-            $this->logger->log('No subscriber data received for sync.', 'notice');
+            $this->logger->warning('No subscriber data received for sync');
             return false;
         }
 
@@ -557,9 +630,20 @@ VALUES " . implode(', ', $placeholders);
             if (false === $affected) {
                 throw new Exception('Failed to insert or update subscribers during sync.');
             }
+            
+            // INFO: Log successful sync for monitoring
+            $this->logger->info('Subscriber sync completed', [
+                'processed_count' => count($mailerlite_subscribers_data),
+                'affected_rows' => $affected
+            ]);
+            
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Subscribers_Database_Manager Sync Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Subscriber sync failed', [
+                'data_count' => count($mailerlite_subscribers_data),
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -621,9 +705,22 @@ VALUES " . implode(', ', $placeholders);
                 throw new Exception('Failed to bulk upsert subscribers: ' . $this->wpdb->last_error);
             }
 
+            // DEBUG: Log upsert details in development only
+            if (WP_DEBUG) {
+                $this->logger->debug('Subscriber upsert completed', [
+                    'processed_count' => count($subscribers_to_process),
+                    'affected_rows' => $result
+                ]);
+            }
+            
             return $result;
         } catch (Exception $e) {
-            $this->logger->log('Subscriber_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to upsert subscribers', [
+                'batch_size' => count($subscribers_to_process),
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -643,11 +740,22 @@ VALUES " . implode(', ', $placeholders);
             $this->wpdb->query($sql);
 
             if ($this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") !== $this->table_name) {
+                // CRITICAL: Log table deletion for security monitoring
+                $this->logger->critical('Subscribers table deleted', [
+                    'table_name' => $this->table_name,
+                    'user_id' => get_current_user_id(),
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                ]);
                 return true;
             }
             throw new Exception("Failed to delete the database table: {$this->table_name}");
         } catch (Exception $e) {
-            $this->logger->log('Database Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to delete subscribers table', [
+                'table_name' => $this->table_name,
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }

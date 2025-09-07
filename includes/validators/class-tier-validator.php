@@ -1,7 +1,7 @@
 <?php
 namespace Bema\Validators;
 
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -178,7 +178,7 @@ class Tier_Validator extends Base_Validator
             'reason' => $reason
         ];
 
-        $this->logger->log(
+        $this->logger->info(
             "Tier transition logged",
             'info',
             [

@@ -1,7 +1,7 @@
 <?php
 namespace Bema\Validators;
 
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;

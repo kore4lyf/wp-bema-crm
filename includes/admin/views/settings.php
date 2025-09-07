@@ -3,9 +3,9 @@
 namespace Bema\Admin\Views;
 
 use function Bema\debug_to_file;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
-$logger = new BemaCRMLogger();
+$logger = Bema_CRM_Logger::create('admin-settings-view');
 
 if (!defined('ABSPATH')) {
     exit;
@@ -52,6 +52,10 @@ if ($test_results && is_array($test_results['messages'])) {
 
 <div class="wrap bema-settings">
     <h1 class="wp-heading-inline"><?php echo esc_html(get_admin_page_title()); ?></h1>
+    <?php
+    // Display any validation errors or warnings registered during submission.
+    settings_errors();
+    ?>
 
     <?php
     $sync_disabled = !$has_sync;

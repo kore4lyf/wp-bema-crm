@@ -3,7 +3,7 @@
 namespace Bema;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -23,7 +23,7 @@ class Database_Migrations
     const STATUS_FAILED = 'failed';
     const STATUS_ROLLED_BACK = 'rolled_back';
 
-    public function __construct(BemaCRMLogger $logger)
+    public function __construct(Bema_CRM_Logger $logger)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
@@ -185,7 +185,7 @@ class Database_Migrations
 
             return false;
         } catch (Exception $e) {
-            $this->logger->log('Database upgrade failed', 'error', [
+            $this->logger->error('Database upgrade failed', [
                 'error' => $e->getMessage()
             ]);
             return false;
@@ -284,7 +284,7 @@ class Database_Migrations
             }
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Database upgrade failed', 'error', [
+            $this->logger->error('Database upgrade failed', [
                 'error' => $e->getMessage()
             ]);
             return false;
@@ -317,7 +317,7 @@ class Database_Migrations
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Failed to restore backup', 'error', [
+            $this->logger->error('Failed to restore backup', [
                 'error' => $e->getMessage(),
                 'backup' => $backup
             ]);

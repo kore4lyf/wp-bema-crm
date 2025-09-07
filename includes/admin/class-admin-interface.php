@@ -3,7 +3,7 @@
 namespace Bema\Admin;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use Bema\EM_Sync;
 use Bema\Sync_Scheduler;
 use Bema\Bema_Settings;
@@ -41,7 +41,7 @@ class Bema_Admin_Interface
     const STATUS_INFO = 'info';
 
     public function __construct(
-        BemaCRMLogger $logger,
+        Bema_CRM_Logger $logger,
         Bema_Settings $settings,
         ?EM_Sync $sync_instance = null,
         ?Sync_Scheduler $sync_scheduler = null
@@ -52,7 +52,7 @@ class Bema_Admin_Interface
         $this->settings = $settings;
         $this->sync_instance = $sync_instance;
         $this->sync_scheduler = $sync_scheduler;
-        $this->system_logger = new \Bema\Bema_CRM_Logger('system');
+        $this->system_logger = \Bema\Bema_CRM_Logger::create('admin-interface');
         $this->utils = new \Bema\Utils();
         $this->current_tab = $_GET['tab'] ?? 'general';
 
@@ -882,7 +882,7 @@ class Bema_Admin_Interface
 
             return $this->wpdb->get_results($this->wpdb->prepare($query, $params), ARRAY_A);
         } catch (Exception $e) {
-            $this->logger->log('Database query failed', 'error', [
+            $this->logger->error('Database query failed', [
                 'query' => 'get_subscribers',
                 'error' => $e->getMessage()
             ]);
@@ -911,7 +911,7 @@ class Bema_Admin_Interface
 
             return $this->wpdb->get_results($this->wpdb->prepare($query, $params), ARRAY_A);
         } catch (Exception $e) {
-            $this->logger->log('Database query failed', 'error', [
+            $this->logger->error('Database query failed', [
                 'query' => 'get_sync_logs',
                 'error' => $e->getMessage()
             ]);
@@ -1520,7 +1520,7 @@ class Bema_Admin_Interface
             debug_to_file('API connection test results:', 'API_TEST');
             debug_to_file($results, 'API_TEST');
         } catch (Exception $e) {
-            $this->logger->log('API test error', 'error', [
+            $this->logger->error('API test error', [
                 'error' => $e->getMessage()
             ]);
             $results['status'] = 'error';

@@ -3,7 +3,7 @@
 namespace Bema\Database;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use wpdb;
 
 if (!defined('ABSPATH')) {
@@ -43,7 +43,7 @@ class Field_Database_Manager
     /**
      * The logging utility for handling errors and messages.
      *
-     * @var BemaCRMLogger
+     * @var Bema_CRM_Logger
      */
     private $logger;
 
@@ -52,15 +52,20 @@ class Field_Database_Manager
      *
      * Initializes the database table names and the logger instance.
      *
-     * @param BemaCRMLogger|null $logger An optional logger instance. If not provided, a new one is created.
+     * @param Bema_CRM_Logger|null $logger An optional logger instance. If not provided, a new one is created.
      */
-    public function __construct(?BemaCRMLogger $logger = null)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_fieldmeta';
         $this->campaign_table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
-        $this->logger = $logger ?? new BemaCRMLogger();
+        if ($logger) {
+            $this->logger = $logger;
+            $this->logger->setIdentifier('field-database');
+        } else {
+            $this->logger = Bema_CRM_Logger::create('field-database');
+        }
     }
 
     /**
@@ -96,7 +101,7 @@ class Field_Database_Manager
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Field_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Field_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -130,7 +135,7 @@ class Field_Database_Manager
 
             return $result;
         } catch (Exception $e) {
-            $this->logger->log('Field_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Field_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -187,7 +192,7 @@ class Field_Database_Manager
             error_log('Bulk upsert successful. Affected rows: ' . $result . "\n", 3, dirname(__FILE__) . '/debug.log');
             return $result;
         } catch (Exception $e) {
-            $this->logger->log('Field_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Field_Database_Manager Error: ' . $e->getMessage());
             error_log('Exception caught: ' . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
             return false;
         }
@@ -215,7 +220,7 @@ class Field_Database_Manager
 
             return $deleted;
         } catch (Exception $e) {
-            $this->logger->log('Field_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Field_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -325,7 +330,7 @@ class Field_Database_Manager
 
             return $deleted;
         } catch (Exception $e) {
-            $this->logger->log('Field_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Field_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }

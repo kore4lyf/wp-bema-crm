@@ -13,7 +13,7 @@ use Bema\Exceptions\Validation_Exception;
 use Bema\SyncBatchProcessor;
 use Bema\Campaign_Manager;
 use Bema\Bema_Settings;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use Bema\Database\Subscribers_Database_Manager;
 use Bema\Database\Campaign_group_Subscribers_Database_Manager;
 use Bema\Database\Sync_Database_Manager;
@@ -83,98 +83,125 @@ class EM_Sync
     public function __construct(
         MailerLite $mailerLiteInstance,
         EDD $eddInstance,
-        ?BemaCRMLogger $logger = null,
+        ?Bema_CRM_Logger $logger = null,
         ?Bema_Settings $settings = null
     ) {
         try {
-            debug_to_file('Starting EM_Sync construction');
+            // Initialize logger with proper configuration first
+            $logger_config = $this->getLoggerConfig();
+            $this->logger = $logger ?? Bema_CRM_Logger::create('mailerlite_sync', $logger_config);
+            $this->logger->info('Starting EM_Sync construction');
 
             // Set error handling
             set_error_handler([$this, 'errorHandler']);
-            debug_to_file('Error handler set');
-
-            // Initialize logger
-            $this->logger = $logger ?? new BemaCRMLogger();
-            debug_to_file('Logger initialized');
+            $this->logger->debug('Error handler set');
 
             // Initialize database manager
             global $wpdb;
             $this->dbManager = new Database_Manager($wpdb, $this->logger);
-            debug_to_file('Database manager initialized');
+            $this->logger->debug('Database manager initialized');
 
             // Store settings instance
             $this->settings = $settings;
-            debug_to_file('Settings instance stored');
+            $this->logger->debug('Settings instance stored');
 
             // Load API credentials
             $this->loadApiCredentials();
 
             // Store provider instances
             $this->mailerLiteInstance = $mailerLiteInstance;
-            debug_to_file('MailerLite instance stored');
+            $this->logger->debug('MailerLite instance stored');
 
             $this->eddInstance = $eddInstance;
-            debug_to_file('EDD instance stored');
+            $this->logger->debug('EDD instance stored');
 
             $this->utils = new Utils();
-            debug_to_file('Utils instance stored');
+            $this->logger->debug('Utils instance stored');
 
             $this->campaign_database = new Campaign_Database_Manager();
-            debug_to_file('Campaign Database instance stored');
+            $this->logger->debug('Campaign Database instance stored');
 
             $this->subscribers_database = new Subscribers_Database_Manager();
-            debug_to_file('Subscribers Database instance stored');
+            $this->logger->debug('Subscribers Database instance stored');
 
             $this->sync_database = new Sync_Database_Manager();
-            debug_to_file('SYNC Database instance stored');
+            $this->logger->debug('SYNC Database instance stored');
 
             $this->field_database = new Field_Database_Manager();
-            debug_to_file('Field Database instance stored');
+            $this->logger->debug('Field Database instance stored');
 
             $this->group_database = new Group_Database_Manager();
-            debug_to_file('Group Database instance stored');
+            $this->logger->debug('Group Database instance stored');
 
             $this->campaign_group_subscribers_database = new Campaign_Group_Subscribers_Database_Manager();
-            debug_to_file('Campaign Subscribers Database instance stored');
+            $this->logger->debug('Campaign Subscribers Database instance stored');
 
             $this->transition_database = new Transition_Database_Manager();
-            debug_to_file('Transition Database instance stored');
+            $this->logger->debug('Transition Database instance stored');
 
             $this->transition_subscribers_database = new Transition_Subscribers_Database_Manager();
-            debug_to_file('Transition Subscribers Database instance stored');
+            $this->logger->debug('Transition Subscribers Database instance stored');
 
 
             // Initialize campaign manager
             $this->campaign_manager = new Campaign_Manager($mailerLiteInstance, $this->logger);
 
             $this->cache = new WP_Object_Cache();
-            debug_to_file('Cache initialized');
+            $this->logger->debug('Cache initialized');
 
             $this->queueManager = new SyncQueueManager();
-            debug_to_file('Queue manager initialized');
+            $this->logger->debug('Queue manager initialized');
 
             // Set memory limit
             $this->setMemoryLimit();
-            debug_to_file('Memory limit set');
+            $this->logger->debug('Memory limit set');
 
             // Initialize progress tracker and error queue
             $this->initializeProgress();
-            debug_to_file('Progress initialized');
+            $this->logger->debug('Progress initialized');
 
             $this->initializeErrorQueue();
-            debug_to_file('Error queue initialized');
+            $this->logger->debug('Error queue initialized');
 
             // Register shutdown function
             register_shutdown_function([$this, 'handleShutdown']);
-            debug_to_file('Shutdown handler registered');
+            $this->logger->debug('Shutdown handler registered');
 
-            debug_to_file('EM_Sync construction completed successfully');
+            $this->logger->info('EM_Sync construction completed successfully');
         } catch (Exception $e) {
-            debug_to_file("EM_Sync initialization failed: " . $e->getMessage());
-            debug_to_file("Stack trace: " . $e->getTraceAsString());
+            // If logger is available, use it; otherwise fall back to error_log
+            if ($this->logger) {
+                $this->logger->critical('EM_Sync initialization failed', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            } else {
+                error_log("EM_Sync initialization failed: " . $e->getMessage());
+                error_log("Stack trace: " . $e->getTraceAsString());
+            }
             $this->logError('Failed to initialize EM_Sync', $e);
             throw new Sync_Exception('Failed to initialize sync system: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Get logger configuration based on environment
+     */
+    private function getLoggerConfig(): array
+    {
+        $config = [
+            'max_file_size_mb' => 10,
+            'max_file_age_days' => 30,
+        ];
+
+        // Set log level based on environment
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            $config['log_level'] = Bema_CRM_Logger::DEBUG; // Verbose in development
+        } else {
+            $config['log_level'] = Bema_CRM_Logger::WARNING; // Production level
+        }
+
+        return $config;
     }
 
     /**
@@ -182,33 +209,60 @@ class EM_Sync
      */
     private function loadApiCredentials(): void
     {
-        if (!$this->settings) {
-            return;
-        }
+        try {
+            if (!$this->settings) {
+                $this->logger->warning('Settings instance not available for API credential loading');
+                return;
+            }
 
-        $settings = $this->settings->get_settings();
+            $settings = $this->settings->get_settings();
+            if (!is_array($settings)) {
+                $this->logger->error('Invalid settings data received', [
+                    'type' => gettype($settings)
+                ]);
+                return;
+            }
 
-        debug_to_file([
-            'loading_credentials' => true,
-            'has_mailerlite_key' => !empty($settings['api']['mailerlite_api_key']),
-            'has_edd_key' => !empty($settings['api']['edd_api_key']),
-            'has_edd_token' => !empty($settings['api']['edd_token'])
-        ], 'API_CREDENTIALS');
+            $this->logger->debug('Loading API credentials', [
+                'has_mailerlite_key' => !empty($settings['api']['mailerlite_api_key']),
+                'has_edd_key' => !empty($settings['api']['edd_api_key']),
+                'has_edd_token' => !empty($settings['api']['edd_token'])
+            ]);
 
-        // Reinitialize providers with credentials if needed
-        if (!empty($settings['api']['mailerlite_api_key'])) {
-            $this->mailerLiteInstance = new Providers\MailerLite(
-                $settings['api']['mailerlite_api_key'],
-                $this->logger
-            );
-        }
+            // Reinitialize providers with credentials if needed
+            if (!empty($settings['api']['mailerlite_api_key'])) {
+                try {
+                    $this->mailerLiteInstance = new Providers\MailerLite(
+                        $settings['api']['mailerlite_api_key'],
+                        $this->logger
+                    );
+                    $this->logger->debug('MailerLite provider reinitialized with credentials');
+                } catch (Exception $e) {
+                    $this->logger->error('Failed to reinitialize MailerLite provider', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
 
-        if (!empty($settings['api']['edd_api_key']) && !empty($settings['api']['edd_token'])) {
-            $this->eddInstance = new Providers\EDD(
-                $settings['api']['edd_api_key'],
-                $settings['api']['edd_token'],
-                $this->logger
-            );
+            if (!empty($settings['api']['edd_api_key']) && !empty($settings['api']['edd_token'])) {
+                try {
+                    $this->eddInstance = new Providers\EDD(
+                        $settings['api']['edd_api_key'],
+                        $settings['api']['edd_token'],
+                        $this->logger
+                    );
+                    $this->logger->debug('EDD provider reinitialized with credentials');
+                } catch (Exception $e) {
+                    $this->logger->error('Failed to reinitialize EDD provider', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Error loading API credentials', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
         }
     }
 
@@ -227,86 +281,124 @@ class EM_Sync
             // Load API credentials from settings
             $this->loadApiCredentials();
 
-            debug_to_file('Starting API validation', 'API_VALIDATION');
+            $this->logger->info('Starting API validation');
 
             // Test MailerLite connection first
             try {
                 $mailerliteResult = $this->mailerLiteInstance->validateConnection();
-                debug_to_file([
-                    'mailerlite_validation' => 'success',
+                $this->logger->info('MailerLite validation successful', [
                     'result' => $mailerliteResult
-                ], 'API_VALIDATION');
+                ]);
             } catch (Exception $e) {
-                debug_to_file([
-                    'mailerlite_validation' => 'failed',
+                $this->logger->error('MailerLite validation failed', [
                     'error' => $e->getMessage()
-                ], 'API_VALIDATION');
+                ]);
                 throw new Exception('MailerLite API connection failed: ' . $e->getMessage());
             }
 
             // Then test EDD connection
             try {
                 $eddResult = $this->eddInstance->validateConnection();
-                debug_to_file([
-                    'edd_validation' => 'success',
+                $this->logger->info('EDD validation successful', [
                     'result' => $eddResult
-                ], 'API_VALIDATION');
+                ]);
             } catch (Exception $e) {
-                debug_to_file([
-                    'edd_validation' => 'failed',
+                $this->logger->error('EDD validation failed', [
                     'error' => $e->getMessage()
-                ], 'API_VALIDATION');
+                ]);
                 throw new Exception('EDD API connection failed: ' . $e->getMessage());
             }
 
             return true;
         } catch (Exception $e) {
-            debug_to_file([
-                'api_validation_failed' => true,
-                'error' => $e->getMessage()
-            ], 'API_VALIDATION');
+            $this->logger->error('API validation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             throw $e;
         }
     }
 
     private function setMemoryLimit(): void
     {
-        $currentLimit = ini_get('memory_limit');
-        $bytes = $this->getMemoryLimitInBytes();
+        try {
+            $currentLimit = ini_get('memory_limit');
+            $bytes = $this->getMemoryLimitInBytes();
 
-        if ($bytes < $this->getMemoryLimitInBytes($this->maxMemoryLimit)) {
-            ini_set('memory_limit', $this->maxMemoryLimit);
-            $this->logger->log('Memory limit increased', 'info', [
-                'from' => $currentLimit,
-                'to' => $this->maxMemoryLimit
+            if ($bytes < $this->getMemoryLimitInBytes($this->maxMemoryLimit)) {
+                $result = ini_set('memory_limit', $this->maxMemoryLimit);
+                if ($result === false) {
+                    $this->logger->warning('Failed to increase memory limit', [
+                        'current' => $currentLimit,
+                        'requested' => $this->maxMemoryLimit
+                    ]);
+                } else {
+                    $this->logger->info('Memory limit increased', [
+                        'from' => $currentLimit,
+                        'to' => $this->maxMemoryLimit
+                    ]);
+                }
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Error setting memory limit', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
 
     private function initializeProgress(): void
     {
-        $this->syncStatus = [
-            'total' => 0,
-            'processed' => 0,
-            'failed' => 0,
-            'retried' => 0,
-            'status' => 'idle',
-            'start_time' => null,
-            'end_time' => null,
-            'current_campaign' => null,
-            'campaign_progress' => [],
-            'memory_usage' => $this->formatBytes(memory_get_usage(true)),
-            'peak_memory' => $this->formatBytes(memory_get_peak_usage(true))
-        ];
-        update_option(self::STATUS_KEY, $this->syncStatus, false);
+        try {
+            $this->syncStatus = [
+                'total' => 0,
+                'processed' => 0,
+                'failed' => 0,
+                'retried' => 0,
+                'status' => 'idle',
+                'start_time' => null,
+                'end_time' => null,
+                'current_campaign' => null,
+                'campaign_progress' => [],
+                'memory_usage' => $this->formatBytes(memory_get_usage(true)),
+                'peak_memory' => $this->formatBytes(memory_get_peak_usage(true))
+            ];
+
+            $result = update_option(self::STATUS_KEY, $this->syncStatus, false);
+            if (!$result) {
+                $this->logger->warning('Failed to initialize progress status in database');
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Error initializing progress', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            // Set minimal fallback status
+            $this->syncStatus = ['status' => 'error', 'error' => $e->getMessage()];
+        }
     }
 
     private function initializeErrorQueue(): void
     {
-        $this->errorQueue = get_option(self::ERROR_LOG_KEY, []);
-        if (!is_array($this->errorQueue)) {
+        try {
+            $this->errorQueue = get_option(self::ERROR_LOG_KEY, []);
+            if (!is_array($this->errorQueue)) {
+                $this->logger->warning('Error queue data corrupted, reinitializing', [
+                    'found_type' => gettype($this->errorQueue)
+                ]);
+                $this->errorQueue = [];
+                $result = update_option(self::ERROR_LOG_KEY, [], false);
+                if (!$result) {
+                    $this->logger->error('Failed to reinitialize error queue in database');
+                }
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Error initializing error queue', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            // Set fallback empty array
             $this->errorQueue = [];
-            update_option(self::ERROR_LOG_KEY, [], false);
         }
     }
 
@@ -323,11 +415,10 @@ class EM_Sync
 
             $startTime = microtime(true);
 
-            debug_to_file([
-                'data' => $campaigns,
-                'start_time' => $startTime,
-                'entering_sync_all' => true
-            ], 'SYNC_PROGRESS');
+            $this->logger->info('Starting sync process', [
+                'campaigns_count' => count($campaigns),
+                'start_time' => date('Y-m-d H:i:s', (int) $startTime)
+            ]);
 
             delete_option('bema_sync_stop_flag');
 
@@ -350,7 +441,7 @@ class EM_Sync
             // Process each campaign
             foreach ($validCampaigns as $index => $campaign) {
                 if ($this->shouldStopSync()) {
-                    debug_to_file('Sync process stopped by user', 'SYNC_COMPLETION');
+                    $this->logger->warning('Sync process stopped by user');
                     $this->updateProgress([
                         'status' => 'stopped',
                         'end_time' => microtime(true),
@@ -372,16 +463,16 @@ class EM_Sync
                     $this->processCampaignGroups($campaign);
                     $totalProcessed++;
 
-                    debug_to_file([
-                        'campaign_completed' => true,
+                    $this->logger->info('Campaign completed', [
                         'campaign' => $campaign['name'],
                         'processed' => $totalProcessed,
                         'total' => $totalCampaigns
-                    ], 'SYNC_PROGRESS');
+                    ]);
                 } catch (Exception $e) {
-                    $this->logger->log('Campaign processing failed', 'error', [
+                    $this->logger->error('Campaign processing failed', [
                         'campaign' => $campaign['name'],
-                        'error' => $e->getMessage()
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
                     ]);
                     continue;
                 }
@@ -399,14 +490,13 @@ class EM_Sync
                 'duration' => $duration
             ]);
 
-            debug_to_file([
-                'sync_completed' => true,
+            $this->logger->info('Sync completed successfully', [
                 'total_processed' => $totalProcessed,
                 'total_campaigns' => $totalCampaigns,
                 'duration' => $duration,
                 'start_time' => date('Y-m-d H:i:s', (int) $startTime),
                 'end_time' => date('Y-m-d H:i:s', (int) $endTime)
-            ], 'SYNC_COMPLETION');
+            ]);
 
             // Clear any remaining sync flags
             delete_option('bema_sync_running');
@@ -415,11 +505,10 @@ class EM_Sync
 
             return true;
         } catch (Exception $e) {
-            debug_to_file([
-                'sync_failed' => true,
+            $this->logger->error('Sync failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
-            ], 'SYNC_ERROR');
+            ]);
 
             $this->updateProgress([
                 'status' => 'failed',
@@ -477,7 +566,7 @@ class EM_Sync
                     } catch (RetryableException $e) {
                         if ($retryCount < $this->maxRetries) {
                             $retryCount++;
-                            $this->logger->log('Retrying batch', 'warning', [
+                            $this->logger->warning('Retrying batch', [
                                 'campaign' => $campaign['name'],
                                 'group' => $groupType,
                                 'attempt' => $retryCount,
@@ -496,7 +585,7 @@ class EM_Sync
                 }
             }
         } catch (Exception $e) {
-            $this->logger->log('Campaign processing failed', 'error', [
+            $this->logger->error('Campaign processing failed', [
                 'campaign' => $campaign['name'],
                 'error' => $e->getMessage()
             ]);
@@ -588,7 +677,7 @@ class EM_Sync
                     'retry_count' => 0
                 ]);
 
-                $this->logger->log('Max pages reached for current run', 'info', [
+                $this->logger->info('Max pages reached for current run', [
                     'campaign' => $campaign['name'],
                     'group' => $groupType,
                     'pages_processed' => $processedPages,
@@ -596,7 +685,7 @@ class EM_Sync
                 ]);
             }
         } catch (Exception $e) {
-            $this->logger->log('Group processing failed', 'error', [
+            $this->logger->error('Group processing failed', [
                 'campaign' => $campaign['name'],
                 'group' => $groupType,
                 'error' => $e->getMessage()
@@ -620,7 +709,7 @@ class EM_Sync
 
             return null;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get campaign group ID', 'error', [
+            $this->logger->error('Failed to get campaign group ID', [
                 'campaign' => $campaignName,
                 'group' => $groupSuffix,
                 'error' => $e->getMessage()
@@ -636,9 +725,7 @@ class EM_Sync
             'state' => $state
         ], false);
 
-        debug_to_file([
-            'progress_state_saved' => $state
-        ], 'SYNC_PROGRESS');
+        $this->logger->debug('Progress state saved', $state);
     }
 
     private function loadProgressState(): ?array
@@ -648,16 +735,26 @@ class EM_Sync
             return null;
         }
 
-        debug_to_file([
-            'progress_state_loaded' => $saved
-        ], 'SYNC_PROGRESS');
+        $this->logger->debug('Progress state loaded', $saved);
 
         return $saved['state'];
     }
 
     private function clearProgressState(): void
     {
-        delete_option(self::PROGRESS_STATE_KEY);
+        try {
+            $result = delete_option(self::PROGRESS_STATE_KEY);
+            if (!$result) {
+                $this->logger->warning('Failed to clear progress state from database');
+            } else {
+                $this->logger->debug('Progress state cleared successfully');
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Error clearing progress state', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
     }
 
     /**
@@ -671,7 +768,7 @@ class EM_Sync
             'group_type' => $groupType
         ], 'high');
 
-        $this->logger->log('Queued remaining work', 'info', [
+        $this->logger->info('Queued remaining work', [
             'campaign' => $campaign['name'],
             'group' => $groupType,
             'remaining_subscribers' => count($subscribers)
@@ -702,7 +799,7 @@ class EM_Sync
                 // Get group ID from MailerLite
                 $groupId = $this->getGroupIdByName($fullGroupName);
                 if (!$groupId) {
-                    $this->logger->log('Group not found', 'warning', [
+                    $this->logger->warning('Group not found', [
                         'group_name' => $fullGroupName
                     ]);
                     continue;
@@ -711,7 +808,7 @@ class EM_Sync
                 $this->processCampaignGroup($campaign, $groupType, $groupId);
             }
         } catch (Exception $e) {
-            $this->logger->log('Campaign processing failed', 'error', [
+            $this->logger->error('Campaign processing failed', [
                 'campaign' => $campaign['name'],
                 'error' => $e->getMessage()
             ]);
@@ -775,7 +872,7 @@ class EM_Sync
                         'processed' => $this->getCurrentProgress()['processed'] + 1
                     ]);
                 } catch (Exception $e) {
-                    $this->logger->log('Failed to process subscriber', 'error', [
+                    $this->logger->error('Failed to process subscriber', [
                         'email' => $subscriber['email'],
                         'campaign' => $campaign['name'],
                         'error' => $e->getMessage()
@@ -878,7 +975,7 @@ class EM_Sync
 
             return $results;
         } catch (Exception $e) {
-            $this->logger->log('Group sync failed', 'error', [
+            $this->logger->error('Group sync failed', [
                 'error' => $e->getMessage()
             ]);
             return ['error' => $e->getMessage()];
@@ -938,7 +1035,7 @@ class EM_Sync
                     'max_retries' => $maxRetries
                 ];
 
-                $this->logger->log('Scheduling retry for failed batch', 'info', $retryContext);
+                $this->logger->info('Scheduling retry for failed batch', $retryContext);
 
                 // Add to retry queue with context
                 $this->addToErrorQueue(array_merge(
@@ -947,7 +1044,7 @@ class EM_Sync
                 ));
             }
         } catch (Exception $retryError) {
-            $this->logger->log('Failed to handle retry', 'error', [
+            $this->logger->error('Failed to handle retry', [
                 'error' => $retryError->getMessage(),
                 'original_error' => $e->getMessage()
             ]);
@@ -961,11 +1058,11 @@ class EM_Sync
     public function setSyncScheduler(\Bema\Sync_Scheduler $scheduler): void
     {
         $this->sync_scheduler = $scheduler;
-        debug_to_file('Sync scheduler updated', 'SYNC_INIT');
-
-        $this->logger?->log('Sync scheduler set', 'debug', [
-            'scheduler_initialized' => isset($this->sync_scheduler) ? 'yes' : 'no'
-        ]);
+        if ($this->logger) {
+            $this->logger->debug('Sync scheduler set', [
+                'scheduler_initialized' => isset($this->sync_scheduler) ? 'yes' : 'no'
+            ]);
+        }
     }
 
     /**
@@ -974,10 +1071,9 @@ class EM_Sync
     private function getCampaignGroups(array $campaigns): array
     {
         try {
-            debug_to_file([
-                'method' => 'getCampaignGroups',
-                'campaigns' => $campaigns
-            ], 'SYNC_DEBUG');
+            $this->logger->debug('Getting campaign groups', [
+                'campaigns_count' => count($campaigns)
+            ]);
 
             // Get all MailerLite groups first
             $mailerlite_groups = $this->mailerLiteInstance->getGroups();
@@ -985,20 +1081,19 @@ class EM_Sync
                 throw new Exception('No groups found in MailerLite');
             }
 
-            debug_to_file([
-                'mailerlite_groups_found' => count($mailerlite_groups),
-                'mailerlite_groups' => array_column($mailerlite_groups, 'name')
-            ], 'SYNC_DEBUG');
+            $this->logger->debug('MailerLite groups retrieved', [
+                'groups_found' => count($mailerlite_groups),
+                'group_names' => array_column($mailerlite_groups, 'name')
+            ]);
 
             $campaign_groups = [];
             foreach ($campaigns as $campaign) {
                 $groups = $this->campaign_manager->get_campaign_groups($campaign['name']);
 
                 if (!$groups) {
-                    debug_to_file([
-                        'warning' => 'No groups defined for campaign',
+                    $this->logger->warning('No groups defined for campaign', [
                         'campaign' => $campaign['name']
-                    ], 'SYNC_DEBUG');
+                    ]);
                     continue;
                 }
 
@@ -1014,11 +1109,10 @@ class EM_Sync
                 }
 
                 if (empty($mapped_groups)) {
-                    debug_to_file([
-                        'warning' => 'No matching MailerLite groups found for campaign',
+                    $this->logger->warning('No matching MailerLite groups found for campaign', [
                         'campaign' => $campaign['name'],
                         'defined_groups' => $groups
-                    ], 'SYNC_DEBUG');
+                    ]);
                     continue;
                 }
 
@@ -1029,10 +1123,10 @@ class EM_Sync
                 ];
             }
 
-            debug_to_file([
+            $this->logger->info('Campaign groups processed', [
                 'campaign_groups_found' => count($campaign_groups),
-                'campaign_groups' => $campaign_groups
-            ], 'SYNC_GROUPS');
+                'campaigns' => array_keys($campaign_groups)
+            ]);
 
             if (empty($campaign_groups)) {
                 throw new Exception('No valid campaign groups found in MailerLite');
@@ -1040,8 +1134,9 @@ class EM_Sync
 
             return $campaign_groups;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get campaign groups', 'error', [
-                'error' => $e->getMessage()
+            $this->logger->error('Failed to get campaign groups', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             throw $e;
         }
@@ -1053,10 +1148,9 @@ class EM_Sync
     public function getEDDProductForCampaign(string $campaignName): ?int
     {
         try {
-            debug_to_file([
-                'method' => 'getEDDProductForCampaign',
+            $this->logger->debug('Getting EDD product for campaign', [
                 'campaign' => $campaignName
-            ], 'SYNC_DEBUG');
+            ]);
 
             // Parse campaign code to get artist and product info
             $parts = explode('_', $campaignName);
@@ -1069,18 +1163,19 @@ class EM_Sync
             // Search EDD products with this naming convention
             $productId = $this->eddInstance->findProductByNamePattern($artist, $product);
 
-            debug_to_file([
+            $this->logger->debug('EDD product search completed', [
                 'found_product_id' => $productId,
                 'artist' => $artist,
                 'product' => $product,
                 'campaign_name' => $campaignName
-            ], 'SYNC_DEBUG');
+            ]);
 
             return $productId;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get EDD product', 'error', [
+            $this->logger->error('Failed to get EDD product', [
                 'campaign' => $campaignName,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return null;
         }
@@ -1105,9 +1200,10 @@ class EM_Sync
         try {
             $mailerliteGroups = $this->mailerLiteInstance->getGroups();
 
-            debug_to_file([
-                'available_mailerlite_groups' => $mailerliteGroups
-            ], 'CAMPAIGN_VALIDATION');
+            $this->logger->debug('Validating campaigns', [
+                'available_groups_count' => count($mailerliteGroups),
+                'campaigns_to_validate' => count($campaigns)
+            ]);
 
             if (empty($mailerliteGroups)) {
                 throw new Exception('No groups found in MailerLite');
@@ -1121,18 +1217,18 @@ class EM_Sync
 
                 // Check if campaign is valid
                 if (!$this->campaign_manager->is_valid_campaign($campaign['name'])) {
-                    debug_to_file([
-                        'invalid_campaign' => $campaign['name']
-                    ], 'CAMPAIGN_VALIDATION');
+                    $this->logger->warning('Invalid campaign skipped', [
+                        'campaign' => $campaign['name']
+                    ]);
                     continue;
                 }
 
                 // Get required groups for this campaign
                 $requiredGroups = $this->campaign_manager->get_campaign_groups($campaign['name']);
                 if (!$requiredGroups) {
-                    debug_to_file([
-                        'missing_campaign_groups' => $campaign['name']
-                    ], 'CAMPAIGN_VALIDATION');
+                    $this->logger->warning('Campaign missing groups configuration', [
+                        'campaign' => $campaign['name']
+                    ]);
                     continue;
                 }
 
@@ -1157,10 +1253,10 @@ class EM_Sync
                 }
 
                 if (!empty($missingGroups)) {
-                    debug_to_file([
+                    $this->logger->warning('Campaign has missing groups', [
                         'campaign' => $campaign['name'],
                         'missing_groups' => $missingGroups
-                    ], 'CAMPAIGN_VALIDATION');
+                    ]);
                     continue;
                 }
 
@@ -1168,18 +1264,18 @@ class EM_Sync
                 $campaign['group_ids'] = $groupIds;
                 $validCampaigns[] = $campaign;
 
-                debug_to_file([
-                    'campaign_validated' => $campaign['name'],
+                $this->logger->debug('Campaign validated successfully', [
+                    'campaign' => $campaign['name'],
                     'group_ids' => $groupIds
-                ], 'CAMPAIGN_VALIDATION');
+                ]);
             }
 
             return $validCampaigns;
         } catch (Exception $e) {
-            debug_to_file([
-                'campaign_validation_failed' => true,
-                'error' => $e->getMessage()
-            ], 'CAMPAIGN_VALIDATION');
+            $this->logger->error('Campaign validation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             throw $e;
         }
     }
@@ -1187,18 +1283,17 @@ class EM_Sync
     private function processSingleSubscriber(array $subscriber, array $campaign, string $currentGroup): void
     {
         try {
-            debug_to_file([
-                'processing_subscriber' => true,
+            $this->logger->debug('Processing subscriber', [
                 'email' => $subscriber['email'],
                 'campaign' => $campaign['name'],
                 'current_group' => $currentGroup
-            ], 'SYNC_PROCESSING');
+            ]);
 
             // Get product ID and check purchase status
             $productId = $this->getEDDProductForCampaign($campaign['name']);
 
             if (!$productId) {
-                $this->logger->log('No product found for campaign', 'warning', [
+                $this->logger->warning('No product found for campaign', [
                     'campaign' => $campaign['name']
                 ]);
                 $hasPurchased = false;
@@ -1209,13 +1304,12 @@ class EM_Sync
                 );
             }
 
-            debug_to_file([
-                'purchase_check_complete' => true,
+            $this->logger->debug('Purchase check completed', [
                 'email' => $subscriber['email'],
                 'campaign' => $campaign['name'],
                 'has_purchased' => $hasPurchased,
                 'product_id' => $productId
-            ], 'SYNC_PROCESSING');
+            ]);
 
             // Get campaign groups
             $campaignGroups = $this->campaign_manager->get_campaign_groups($campaign['name']);
@@ -1280,8 +1374,7 @@ class EM_Sync
                 $hasPurchased
             );
 
-            debug_to_file([
-                'subscriber_processed' => true,
+            $this->logger->info('Subscriber processed successfully', [
                 'email' => $subscriber['email'],
                 'campaign' => $campaign['name'],
                 'from_tier' => $currentGroup,
@@ -1289,15 +1382,14 @@ class EM_Sync
                 'has_purchased' => $hasPurchased,
                 'product_id' => $productId,
                 'next_group_id' => isset($nextGroupId) ? $nextGroupId : null
-            ], 'SYNC_PROCESSING');
+            ]);
         } catch (Exception $e) {
-            debug_to_file([
-                'subscriber_processing_failed' => true,
+            $this->logger->error('Subscriber processing failed', [
                 'email' => $subscriber['email'],
                 'campaign' => $campaign['name'],
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
-            ], 'SYNC_ERROR');
+            ]);
             throw $e;
         }
     }
@@ -1525,7 +1617,7 @@ class EM_Sync
 
             // Validate the transition
             if (!$this->campaign_manager->validate_tier_transition($currentGroup, $nextGroup, $hasPurchased)) {
-                $this->logger->log('Invalid tier transition attempted', 'warning', [
+                $this->logger->warning('Invalid tier transition attempted', [
                     'subscriber' => $subscriber['email'],
                     'from_group' => $currentGroup,
                     'to_group' => $nextGroup,
@@ -1539,15 +1631,13 @@ class EM_Sync
                 throw new Exception("Could not find group ID for: {$campaignGroups[$nextGroup]}");
             }
 
-            debug_to_file([
-                'handling_tier_transition' => [
-                    'subscriber' => $subscriber['email'],
-                    'campaign' => $campaign['name'],
-                    'from_group' => $currentGroup,
-                    'to_group' => $nextGroup,
-                    'has_purchased' => $hasPurchased
-                ]
-            ], 'SYNC_DEBUG');
+            $this->logger->debug('Handling tier transition', [
+                'subscriber' => $subscriber['email'],
+                'campaign' => $campaign['name'],
+                'from_group' => $currentGroup,
+                'to_group' => $nextGroup,
+                'has_purchased' => $hasPurchased
+            ]);
 
             // Remove from current group
             if (!empty($subscriber['id'])) {
@@ -1577,7 +1667,7 @@ class EM_Sync
                 $campaign['name']
             );
 
-            $this->logger->log('Tier transition completed', 'info', [
+            $this->logger->info('Tier transition completed', [
                 'email' => $subscriber['email'],
                 'campaign' => $campaign['name'],
                 'from_group' => $currentGroup,
@@ -1585,10 +1675,11 @@ class EM_Sync
                 'has_purchased' => $hasPurchased
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Tier transition failed', 'error', [
+            $this->logger->error('Tier transition failed', [
                 'subscriber' => $subscriber['email'],
                 'campaign' => $campaign['name'],
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             throw $e;
         }
@@ -1599,13 +1690,50 @@ class EM_Sync
      */
     private function getGroupIdByName(string $groupName): ?string
     {
-        $groups = $this->mailerLiteInstance->getGroups();
-        foreach ($groups as $group) {
-            if ($group['name'] === $groupName) {
-                return $group['id'];
+        try {
+            if (empty($groupName)) {
+                $this->logger->warning('Empty group name provided to getGroupIdByName');
+                return null;
             }
+
+            $groups = $this->mailerLiteInstance->getGroups();
+            if (!is_array($groups)) {
+                $this->logger->error('Invalid groups data received from MailerLite', [
+                    'type' => gettype($groups)
+                ]);
+                return null;
+            }
+
+            foreach ($groups as $group) {
+                if (!is_array($group) || !isset($group['name'], $group['id'])) {
+                    $this->logger->warning('Invalid group data structure', [
+                        'group' => $group
+                    ]);
+                    continue;
+                }
+
+                if ($group['name'] === $groupName) {
+                    $this->logger->debug('Group ID found', [
+                        'group_name' => $groupName,
+                        'group_id' => $group['id']
+                    ]);
+                    return $group['id'];
+                }
+            }
+
+            $this->logger->warning('Group not found', [
+                'group_name' => $groupName,
+                'available_groups' => array_column($groups, 'name')
+            ]);
+            return null;
+        } catch (Exception $e) {
+            $this->logger->error('Error getting group ID by name', [
+                'group_name' => $groupName,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return null;
         }
-        return null;
     }
 
     /**
@@ -1623,9 +1751,10 @@ class EM_Sync
             }
             return null;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get current group', 'error', [
+            $this->logger->error('Failed to get current group', [
                 'subscriber_id' => $subscriberId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return null;
         }
@@ -1651,13 +1780,14 @@ class EM_Sync
             $errorQueue = array_slice($errorQueue, 0, 100);
             update_option('bema_sync_errors', $errorQueue, false);
 
-            $this->logger->log('Error added to queue', 'debug', [
+            $this->logger->debug('Error added to queue', [
                 'error' => $error
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to add error to queue', 'error', [
+            $this->logger->error('Failed to add error to queue', [
                 'error' => $e->getMessage(),
-                'original_error' => $error
+                'original_error' => $error,
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
@@ -1700,8 +1830,9 @@ class EM_Sync
 
             update_option('bema_sync_errors', $updatedQueue, false);
         } catch (Exception $e) {
-            $this->logger->log('Failed to process retry queue', 'error', [
-                'error' => $e->getMessage()
+            $this->logger->error('Failed to process retry queue', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
@@ -1742,12 +1873,11 @@ class EM_Sync
             $updated = array_merge($current, $data);
             update_option('bema_sync_status', $updated, false);
 
-            debug_to_file([
-                'progress_updated' => $updated
-            ], 'SYNC_PROGRESS');
+            $this->logger->debug('Progress updated', $updated);
         } catch (Exception $e) {
-            $this->logger->log('Failed to update progress', 'error', [
-                'error' => $e->getMessage()
+            $this->logger->error('Failed to update progress', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
@@ -1772,10 +1902,11 @@ class EM_Sync
     private function handleSyncError(array $batch = null, Exception $error = null): void
     {
         if ($batch && $error) {
-            $this->logger->log('Sync error occurred', 'error', [
+            $this->logger->error('Sync error occurred', [
                 'batch_size' => count($batch['subscribers'] ?? []),
                 'campaign' => $batch['campaign']['name'] ?? 'unknown',
-                'error' => $error->getMessage()
+                'error' => $error->getMessage(),
+                'trace' => $error->getTraceAsString()
             ]);
         }
     }
@@ -1789,7 +1920,7 @@ class EM_Sync
             'timestamp' => time()
         ];
 
-        $this->logger->log('Batch processing failed', 'error', $errorData);
+        $this->logger->error('Batch processing failed', $errorData);
 
         $this->updateProgress([
             'failed' => $this->getCurrentProgress()['failed'] + count($batch),
@@ -1812,7 +1943,7 @@ class EM_Sync
         $memoryThresholdBytes = $memoryLimit * $this->memoryThreshold;
 
         if ($timeElapsed >= $this->maxProcessingTime) {
-            $this->logger->log('Time limit reached', 'warning', [
+            $this->logger->warning('Time limit reached', [
                 'elapsed' => $timeElapsed,
                 'limit' => $this->maxProcessingTime
             ]);
@@ -1820,7 +1951,7 @@ class EM_Sync
         }
 
         if ($memoryUsage >= $memoryThresholdBytes) {
-            $this->logger->log('Memory threshold reached', 'warning', [
+            $this->logger->warning('Memory threshold reached', [
                 'usage' => $this->formatBytes($memoryUsage),
                 'limit' => $this->formatBytes($memoryThresholdBytes)
             ]);
@@ -1837,7 +1968,7 @@ class EM_Sync
         $peakMemory = memory_get_peak_usage(true);
 
         if ($memoryUsage > ($memoryLimit * $this->memoryThreshold)) {
-            $this->logger->log('Memory cleanup triggered', 'warning', [
+            $this->logger->warning('Memory cleanup triggered', [
                 'usage' => $this->formatBytes($memoryUsage),
                 'peak' => $this->formatBytes($peakMemory),
                 'limit' => $this->formatBytes($memoryLimit)
@@ -1845,7 +1976,7 @@ class EM_Sync
 
             if (function_exists('gc_collect_cycles')) {
                 $collected = gc_collect_cycles();
-                $this->logger->log('Garbage collection completed', 'info', [
+                $this->logger->info('Garbage collection completed', [
                     'collected' => $collected
                 ]);
             }
@@ -1866,24 +1997,19 @@ class EM_Sync
     public function getGroups(): array
     {
         try {
-            debug_to_file('Getting MailerLite groups', 'SYNC_GROUPS');
+            $this->logger->debug('Getting MailerLite groups');
 
             $groups = $this->mailerLiteInstance->getGroups();
 
-            debug_to_file([
-                'groups_retrieved' => true,
+            $this->logger->info('MailerLite groups retrieved successfully', [
                 'count' => count($groups)
-            ], 'SYNC_GROUPS');
+            ]);
 
             return $groups;
         } catch (Exception $e) {
-            debug_to_file([
-                'get_groups_failed' => true,
-                'error' => $e->getMessage()
-            ], 'SYNC_GROUPS');
-
-            $this->logger->log('Failed to get groups from MailerLite', 'error', [
-                'error' => $e->getMessage()
+            $this->logger->error('Failed to get groups from MailerLite', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return [];
         }
@@ -1901,10 +2027,9 @@ class EM_Sync
             $cachedGroups = $this->cache->get($cacheKey);
 
             if ($cachedGroups !== null) {
-                debug_to_file([
-                    'using_cached_groups' => true,
+                $this->logger->debug('Using cached groups', [
                     'campaign' => $campaign
-                ], 'SYNC_GROUPS');
+                ]);
                 return $cachedGroups;
             }
 
@@ -1922,23 +2047,17 @@ class EM_Sync
 
             $this->cache->set($cacheKey, $groups, self::CACHE_TTL);
 
-            debug_to_file([
-                'groups_fetched' => true,
+            $this->logger->debug('Groups fetched and cached', [
                 'campaign' => $campaign,
                 'count' => count($groups)
-            ], 'SYNC_GROUPS');
+            ]);
 
             return $groups;
         } catch (Exception $e) {
-            debug_to_file([
-                'get_groups_failed' => true,
+            $this->logger->error('Failed to get campaign groups', [
                 'campaign' => $campaign,
-                'error' => $e->getMessage()
-            ], 'SYNC_GROUPS');
-
-            $this->logger->log('Failed to get campaign groups', 'error', [
-                'campaign' => $campaign,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return [];
         }
@@ -1946,7 +2065,7 @@ class EM_Sync
 
     private function errorHandler($errno, $errstr, $errfile, $errline): bool
     {
-        $this->logger->log('PHP Error', 'error', [
+        $this->logger->error('PHP Error', [
             'errno' => $errno,
             'error' => $errstr,
             'file' => $errfile,
@@ -1959,7 +2078,7 @@ class EM_Sync
     {
         $error = error_get_last();
         if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
-            $this->logger->log('Fatal Error', 'critical', [
+            $this->logger->critical('Fatal Error', [
                 'error' => $error['message'],
                 'file' => $error['file'],
                 'line' => $error['line']
@@ -1983,7 +2102,7 @@ class EM_Sync
             'trace' => $exception->getTraceAsString()
         ] + $context;
 
-        $this->logger->log($message, 'error', $errorData);
+        $this->logger->error($message, $errorData);
         $this->addToErrorQueue($errorData);
     }
 
@@ -2003,46 +2122,135 @@ class EM_Sync
 
     public function clearErrorLogs(): void
     {
-        $this->errorQueue = [];
-        update_option(self::ERROR_LOG_KEY, [], false);
+        try {
+            $this->errorQueue = [];
+            $result = update_option(self::ERROR_LOG_KEY, [], false);
+            if (!$result) {
+                $this->logger->warning('Failed to clear error logs in database');
+            } else {
+                $this->logger->info('Error logs cleared successfully');
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Error clearing error logs', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
     }
 
     private function generateCacheKey($data): string
     {
-        return 'sync_' . md5(serialize($data));
+        try {
+            if ($data === null) {
+                $this->logger->warning('Null data provided to generateCacheKey');
+                return 'sync_null_' . time();
+            }
+
+            $serialized = serialize($data);
+            if ($serialized === false) {
+                $this->logger->warning('Failed to serialize data for cache key', [
+                    'data_type' => gettype($data)
+                ]);
+                return 'sync_error_' . time();
+            }
+
+            return 'sync_' . md5($serialized);
+        } catch (Exception $e) {
+            $this->logger->error('Error generating cache key', [
+                'error' => $e->getMessage(),
+                'data_type' => gettype($data)
+            ]);
+            return 'sync_fallback_' . time();
+        }
     }
 
     private function getMemoryLimitInBytes(string $memoryLimit = null): int
     {
-        $memoryLimit = $memoryLimit ?? ini_get('memory_limit');
-        if ($memoryLimit === '-1')
-            return PHP_INT_MAX;
+        try {
+            $memoryLimit = $memoryLimit ?? ini_get('memory_limit');
 
-        preg_match('/^(\d+)(.)$/', $memoryLimit, $matches);
-        if (!$matches)
+            if ($memoryLimit === false) {
+                $this->logger->warning('Failed to get memory limit from ini_get');
+                return 128 * 1024 * 1024; // 128MB default
+            }
+
+            if ($memoryLimit === '-1') {
+                return PHP_INT_MAX;
+            }
+
+            preg_match('/^(\d+)(.)$/', $memoryLimit, $matches);
+            if (!$matches) {
+                $this->logger->warning('Invalid memory limit format', [
+                    'memory_limit' => $memoryLimit
+                ]);
+                return 128 * 1024 * 1024; // 128MB default
+            }
+
+            $value = (int) $matches[1];
+            if ($value <= 0) {
+                $this->logger->warning('Invalid memory limit value', [
+                    'value' => $value,
+                    'memory_limit' => $memoryLimit
+                ]);
+                return 128 * 1024 * 1024; // 128MB default
+            }
+
+            switch (strtoupper($matches[2])) {
+                case 'G':
+                    $value *= 1024;
+                case 'M':
+                    $value *= 1024;
+                case 'K':
+                    $value *= 1024;
+                    break;
+                default:
+                    $this->logger->warning('Unknown memory limit unit', [
+                        'unit' => $matches[2],
+                        'memory_limit' => $memoryLimit
+                    ]);
+            }
+
+            return $value;
+        } catch (Exception $e) {
+            $this->logger->error('Error parsing memory limit', [
+                'memory_limit' => $memoryLimit ?? 'null',
+                'error' => $e->getMessage()
+            ]);
             return 128 * 1024 * 1024; // 128MB default
-
-        $value = (int) $matches[1];
-        switch (strtoupper($matches[2])) {
-            case 'G':
-                $value *= 1024;
-            case 'M':
-                $value *= 1024;
-            case 'K':
-                $value *= 1024;
         }
-
-        return $value;
     }
 
     private function formatBytes($bytes): string
     {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $bytes = max($bytes, 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
+        try {
+            if (!is_numeric($bytes)) {
+                $this->logger->warning('Non-numeric value provided to formatBytes', [
+                    'value' => $bytes,
+                    'type' => gettype($bytes)
+                ]);
+                return '0 B';
+            }
 
-        return round($bytes / (1024 ** $pow), 2) . ' ' . $units[$pow];
+            $units = ['B', 'KB', 'MB', 'GB'];
+            $bytes = max($bytes, 0);
+
+            if ($bytes === 0) {
+                return '0 B';
+            }
+
+            $pow = floor(log($bytes) / log(1024));
+            $pow = min($pow, count($units) - 1);
+            $pow = max($pow, 0);
+
+            $value = $bytes / (1024 ** $pow);
+            return round($value, 2) . ' ' . $units[$pow];
+        } catch (Exception $e) {
+            $this->logger->error('Error formatting bytes', [
+                'bytes' => $bytes,
+                'error' => $e->getMessage()
+            ]);
+            return '0 B';
+        }
     }
 
     public function validateAPIConnections(): array
@@ -2150,7 +2358,7 @@ class EM_Sync
         $preparedCampaigns = [];
         foreach ($campaignData as $campaign) {
             if (!isset($campaign['id']) || !isset($campaign['name'])) {
-                $this->logger->log('Invalid campaign data', 'warning', ['campaign' => $campaign]);
+                $this->logger->warning('Invalid campaign data', ['campaign' => $campaign]);
                 continue;
             }
 
@@ -2171,9 +2379,10 @@ class EM_Sync
                 'campaign_id' => $campaign['id']
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to fetch subscribers', 'error', [
+            $this->logger->error('Failed to fetch subscribers', [
                 'campaign' => $campaign['name'],
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             throw $e;
         }
@@ -2181,9 +2390,10 @@ class EM_Sync
 
     private function handleCampaignError($campaign, Exception $e): void
     {
-        $this->logger->log('Campaign processing failed', 'error', [
+        $this->logger->error('Campaign processing failed', [
             'campaign' => $campaign['name'],
-            'error' => $e->getMessage()
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
         ]);
 
         $this->updateProgress([
@@ -2200,7 +2410,7 @@ class EM_Sync
     {
         while ($batch = $this->queueManager->getNextBatch($this->batchSize)) {
             if (!$this->canContinueProcessing($startTime)) {
-                $this->logger->log('Processing time limit reached', 'warning');
+                $this->logger->warning('Processing time limit reached');
                 break;
             }
 
@@ -2387,7 +2597,7 @@ class EM_Sync
                     ]
                 ];
 
-                $this->logger->log('Subscriber found, attempting to update field.', 'debug', [
+                $this->logger->debug('Subscriber found, attempting to update field', [
                     'email' => $email,
                     'id' => $subscriber_id,
                     'field_name' => $field_name
@@ -2397,13 +2607,13 @@ class EM_Sync
                 $update_successful = $this->mailerLiteInstance->updateSubscriber($subscriber_id, $subscriber_data);
 
                 if ($update_successful) {
-                    $this->logger->log('Successfully updated subscriber field.', 'info', [
+                    $this->logger->info('Successfully updated subscriber field', [
                         'email' => $email,
                         'field_name' => $field_name
                     ]);
                     return true;
                 } else {
-                    $this->logger->log('UpdateSubscriber API call failed.', 'error', [
+                    $this->logger->error('UpdateSubscriber API call failed', [
                         'email' => $email,
                         'field_name' => $field_name
                     ]);
@@ -2411,15 +2621,16 @@ class EM_Sync
                 }
             } else {
                 // This block may be hit if getSubscriber() returns an empty array instead of throwing an exception.
-                $this->logger->log('Subscriber not found for update.', 'error', ['email' => $email]);
+                $this->logger->error('Subscriber not found for update', ['email' => $email]);
                 return false;
             }
 
         } catch (Exception $e) {
-            $this->logger->log('Failed to update subscriber field status due to exception', 'error', [
+            $this->logger->error('Failed to update subscriber field status due to exception', [
                 'email' => $email,
                 'field_name' => $field_name,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             // Re-throw the exception to allow the original caller to handle it
             throw $e;
@@ -2456,7 +2667,7 @@ class EM_Sync
             if (!empty($subscribers[0]['id'])) {
                 $this->mailerLiteInstance->updateSubscriber($subscribers[0]['id'], $subscriber_data);
 
-                $this->logger->log('Purchase status updated', 'info', [
+                $this->logger->info('Purchase status updated', [
                     'email' => $email,
                     'campaign' => $campaign_code,
                     'field' => $field_name,
@@ -2467,10 +2678,11 @@ class EM_Sync
             // Update local database
             $this->dbManager->updateSubscriberPurchaseStatus($email, $campaign_code, $has_purchased);
         } catch (Exception $e) {
-            $this->logger->log('Failed to update purchase status', 'error', [
+            $this->logger->error('Failed to update purchase status', [
                 'email' => $email,
                 'campaign' => $campaign_code,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             throw $e;
         }
@@ -2479,7 +2691,7 @@ class EM_Sync
     public function stopSync(): bool
     {
         try {
-            debug_to_file('Attempting to stop sync process', 'SYNC_STOP');
+            $this->logger->info('Attempting to stop sync process');
 
             // Set stop flag immediately
             update_option('bema_sync_stop_flag', true, false);
@@ -2515,18 +2727,14 @@ class EM_Sync
                 gc_collect_cycles();
             }
 
-            $this->logger->log('Sync stopped by user', 'info');
-            debug_to_file('Sync process stopped successfully', 'SYNC_STOP');
+            $this->logger->info('Sync stopped by user');
+            $this->logger->info('Sync process stopped successfully');
 
             return true;
         } catch (Exception $e) {
-            debug_to_file([
-                'error' => 'Failed to stop sync',
-                'message' => $e->getMessage()
-            ], 'SYNC_ERROR');
-
-            $this->logger->log('Failed to stop sync', 'error', [
-                'error' => $e->getMessage()
+            $this->logger->error('Failed to stop sync', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return false;
         }
@@ -2536,7 +2744,7 @@ class EM_Sync
     {
         $stopFlag = get_option('bema_sync_stop_flag');
         if ($stopFlag) {
-            debug_to_file('Stop flag detected - halting operation', 'SYNC_STOP');
+            $this->logger->warning('Stop flag detected - halting operation');
             $this->updateProgress([
                 'status' => 'stopped',
                 'end_time' => time()
@@ -2550,7 +2758,7 @@ class EM_Sync
     {
         $lock_acquired = set_transient('bema_sync_lock', time(), 3600); // 1 hour timeout
         if (!$lock_acquired) {
-            $this->logger->log('Failed to acquire sync lock', 'error');
+            $this->logger->error('Failed to acquire sync lock');
             return false;
         }
         return true;
@@ -2558,7 +2766,19 @@ class EM_Sync
 
     private function releaseSyncLock(): void
     {
-        delete_transient('bema_sync_lock');
+        try {
+            $result = delete_transient('bema_sync_lock');
+            if (!$result) {
+                $this->logger->warning('Failed to release sync lock');
+            } else {
+                $this->logger->debug('Sync lock released successfully');
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Error releasing sync lock', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
     }
 
     private function processPurchaseUpdates(array $subscribers, string $campaign_code): void
@@ -2579,15 +2799,16 @@ class EM_Sync
 
                 $this->dbManager->commit();
 
-                $this->logger->log('Batch purchase updates completed', 'info', [
+                $this->logger->info('Batch purchase updates completed', [
                     'campaign' => $campaign_code,
                     'batch_size' => count($batch)
                 ]);
             } catch (Exception $e) {
                 $this->dbManager->rollback();
-                $this->logger->log('Batch purchase updates failed', 'error', [
+                $this->logger->error('Batch purchase updates failed', [
                     'campaign' => $campaign_code,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
                 ]);
                 throw $e;
             }
@@ -2628,9 +2849,10 @@ class EM_Sync
 
             return $status;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get subscriber status', 'error', [
+            $this->logger->error('Failed to get subscriber status', [
                 'email' => $email,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return [
                 'status' => 'error',
@@ -2681,9 +2903,10 @@ class EM_Sync
 
             return $history;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get EDD purchase history', 'error', [
+            $this->logger->error('Failed to get EDD purchase history', [
                 'email' => $email,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return [
                 'purchases' => [],
@@ -3193,70 +3416,73 @@ class EM_Sync
             // 5. Final Status Update and History
             $this->update_sync_status('Completed', 'Sync completed', 3, 3, $sync_option_key, $subscribers_count);
             $this->sync_database->upsert_sync_record('Completed', $subscribers_count, "Successfully synced {$subscribers_count} subscribers.", null);
-            $this->logger->log('Final sync status and history record updated.', 'info');
+            $this->logger->info('Final sync status and history record updated');
 
         } catch (Exception $e) {
-            $this->logger->log('Error Syncing mailerlite data', 'error', ['error' => $e->getMessage()]);
+            $this->logger->error('Error Syncing mailerlite data', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             $this->update_sync_status('Idle', 'Sync failed.', 0, 3, $sync_option_key);
             $this->sync_database->upsert_sync_record('Failed', 0, $e->getMessage(), null);
         }
     }
 
     /**
- * Validate an EDD customer order by ID and email.
- * Compatible with both EDD 2.x (edd_payment) and 3.x+ (edd_get_order).
- *
- * @param int    $order_id The EDD order ID (required).
- * @param string $email    The customer's email address (required).
- * @return bool True if valid match, false otherwise.
- */
-function validate_edd_order_and_customer(int $order_id, string $email): bool
-{
-    // Sanitize inputs
-    echo "Debugging: Starting validation for Order ID: {$order_id} and Email: {$email}\n";
-    $order_id = absint($order_id);
-    $email = sanitize_email($email);
-    echo "Debugging: Sanitized Order ID: {$order_id} and Sanitized Email: {$email}\n";
+     * Validate an EDD customer order by ID and email.
+     * Compatible with both EDD 2.x (edd_payment) and 3.x+ (edd_get_order).
+     *
+     * @param int    $order_id The EDD order ID (required).
+     * @param string $email    The customer's email address (required).
+     * @return bool True if valid match, false otherwise.
+     */
+    function validate_edd_order_and_customer(int $order_id, string $email): bool
+    {
+        // Sanitize inputs
+        echo "Debugging: Starting validation for Order ID: {$order_id} and Email: {$email}\n";
+        $order_id = absint($order_id);
+        $email = sanitize_email($email);
+        echo "Debugging: Sanitized Order ID: {$order_id} and Sanitized Email: {$email}\n";
 
-    if ($order_id <= 0 || empty($email)) {
-        echo "Debugging: Invalid input. Order ID is not positive or email is empty.\n";
-        return false;
-    }
-
-    $order_email = '';
-
-    // EDD 3.x and newer
-    if (function_exists('edd_get_order')) {
-        echo "Debugging: EDD 3.x detected. Attempting to get order.\n";
-        $order = edd_get_order($order_id);
-        if (!$order) {
-            echo "Debugging: Order not found for ID: {$order_id}\n";
+        if ($order_id <= 0 || empty($email)) {
+            echo "Debugging: Invalid input. Order ID is not positive or email is empty.\n";
             return false;
         }
-        $order_email = !empty($order->email) ? sanitize_email($order->email) : '';
-        echo "Debugging: Found order email (3.x): {$order_email}\n";
-    }
-    // EDD 2.x (legacy)
-    elseif (function_exists('edd_get_payment')) {
-        echo "Debugging: EDD 2.x detected. Attempting to get payment.\n";
-        $payment = edd_get_payment($order_id);
-        if (!$payment) {
-            echo "Debugging: Payment not found for ID: {$order_id}\n";
+
+        $order_email = '';
+
+        // EDD 3.x and newer
+        if (function_exists('edd_get_order')) {
+            echo "Debugging: EDD 3.x detected. Attempting to get order.\n";
+            $order = edd_get_order($order_id);
+            if (!$order) {
+                echo "Debugging: Order not found for ID: {$order_id}\n";
+                return false;
+            }
+            $order_email = !empty($order->email) ? sanitize_email($order->email) : '';
+            echo "Debugging: Found order email (3.x): {$order_email}\n";
+        }
+        // EDD 2.x (legacy)
+        elseif (function_exists('edd_get_payment')) {
+            echo "Debugging: EDD 2.x detected. Attempting to get payment.\n";
+            $payment = edd_get_payment($order_id);
+            if (!$payment) {
+                echo "Debugging: Payment not found for ID: {$order_id}\n";
+                return false;
+            }
+            $order_email = !empty($payment->email) ? sanitize_email($payment->email) : '';
+            echo "Debugging: Found order email (2.x): {$order_email}\n";
+        } else {
+            // EDD not available
+            echo "Debugging: EDD core functions not found.\n";
             return false;
         }
-        $order_email = !empty($payment->email) ? sanitize_email($payment->email) : '';
-        echo "Debugging: Found order email (2.x): {$order_email}\n";
-    } else {
-        // EDD not available
-        echo "Debugging: EDD core functions not found.\n";
-        return false;
-    }
 
-    // Compare email case-insensitively
-    $comparison_result = strcasecmp($order_email, $email) === 0;
-    echo "Debugging: Comparing emails '{$order_email}' and '{$email}'. Result: " . ($comparison_result ? 'Match' : 'No Match') . "\n";
-    return $comparison_result;
-}
+        // Compare email case-insensitively
+        $comparison_result = strcasecmp($order_email, $email) === 0;
+        echo "Debugging: Comparing emails '{$order_email}' and '{$email}'. Result: " . ($comparison_result ? 'Match' : 'No Match') . "\n";
+        return $comparison_result;
+    }
 
 
 
@@ -3323,7 +3549,7 @@ function validate_edd_order_and_customer(int $order_id, string $email): bool
             // Get transition rules from options. If none exist, log and exit.
             $transition_rules = get_option('bema_crm_transition_matrix', []);
             if (empty($transition_rules)) {
-                $this->logger->log('Transition rules are not defined.', 'info');
+                $this->logger->info('Transition rules are not defined');
                 return;
             }
 
@@ -3350,7 +3576,7 @@ function validate_edd_order_and_customer(int $order_id, string $email): bool
                 $source_group_name = $source_campaign_name . '_' . $normalize_current_tier;
                 $source_campaign_group = $this->group_database->get_group_by_name($source_group_name);
                 if (!$source_campaign_group) {
-                    $this->logger->log("Source group '{$source_group_name}' not found. Skipping.", 'warning');
+                    $this->logger->warning("Source group '{$source_group_name}' not found. Skipping.");
                     continue;
                 }
                 $source_campaign_group_id = $source_campaign_group['id'];
@@ -3360,7 +3586,7 @@ function validate_edd_order_and_customer(int $order_id, string $email): bool
                 $destination_campaign_group = $this->group_database->get_group_by_name($destination_group_name);
 
                 if (!$destination_campaign_group) {
-                    $this->logger->log("Destination group '{$destination_group_name}' not found. Skipping.", 'warning');
+                    $this->logger->warning("Destination group '{$destination_group_name}' not found. Skipping.");
                     continue;
                 }
 
@@ -3371,7 +3597,7 @@ function validate_edd_order_and_customer(int $order_id, string $email): bool
 
                 // If no subscribers are found, log and move to the next rule.
                 if (empty($source_campaign_subscribers)) {
-                    $this->logger->log("No subscribers found in group '{$source_group_name}'. Skipping.", 'info');
+                    $this->logger->info("No subscribers found in group '{$source_group_name}'. Skipping.");
                     continue;
                 }
 
@@ -3405,7 +3631,7 @@ function validate_edd_order_and_customer(int $order_id, string $email): bool
                 echo "Found {$transfer_count} subscribers to transfer.\n";
                 // If no subscribers meet the criteria, log and skip.
                 if (empty($subscribers_to_transfer)) {
-                    $this->logger->log("No subscribers to transfer for group '{$source_group_name}' based on rules.", 'info');
+                    $this->logger->info("No subscribers to transfer for group '{$source_group_name}' based on rules.");
                     echo "No subscribers to transfer for group '{$source_group_name}' based on rules. Skipping to next rule.\n";
                     continue;
                 }
@@ -3430,7 +3656,10 @@ function validate_edd_order_and_customer(int $order_id, string $email): bool
         } catch (\Exception $e) {
             echo "An error occurred during campaign transition: " . $e->getMessage() . "\n";
             // Log the error with details and re-throw the exception.
-            $this->logger->log('Error transitioning campaigns', 'error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            $this->logger->error('Error transitioning campaigns', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             throw $e;
         }
     }

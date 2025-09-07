@@ -2,7 +2,7 @@
 
 namespace Bema\Validators;
 
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use Bema\Interfaces\Validator_Interface;
 
 if (!defined('ABSPATH')) {
@@ -17,7 +17,7 @@ abstract class Base_Validator implements Validator_Interface
     protected $validateMode = 'strict';
     protected $maxErrors = 100;
 
-    public function __construct(\Bema\BemaCRMLogger $logger)
+    public function __construct(\Bema\Bema_CRM_Logger $logger)
     {
         $this->logger = $logger;
     }
@@ -49,7 +49,7 @@ abstract class Base_Validator implements Validator_Interface
     public function addWarning(string $warning, array $context = []): void
     {
         $this->warnings[] = $warning;
-        $this->logger->log($warning, 'validation-warning', $context);
+        $this->logger->warning($warning, $context);
     }
 
     public function setValidateMode(string $mode): void

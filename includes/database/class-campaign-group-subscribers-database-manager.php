@@ -3,7 +3,7 @@
 namespace Bema\Database;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -60,7 +60,7 @@ class Campaign_Group_Subscribers_Database_Manager
     /**
      * The logger instance for error reporting.
      *
-     * @var BemaCRMLogger
+     * @var Bema_CRM_Logger
      */
     private $logger;
 
@@ -69,9 +69,9 @@ class Campaign_Group_Subscribers_Database_Manager
      *
      * Initializes the database connection and table names.
      *
-     * @param BemaCRMLogger|null $logger An optional logger instance.
+     * @param Bema_CRM_Logger|null $logger An optional logger instance.
      */
-    public function __construct(?BemaCRMLogger $logger = null)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
@@ -79,7 +79,12 @@ class Campaign_Group_Subscribers_Database_Manager
         $this->campaigns_table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
         $this->subscribers_table_name = $wpdb->prefix . 'bemacrm_subscribersmeta';
         $this->groups_table_name = $wpdb->prefix . 'bemacrm_groupmeta';
-        $this->logger = $logger ?? new BemaCRMLogger();
+        if ($logger) {
+            $this->logger = $logger;
+            $this->logger->setIdentifier('campaign-group-subscribers-database');
+        } else {
+            $this->logger = Bema_CRM_Logger::create('campaign-group-subscribers-database');
+        }
     }
 
     /**
@@ -418,7 +423,9 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('delete_table Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('delete_table Error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }

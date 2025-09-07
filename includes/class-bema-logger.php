@@ -84,47 +84,85 @@ class BemaCRMLogger
      */
     public function log($message, $level = 'info', $context = []): void
     {
-        if (!in_array($level, $this->log_levels)) {
-            $level = 'info';
+        try {
+            // Validate inputs
+            if (empty($message)) {
+                return;
+            }
+
+            if (!$this->isValidLogLevel($level)) {
+                $level = 'info';
+            }
+
+            // Ensure message is a string
+            if (!is_string($message)) {
+                $message = print_r($message, true);
+            }
+
+            // Ensure context is an array
+            if (!is_array($context)) {
+                $context = ['original_context' => $context];
+            }
+
+            $timestamp = current_time('mysql');
+            $backtrace = '';
+
+            // Add stack trace for errors
+            if ($this->enable_stack_traces && in_array($level, ['error', 'critical'])) {
+                $backtrace = $this->getFormattedBacktrace();
+            }
+
+            // Sanitize and limit context depth
+            $sanitized_context = $this->sanitizeContext($context);
+
+            // Get current user safely
+            $current_user = function_exists('wp_get_current_user') ? wp_get_current_user() : null;
+            $username = ($current_user && !empty($current_user->user_login)) ? $current_user->user_login : 'system';
+
+            $formatted_message = sprintf(
+                "[%s] [%s] [%s]: %s %s%s\n",
+                $timestamp,
+                strtoupper($level),
+                $username,
+                $message,
+                $sanitized_context ? json_encode($sanitized_context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : '',
+                $backtrace
+            );
+
+            $log_file = $this->getLogFilePath();
+
+            // Ensure directory exists
+            $log_dir = dirname($log_file);
+            if (!is_dir($log_dir)) {
+                wp_mkdir_p($log_dir);
+            }
+
+            // Ensure atomic writes with error handling
+            $bytes_written = file_put_contents($log_file, $formatted_message, FILE_APPEND | LOCK_EX);
+            if ($bytes_written === false) {
+                // Fallback to error_log if file write fails
+                error_log("BemaCRM Log [{$level}]: {$message}");
+                return;
+            }
+
+            // Set file permissions safely
+            if (file_exists($log_file)) {
+                @chmod($log_file, self::LOG_FILE_PERMISSIONS);
+            }
+
+            // Track errors and handle notifications
+            if (in_array($level, ['error', 'critical'])) {
+                $this->trackError($message, $context);
+            }
+
+            // Rotate log if needed
+            $this->rotateLogIfNeeded($log_file);
+
+        } catch (Exception $e) {
+            // Fallback logging to prevent infinite loops
+            error_log("BemaCRM Logger Error: " . $e->getMessage());
+            error_log("Original Log Message [{$level}]: {$message}");
         }
-
-        $timestamp = date('Y-m-d H:i:s');
-        $backtrace = '';
-
-        // Add stack trace for errors
-        if ($this->enable_stack_traces && in_array($level, ['error', 'critical'])) {
-            $backtrace = $this->getFormattedBacktrace();
-        }
-
-        // Sanitize and limit context depth
-        $sanitized_context = $this->sanitizeContext($context);
-
-        $formatted_message = sprintf(
-            "[%s] [%s] [%s]: %s %s%s\n",
-            $timestamp,
-            strtoupper($level),
-            wp_get_current_user()->user_login ?: 'system',
-            $message,
-            $sanitized_context ? json_encode($sanitized_context, JSON_PRETTY_PRINT) : '',
-            $backtrace
-        );
-
-        $log_file = $this->getLogFilePath();
-
-        // Ensure atomic writes
-        if (file_put_contents($log_file, $formatted_message, FILE_APPEND | LOCK_EX) === false) {
-            throw new RuntimeException("Failed to write to log file: {$log_file}");
-        }
-
-        chmod($log_file, self::LOG_FILE_PERMISSIONS);
-
-        // Track errors and handle notifications
-        if (in_array($level, ['error', 'critical'])) {
-            $this->trackError($message, $context);
-        }
-
-        // Rotate log if needed
-        $this->rotateLogIfNeeded($log_file);
     }
 
     /**
@@ -317,7 +355,39 @@ class BemaCRMLogger
         if (is_string($value)) {
             return substr(sanitize_text_field($value), 0, 1000);
         }
-        return $value;
+        if (is_numeric($value)) {
+            return $value;
+        }
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        if (is_null($value)) {
+            return 'null';
+        }
+        if (is_array($value) || is_object($value)) {
+            return '[complex_data_type]';
+        }
+        return (string) $value;
+    }
+
+    /**
+     * Validate log level
+     */
+    private function isValidLogLevel(string $level): bool
+    {
+        return in_array($level, $this->log_levels);
+    }
+
+    /**
+     * Get memory usage information
+     */
+    private function getMemoryInfo(): array
+    {
+        return [
+            'current_usage' => memory_get_usage(true),
+            'peak_usage' => memory_get_peak_usage(true),
+            'limit' => ini_get('memory_limit')
+        ];
     }
 
     /**

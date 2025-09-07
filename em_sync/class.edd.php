@@ -4,7 +4,7 @@ namespace Bema\Providers;
 
 use Exception;
 use WP_Object_Cache;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use Bema\Interfaces\Provider_Interface;
 use Bema\Exceptions\API_Exception;
 use function Bema\debug_to_file;
@@ -38,7 +38,7 @@ class EDD implements Provider_Interface
     const REQUEST_TIMEOUT = 30;
     const MAX_BATCH_RETRIES = 3;
 
-    public function __construct($apiKey, $token, ?BemaCRMLogger $logger = null)
+    public function __construct($apiKey, $token, ?Bema_CRM_Logger $logger = null)
     {
         try {
             debug_to_file('Constructing EDD with API key present: ' . (!empty($apiKey) ? 'Yes' : 'No'), 'EDD_INIT');
@@ -56,11 +56,15 @@ class EDD implements Provider_Interface
             $this->apiKey = $apiKey;
             $this->token = $token;
             $this->siteUrl = site_url();
-            $this->logger = $logger ?? new BemaCRMLogger();
+            $this->logger = $logger ?? Bema_CRM_Logger::create('edd-provider');
             $this->setHeaders();
 
             debug_to_file('EDD instance constructed successfully', 'EDD_INIT');
         } catch (Exception $e) {
+            $this->logger->error('Error constructing EDD', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             debug_to_file('Error constructing EDD: ' . $e->getMessage(), 'EDD_ERROR');
         }
     }
@@ -87,7 +91,7 @@ class EDD implements Provider_Interface
         $cacheStats = wp_cache_get('cache_stats', self::CACHE_GROUP) ?: ['count' => 0];
         if ($cacheStats['count'] > self::MAX_CACHE_SIZE) {
             wp_cache_flush_group(self::CACHE_GROUP);
-            $this->logger->log('Cache cleaned due to size limit', 'info', [
+            $this->logger->info('Cache cleaned due to size limit', [
                 'previous_size' => $cacheStats['count']
             ]);
         }
@@ -103,7 +107,7 @@ class EDD implements Provider_Interface
             }
             wp_cache_delete($testKey, self::CACHE_GROUP);
         } catch (Exception $e) {
-            $this->logger->log('Cache integrity check failed', 'error', [
+            $this->logger->error('Cache integrity check failed', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -121,13 +125,13 @@ class EDD implements Provider_Interface
                 \is_plugin_active('easy-digital-downloads-pro/easy-digital-downloads.php');
 
             if (!$edd_active) {
-                $this->logger?->log('EDD or EDD Pro not active', 'error');
+                $this->logger?->error('EDD or EDD Pro not active');
                 return false;
             }
 
             // Basic EDD function check
             if (!function_exists('EDD')) {
-                $this->logger?->log('EDD function not available', 'error');
+                $this->logger?->error('EDD function not available');
                 return false;
             }
 
@@ -135,15 +139,15 @@ class EDD implements Provider_Interface
             if (function_exists('edd_get_payment_statuses')) {
                 $statuses = edd_get_payment_statuses();
                 if (is_array($statuses) && !empty($statuses)) {
-                    $this->logger?->log('EDD connection validated successfully', 'info');
+                    $this->logger?->info('EDD connection validated successfully');
                     return true;
                 }
             }
 
-            $this->logger?->log('EDD validation failed - core functionality not available', 'error');
+            $this->logger?->error('EDD validation failed - core functionality not available');
             return false;
         } catch (Exception $e) {
-            $this->logger?->log('Failed to validate EDD connection', 'error', [
+            $this->logger->error('Failed to validate EDD connection', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -322,7 +326,7 @@ class EDD implements Provider_Interface
                 // Memory management
                 if ($page % 10 === 0) {
                     $this->manageMemory();
-                    $this->logger->log('Batch processing progress', 'debug', [
+                    $this->logger->debug('Batch processing progress', [
                         'processed' => $totalProcessed,
                         'current_page' => $page
                     ]);
@@ -334,16 +338,17 @@ class EDD implements Provider_Interface
 
             wp_cache_set($cacheKey, $allCustomers, self::CACHE_GROUP, self::CACHE_TTL);
 
-            $this->logger->log('Subscribers fetched successfully', 'info', [
+            $this->logger->info('Subscribers fetched successfully', [
                 'total_subscribers' => count($allCustomers),
                 'pages_processed' => $page - 1
             ]);
 
             return $allCustomers;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get EDD customers', 'error', [
+            $this->logger->error('Failed to get EDD customers', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
+                'page' => $page
             ]);
             return [];
         }
@@ -366,7 +371,7 @@ class EDD implements Provider_Interface
             ]);
 
             if (!isset($response['sales'])) {
-                $this->logger->log('No sales data found', 'warning', [
+                $this->logger->warning('No sales data found', [
                     'product' => $product,
                     'page' => $page
                 ]);
@@ -400,15 +405,16 @@ class EDD implements Provider_Interface
 
             wp_cache_set($cacheKey, $salesData, self::CACHE_GROUP, self::CACHE_TTL);
 
-            $this->logger->log('Sales data fetched successfully', 'info', [
+            $this->logger->info('Sales data fetched successfully', [
                 'total_sales' => count($salesData['sales_data']),
                 'product' => $product ?? 'all'
             ]);
 
             return $salesData;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get EDD sales', 'error', [
+            $this->logger->error('Failed to get EDD sales', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'product' => $product,
                 'page' => $page
             ]);
@@ -447,7 +453,7 @@ class EDD implements Provider_Interface
                     $hasMore = false;
                 } else {
                     $totalProcessed += count($batch['sales_data']);
-                    $this->logger->log('Batch processing progress', 'debug', [
+                    $this->logger->debug('Batch processing progress', [
                         'processed' => $totalProcessed,
                         'current_page' => $page
                     ]);
@@ -464,7 +470,7 @@ class EDD implements Provider_Interface
                     $this->manageMemory();
                 }
             } catch (Exception $e) {
-                $this->logger->log('Failed to get sales batch', 'error', [
+                $this->logger->error('Failed to get sales batch', [
                     'page' => $page,
                     'error' => $e->getMessage()
                 ]);
@@ -479,14 +485,14 @@ class EDD implements Provider_Interface
         $memoryLimit = $this->getMemoryLimitInBytes();
 
         if ($memoryUsage > ($memoryLimit * $this->memoryThreshold)) {
-            $this->logger->log('Memory cleanup triggered', 'warning', [
+            $this->logger->warning('Memory cleanup triggered', [
                 'usage' => $this->formatBytes($memoryUsage),
                 'limit' => $this->formatBytes($memoryLimit)
             ]);
 
             if (function_exists('gc_collect_cycles')) {
                 $collected = gc_collect_cycles();
-                $this->logger->log('Garbage collection completed', 'debug', [
+                $this->logger->debug('Garbage collection completed', [
                     'collected' => $collected
                 ]);
             }
@@ -497,7 +503,7 @@ class EDD implements Provider_Interface
 
     private function errorHandler($errno, $errstr, $errfile, $errline): bool
     {
-        $this->logger->log('PHP Error in EDD class', 'error', [
+        $this->logger->error('PHP Error in EDD class', [
             'errno' => $errno,
             'error' => $errstr,
             'file' => $errfile,
@@ -549,7 +555,7 @@ class EDD implements Provider_Interface
             $response = $this->makeRequest("products");
 
             if (isset($response['products'])) {
-                $this->logger->log('Products fetched successfully', 'info', [
+                $this->logger->info('Products fetched successfully', [
                     'total_products' => count($response['products']),
                     'product' => "All Products"
                 ]);
@@ -559,7 +565,7 @@ class EDD implements Provider_Interface
 
             return [];
         } catch (Exception $e) {
-            $this->logger->log('Failed to fetch EDD Products/Albums', 'error', [
+            $this->logger->error('Failed to fetch EDD Products/Albums', [
                 'error' => $e->getMessage()
             ]);
 
@@ -584,7 +590,7 @@ class EDD implements Provider_Interface
 
             if (isset($response['customer'])) {
                 $this->invalidateCustomerCache($id);
-                $this->logger->log('Customer updated successfully', 'info', [
+                $this->logger->info('Customer updated successfully', [
                     'customer_id' => $id
                 ]);
                 return true;
@@ -592,7 +598,7 @@ class EDD implements Provider_Interface
 
             return false;
         } catch (Exception $e) {
-            $this->logger->log('Failed to update EDD customer', 'error', [
+            $this->logger->error('Failed to update EDD customer', [
                 'id' => $id,
                 'error' => $e->getMessage()
             ]);
@@ -642,10 +648,11 @@ class EDD implements Provider_Interface
 
             return $productId ? (int)$productId : null;
         } catch (Exception $e) {
-            $this->logger->log('Failed to find EDD product', 'error', [
+            $this->logger->error('Failed to find EDD product', [
                 'artist' => $artist,
                 'product' => $product,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             debug_to_file([
@@ -679,10 +686,11 @@ class EDD implements Provider_Interface
 
             return $has_purchased;
         } catch (Exception $e) {
-            $this->logger->log('Failed to check purchase status', 'error', [
+            $this->logger->error('Failed to check purchase status', [
                 'user_id' => $user_id,
                 'product_id' => $product_id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return false;
         }
@@ -690,19 +698,19 @@ class EDD implements Provider_Interface
 
     public function addOrUpdateSubscriber(array $data): string
     {
-        $this->logger->log('Method not supported in EDD', 'warning');
+        $this->logger->warning('Method not supported in EDD');
         return '0';
     }
 
     public function addSubscriberToGroup($subscriberId, $groupId): bool
     {
-        $this->logger->log('Method not supported in EDD', 'warning');
+        $this->logger->warning('Method not supported in EDD');
         return true;
     }
 
     public function removeSubscriberFromGroup($subscriberId, $groupId): bool
     {
-        $this->logger->log('Method not supported in EDD', 'warning');
+        $this->logger->warning('Method not supported in EDD');
         return true;
     }
 
@@ -715,7 +723,7 @@ class EDD implements Provider_Interface
     {
         $pattern = 'edd_*';
         wp_cache_delete($pattern, self::CACHE_GROUP);
-        $this->logger->log('Customer cache invalidated', 'debug', [
+        $this->logger->debug('Customer cache invalidated', [
             'customer_id' => $customerId
         ]);
     }
@@ -723,7 +731,7 @@ class EDD implements Provider_Interface
     public function setBatchSize(int $size): void
     {
         $this->batchSize = max(1, min($size, 1000));
-        $this->logger->log('Batch size updated', 'debug', [
+        $this->logger->debug('Batch size updated', [
             'new_size' => $this->batchSize
         ]);
     }
@@ -829,6 +837,10 @@ class EDD implements Provider_Interface
             debug_to_file('All attempts failed', 'API_TEST');
             return false;
         } catch (Exception $e) {
+            $this->logger->error('EDD connection test failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             debug_to_file('EDD test_connection exception: ' . $e->getMessage(), 'API_TEST');
             debug_to_file('Stack trace: ' . $e->getTraceAsString(), 'API_TEST');
             return false;

@@ -3,7 +3,7 @@
 namespace Bema\Database;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -19,9 +19,9 @@ class Transition_Subscribers_Database_Manager
 
     /**
      * Constructor to set up the class properties.
-     * @param BemaCRMLogger|null $logger The logger instance.
+     * @param Bema_CRM_Logger|null $logger The logger instance.
      */
-    public function __construct(?BemaCRMLogger $logger = null)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
@@ -29,7 +29,12 @@ class Transition_Subscribers_Database_Manager
 
         $this->transitions_table = $wpdb->prefix . 'bemacrm_transitionsmeta';
         $this->subscribers_table = $wpdb->prefix . 'bemacrm_subscribersmeta';
-        $this->logger = $logger ?? new BemaCRMLogger();
+        if ($logger) {
+            $this->logger = $logger;
+            $this->logger->setIdentifier('transition-subscribers-database');
+        } else {
+            $this->logger = Bema_CRM_Logger::create('transition-subscribers-database');
+        }
     }
 
     /**
@@ -65,7 +70,7 @@ class Transition_Subscribers_Database_Manager
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -96,7 +101,7 @@ class Transition_Subscribers_Database_Manager
 
             return $this->wpdb->insert_id;
         } catch (Exception $e) {
-            $this->logger->log('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -148,7 +153,7 @@ class Transition_Subscribers_Database_Manager
                 return $this->wpdb->insert_id;
             }
         } catch (Exception $e) {
-            $this->logger->log('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -188,7 +193,7 @@ class Transition_Subscribers_Database_Manager
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -230,7 +235,7 @@ class Transition_Subscribers_Database_Manager
             $this->wpdb->query("DROP TABLE IF EXISTS {$this->table_name}");
             return $this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") !== $this->table_name;
         } catch (Exception $e) {
-            $this->logger->log('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }

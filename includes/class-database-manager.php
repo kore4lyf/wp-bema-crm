@@ -31,7 +31,7 @@ class Database_Manager
     const LOCK_TIMEOUT = 10; // seconds
     const DEADLOCK_RETRY_DELAY = 1; // seconds
 
-    public function __construct($wpdb, BemaCRMLogger $logger)
+    public function __construct($wpdb, Bema_CRM_Logger $logger)
     {
         $this->wpdb = $wpdb;
         $this->logger = $logger;
@@ -57,7 +57,7 @@ class Database_Manager
         // Validate tables exist
         foreach ($this->tables as $name => $table) {
             if (!$this->tableExists($table)) {
-                $this->logger->log("Table {$table} does not exist", 'error');
+                $this->logger->error("Table {$table} does not exist");
                 throw new Database_Exception("Required table {$table} does not exist");
             }
         }
@@ -94,7 +94,7 @@ class Database_Manager
             }
             wp_cache_delete($testKey, self::CACHE_GROUP);
         } catch (Exception $e) {
-            $this->logger->log('Cache integrity check failed', 'error', [
+            $this->logger->error('Cache integrity check failed', [
                 'error' => $e->getMessage()
             ]);
             $this->disableCache();
@@ -142,7 +142,7 @@ class Database_Manager
 
             return $result !== false;
         } catch (Exception $e) {
-            $this->logger->log('Failed to update subscriber tier', 'error', [
+            $this->logger->error('Failed to update subscriber tier', [
                 'email' => $email,
                 'campaign' => $campaign,
                 'tier' => $tier,
@@ -173,7 +173,7 @@ class Database_Manager
                 ['%s', '%s', '%s', '%s']
             );
         } catch (Exception $e) {
-            $this->logger->log('Failed to log tier update', 'error', [
+            $this->logger->error('Failed to log tier update', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -223,7 +223,7 @@ class Database_Manager
                 throw new Exception($this->wpdb->last_error);
             }
 
-            $this->logger->log('Group mapping updated', 'info', [
+            $this->logger->info('Group mapping updated', [
                 'email' => $email,
                 'group_id' => $groupId,
                 'campaign' => $campaign
@@ -231,7 +231,7 @@ class Database_Manager
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Failed to update group mapping', 'error', [
+            $this->logger->error('Failed to update group mapping', [
                 'email' => $email,
                 'group_id' => $groupId,
                 'error' => $e->getMessage()
@@ -323,7 +323,7 @@ class Database_Manager
                 throw new Exception($this->wpdb->last_error);
             }
 
-            $this->logger->log('Purchase status updated in database', 'info', [
+            $this->logger->info('Purchase status updated in database', [
                 'email' => $email,
                 'campaign' => $campaign_code,
                 'purchased' => $has_purchased
@@ -331,7 +331,7 @@ class Database_Manager
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Failed to update purchase status', 'error', [
+            $this->logger->error('Failed to update purchase status', [
                 'email' => $email,
                 'campaign' => $campaign_code,
                 'error' => $e->getMessage()
@@ -344,9 +344,9 @@ class Database_Manager
     {
         try {
             $this->wpdb->query("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED");
-            $this->logger->log('Transaction isolation level set', 'debug');
+            $this->logger->debug('Transaction isolation level set');
         } catch (Exception $e) {
-            $this->logger->log('Failed to set transaction isolation level', 'warning', [
+            $this->logger->warning('Failed to set transaction isolation level', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -371,11 +371,11 @@ class Database_Manager
             $this->wpdb->query('START TRANSACTION');
             $this->inTransaction = true;
 
-            $this->logger->log('Database transaction started', 'info', [
+            $this->logger->info('Database transaction started', [
                 'connection_id' => $this->wpdb->get_var("SELECT CONNECTION_ID()")
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to begin transaction', 'error', [
+            $this->logger->error('Failed to begin transaction', [
                 'error' => $e->getMessage()
             ]);
             throw new Database_Exception('Failed to begin transaction: ' . $e->getMessage());
@@ -395,7 +395,7 @@ class Database_Manager
                 $lastError = $e;
                 $attempt++;
 
-                $this->logger->log('Retrying transaction start', 'warning', [
+                $this->logger->warning('Retrying transaction start', [
                     'attempt' => $attempt,
                     'max_retries' => $maxRetries,
                     'error' => $e->getMessage()
@@ -423,11 +423,11 @@ class Database_Manager
             $this->wpdb->query("SELECT RELEASE_LOCK('bema_sync_lock')");
             $this->inTransaction = false;
 
-            $this->logger->log('Database transaction committed', 'info', [
+            $this->logger->info('Database transaction committed', [
                 'connection_id' => $this->wpdb->get_var("SELECT CONNECTION_ID()")
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to commit transaction', 'error', [
+            $this->logger->error('Failed to commit transaction', [
                 'error' => $e->getMessage()
             ]);
             throw new Database_Exception('Failed to commit transaction: ' . $e->getMessage());
@@ -445,11 +445,11 @@ class Database_Manager
             $this->wpdb->query("SELECT RELEASE_LOCK('bema_sync_lock')");
             $this->inTransaction = false;
 
-            $this->logger->log('Database transaction rolled back', 'info', [
+            $this->logger->info('Database transaction rolled back', [
                 'connection_id' => $this->wpdb->get_var("SELECT CONNECTION_ID()")
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to rollback transaction', 'error', [
+            $this->logger->error('Failed to rollback transaction', [
                 'error' => $e->getMessage()
             ]);
             throw new Database_Exception('Failed to rollback transaction: ' . $e->getMessage());
@@ -470,7 +470,7 @@ class Database_Manager
                 $result = $this->processBatch($batch, $batchIndex);
                 $totalUpdated += $result;
 
-                $this->logger->log('Batch processed successfully', 'debug', [
+                $this->logger->debug('Batch processed successfully', [
                     'batch_index' => $batchIndex,
                     'processed' => $result,
                     'total_updated' => $totalUpdated
@@ -481,7 +481,7 @@ class Database_Manager
                     $this->manageMemory();
                 }
             } catch (Exception $e) {
-                $this->logger->log('Batch processing failed', 'error', [
+                $this->logger->error('Batch processing failed', [
                     'batch_index' => $batchIndex,
                     'error' => $e->getMessage()
                 ]);
@@ -517,9 +517,9 @@ class Database_Manager
             $this->wpdb->query("SET SESSION sql_mode=''");
             $this->wpdb->query("SET SESSION transaction_isolation='READ-COMMITTED'");
 
-            $this->logger->log('Database tables optimized', 'info');
+            $this->logger->info('Database tables optimized');
         } catch (Exception $e) {
-            $this->logger->log('Failed to optimize tables', 'error', [
+            $this->logger->error('Failed to optimize tables', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -534,7 +534,7 @@ class Database_Manager
 
         foreach ($batch as $subscriber) {
             if (!isset($subscriber['bema_id'])) {
-                $this->logger->log('Invalid subscriber data', 'warning', [
+                $this->logger->warning('Invalid subscriber data', [
                     'batch_index' => $batchIndex,
                     'data' => $subscriber
                 ]);
@@ -627,9 +627,8 @@ class Database_Manager
 
             return $exists;
         } catch (Exception $e) {
-            $this->logger->log(
+            $this->logger->error(
                 "Error checking email existence",
-                'error',
                 ['email' => $email, 'error' => $e->getMessage()]
             );
             return false;
@@ -664,7 +663,7 @@ class Database_Manager
 
             return $result ?: null;
         } catch (Exception $e) {
-            $this->logger->log('Failed to fetch subscriber by email', 'error', [
+            $this->logger->error('Failed to fetch subscriber by email', [
                 'email' => $email,
                 'error' => $e->getMessage()
             ]);
@@ -698,14 +697,14 @@ class Database_Manager
                 wp_cache_set($cacheKey, $result, self::CACHE_GROUP, self::CACHE_TTL);
             }
 
-            $this->logger->log('Fetched subscriber by ID', 'debug', [
+            $this->logger->debug('Fetched subscriber by ID', [
                 'id' => $subscriberId,
                 'found' => !empty($result)
             ]);
 
             return $result ?: null;
         } catch (Exception $e) {
-            $this->logger->log('Failed to fetch subscriber by ID', 'error', [
+            $this->logger->error('Failed to fetch subscriber by ID', [
                 'id' => $subscriberId,
                 'error' => $e->getMessage()
             ]);
@@ -736,7 +735,7 @@ class Database_Manager
 
             $insertId = $this->wpdb->insert_id;
 
-            $this->logger->log('Added new subscriber', 'info', [
+            $this->logger->info('Added new subscriber', [
                 'id' => $insertId,
                 'email' => $subscriberData['subscriber'] ?? 'unknown'
             ]);
@@ -745,7 +744,7 @@ class Database_Manager
 
             return $insertId;
         } catch (Exception $e) {
-            $this->logger->log('Failed to add subscriber', 'error', [
+            $this->logger->error('Failed to add subscriber', [
                 'data' => $subscriberData,
                 'error' => $e->getMessage()
             ]);
@@ -776,7 +775,7 @@ class Database_Manager
                 );
             }
 
-            $this->logger->log('Updated subscriber', 'info', [
+            $this->logger->info('Updated subscriber', [
                 'id' => $subscriberId,
                 'fields_updated' => array_keys($sanitizedData)
             ]);
@@ -785,7 +784,7 @@ class Database_Manager
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Failed to update subscriber', 'error', [
+            $this->logger->error('Failed to update subscriber', [
                 'id' => $subscriberId,
                 'error' => $e->getMessage()
             ]);
@@ -809,7 +808,7 @@ class Database_Manager
             wp_cache_set($emailCacheKey, $data, self::CACHE_GROUP, self::CACHE_TTL);
         }
 
-        $this->logger->log('Cache updated for subscriber', 'debug', [
+        $this->logger->debug('Cache updated for subscriber', [
             'id' => $subscriberId
         ]);
     }
@@ -825,7 +824,7 @@ class Database_Manager
         }
         wp_cache_delete('subscriber_' . $subscriberId, self::CACHE_GROUP);
 
-        $this->logger->log('Cache invalidated for subscriber', 'debug', [
+        $this->logger->debug('Cache invalidated for subscriber', [
             'id' => $subscriberId
         ]);
     }
@@ -911,7 +910,7 @@ class Database_Manager
             return;
         }
 
-        $this->logger?->log("Database Error: {$errstr}", 'error', [
+        $this->logger?->error("Database Error: {$errstr}", [
             'errno' => $errno,
             'file' => $errfile,
             'line' => $errline
@@ -948,9 +947,9 @@ class Database_Manager
 
         try {
             $this->wpdb->query("OPTIMIZE TABLE {$this->tables[$table]}");
-            $this->logger->log('Table optimized', 'info', ['table' => $table]);
+            $this->logger->info('Table optimized', ['table' => $table]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to optimize table', 'error', [
+            $this->logger->error('Failed to optimize table', [
                 'table' => $table,
                 'error' => $e->getMessage()
             ]);

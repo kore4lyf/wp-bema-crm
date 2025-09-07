@@ -31,7 +31,7 @@ class Bema_Settings
     private $tier_transition_matrix_group = 'bema_crm_transition_matrix_group';
     private $tier_transition_matrix_name = 'bema_crm_transition_matrix';
 
-    public static function get_instance(BemaCRMLogger $logger): self
+    public static function get_instance(Bema_CRM_Logger $logger): self
     {
         if (null === self::$instance) {
             self::$instance = new self($logger);
@@ -39,7 +39,7 @@ class Bema_Settings
         return self::$instance;
     }
 
-    private function __construct(BemaCRMLogger $logger)
+    private function __construct(Bema_CRM_Logger $logger)
     {
         try {
             $this->logger = $logger;
@@ -576,12 +576,12 @@ class Bema_Settings
             $sanitized = wp_parse_args($input, $this->default_settings);
             $this->validate_settings($sanitized);
 
-            $this->logger->log('Settings updated successfully', 'info');
+            $this->logger->info('Settings updated successfully');
 
             return $sanitized;
         } catch (Exception $e) {
             $this->last_error = $e->getMessage();
-            $this->logger->log('Settings validation failed', 'error', ['error' => $e->getMessage()]);
+            $this->logger->error('Settings validation failed', ['error' => $e->getMessage()]);
             add_settings_error(
                 'bema_settings',
                 'invalid_settings',
@@ -689,7 +689,7 @@ class Bema_Settings
         if (!empty($errors)) {
             debug_to_file('Settings validation errors: ' . print_r($errors, true));
             // Instead of throwing exception, just log errors
-            $this->logger->log('Settings validation warnings', 'warning', [
+            $this->logger->warning('Settings validation warnings', [
                 'errors' => $errors
             ]);
         }
@@ -874,11 +874,11 @@ class Bema_Settings
             // Clear settings cache
             $this->settings_cache = null;
 
-            $this->logger->log('Settings updated successfully', 'info', [
+            $this->logger->info('Settings updated successfully', [
                 'updated_fields' => array_keys($new_settings)
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to update settings', 'error', [
+            $this->logger->error('Failed to update settings', [
                 'error' => $e->getMessage(),
                 'settings' => $new_settings
             ]);

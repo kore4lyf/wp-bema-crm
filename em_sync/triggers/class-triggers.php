@@ -5,7 +5,7 @@ namespace Bema;
 use Bema\EM_Sync;
 use Bema\Providers\MailerLite;
 use Bema\Utils;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use EDD\Orders\Order;
 use EDD_Customer;
 use Bema\Database\Group_Database_Manager;
@@ -22,17 +22,18 @@ class Triggers
     private Utils $utils;
     private Group_Database_Manager $group_database;
     private Field_Database_Manager $field_database;
-    private BemaCRMLogger $logger;
+    private Campaign_Database_Manager $campaign_database;
+    private Bema_CRM_Logger $logger;
     private array $deleted_album_details = [];
 
-    public function __construct(MailerLite $mailerlite, EM_Sync $em_sync, Utils $utils, Group_Database_Manager $group_database, Field_Database_Manager $field_database, ?BemaCRMLogger $logger = null)
+    public function __construct(MailerLite $mailerlite, EM_Sync $em_sync, Utils $utils, Group_Database_Manager $group_database, Field_Database_Manager $field_database, ?Bema_CRM_Logger $logger = null)
     {
         $this->mailerlite = $mailerlite;
         $this->em_sync = $em_sync;
         $this->utils = $utils;
         $this->group_database = $group_database;
         $this->field_database = $field_database;
-        $this->logger = $logger ?? new BemaCRMLogger();
+        $this->logger = $logger ?? Bema_CRM_Logger::create('wordpress-triggers');
         $this->campaign_database = new Campaign_Database_Manager();
     }
 
@@ -82,8 +83,7 @@ class Triggers
         $customer_email = $customer->email;
         $order_items = $order->get_items();
 
-        $this->logger->log('Scheduling purchase field update for order ID: ' . $order_id, 'info');
-        error_log('Scheduling purchase field update for order ID: ' . $order_id . "\n", 3, dirname(__FILE__) . '/debug.log');
+        $this->logger->info('Scheduling purchase field update for order ID: ' . $order_id);
 
         // Schedule a single event to run in 30 seconds
         wp_schedule_single_event(
@@ -104,61 +104,81 @@ class Triggers
      */
     public function handle_order_purchase_field_update_via_cron(int $order_id, string $customer_email, array $order_data): void
     {
-        $this->logger->log('WP-Cron Trigger Start: order purchase field update', 'info', ['order_id' => $order_id]);
-        error_log('WP-Cron Trigger Start: order purchase field update' . $order_id . "\n", 3, dirname(__FILE__) . '/debug.log');
+        $this->logger->startTimer('order_processing');
+        
+        $this->logger->info('WP-Cron Trigger Start: order purchase field update', [
+            'order_id' => $order_id,
+            'order_items_count' => count($order_data)
+        ]);
+
+        if (empty($order_data)) {
+            $this->logger->warning('No order data found for order ID', ['order_id' => $order_id]);
+            return;
+        }
 
         $ordered_albums = [];
+        $valid_items = 0;
 
-        if (!empty($order_data)) {
-            // Collect all ordered products.
-            foreach ($order_data as $item) {
-                $product_name = $item['name'] ?? '';
-                $product_price = (float) ($item['price'] ?? 0);
+        foreach ($order_data as $item) {
+            $product_name = $item['name'] ?? '';
+            $product_price = (float) ($item['price'] ?? 0);
 
-                if ($product_name && $product_price && $product_price > 0) {
-                    $ordered_albums[$product_name] = $product_price;
-                }
+            if ($product_name && $product_price && $product_price > 0) {
+                $ordered_albums[$product_name] = $product_price;
+                $valid_items++;
+            } else {
+                $missing_fields = array_keys(array_filter(['name' => empty($product_name), 'price' => $product_price <= 0]));
+                $this->logger->logDataValidation('order_item', $missing_fields);
             }
-
-            $this->logger->log("Ordered products found: " . print_r($ordered_albums, true), 'info');
-            error_log("Ordered products found: " . print_r($ordered_albums, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
-
-            foreach ($ordered_albums as $album_name => $album_price) {
-                // Fetch album details
-                $album_details = $this->utils->get_album_details($album_name);
-                $album_release_year = $album_details['year'] ?? '';
-                $album_artist = $album_details['artist'] ?? '';
-
-                $field_name = $this->utils->get_campaign_group_name(
-                    $album_release_year,
-                    $album_artist,
-                    $album_name,
-                    'PURCHASE'
-                );
-                $field_value = $order_id; // 1 represents true
-
-                if ($field_name) {
-                    // Update purchase status
-                    $this->em_sync->updateSubscriberField($customer_email, $field_name, $field_value);
-                    $this->logger->log('PURCHASE TRIGGER RUNNING: Customer Mailerlite field updated', 'info', [
-                        'customer_email' => $customer_email,
-                        'field_name' => $field_name,
-                        'album_name' => $album_name
-                    ]);
-                    error_log('PURCHASE TRIGGER RUNNING: Customer Mailerlite field updated' .
-                        'customer_email: ' . $customer_email . '\n' .
-                        'field_name: ' . $field_name . '\n' .
-                        'album_name: ' . $album_name . '\n' .
-                        "\n", 3, dirname(__FILE__) . '/debug.log');
-                }
-            }
-            $this->logger->log('WP-Cron Trigger End: order purchase field update', 'info');
-            error_log('WP-Cron Trigger End: order purchase field update' . "\n", 3, dirname(__FILE__) . '/debug.log');
-            ;
-        } else {
-            $this->logger->log('WP-Cron Warning: No order data found for order ID ' . $order_id, 'warning');
-            error_log('WP-Cron Warning: No order data found for order ID ' . $order_id . "\n", 3, dirname(__FILE__) . '/debug.log');
         }
+
+        $this->logger->debug('Order data processed', [
+            'total_items' => count($order_data),
+            'valid_items' => $valid_items,
+            'albums_found' => array_keys($ordered_albums)
+        ]);
+
+        foreach ($ordered_albums as $album_name => $album_price) {
+            $this->logger->startTimer("album_processing");
+            
+            $album_details = $this->utils->get_album_details($album_name);
+            
+            // Validate album data
+            $required_fields = ['year', 'artist'];
+            $missing_fields = array_diff($required_fields, array_keys(array_filter($album_details)));
+            $this->logger->logDataValidation('album_details', $missing_fields, ['album_name' => $album_name]);
+
+            $field_name = $this->utils->get_campaign_group_name(
+                $album_details['year'] ?? '',
+                $album_details['artist'] ?? '',
+                $album_name,
+                'PURCHASE'
+            );
+
+            if ($field_name) {
+                $this->logger->logApiCall('MailerLite', 'updateSubscriberField', [
+                    'field_name' => $field_name,
+                    'customer_email_hash' => md5($customer_email)
+                ]);
+                
+                $this->em_sync->updateSubscriberField($customer_email, $field_name, $order_id);
+                
+                $this->logger->info('Customer MailerLite field updated', [
+                    'customer_email_hash' => md5($customer_email),
+                    'field_name' => $field_name,
+                    'album_name' => $album_name,
+                    'order_id' => $order_id
+                ]);
+            } else {
+                $this->logger->warning('Field name could not be generated for album', [
+                    'album_name' => $album_name
+                ]);
+            }
+            
+            $this->logger->endTimer("album_processing");
+        }
+        
+        $this->logger->endTimer('order_processing', ['albums_processed' => count($ordered_albums)]);
     }
 
     /**
@@ -173,8 +193,10 @@ class Triggers
     public function create_subscriber_groups_on_album_publish(string $new_status, string $old_status, \WP_Post $post): void
     {
         if ('download' === $post->post_type && 'publish' === $new_status && 'publish' !== $old_status) {
-            $this->logger->log('Scheduling group creation for new album: ' . $post->post_title, 'info');
-            error_log('Scheduling group creation for new album: ' . $post->post_title . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->info('Scheduling group creation for new album', [
+                'post_id' => $post->ID,
+                'post_title' => $post->post_title
+            ]);
 
             // Schedule a single event to run in 30 seconds, passing the post ID
             wp_schedule_single_event(
@@ -193,27 +215,43 @@ class Triggers
      */
     public function handle_create_groups_via_cron(int $post_id): void
     {
+        $this->logger->startTimer('group_creation');
+        
         $post = get_post($post_id);
         if (!$post) {
-            $this->logger->log('WP-Cron event failed: Post not found for ID ' . $post_id, 'error');
-            error_log('WP-Cron event failed: Post not found for ID ' . $post_id, 'error');
+            $this->logger->error('WP-Cron event failed: Post not found for ID ' . $post_id);
             return;
         }
 
-        $this->logger->log('WP-Cron Trigger Start: create subscriber groups', 'info', ['post_id' => $post->ID]);
-        error_log('WP-Cron Trigger Start: create subscriber groups. ' . 'post_id: ' . $post->ID . "\n", 3, dirname(__FILE__) . '/debug.log');
+        $this->logger->info('WP-Cron Trigger Start: create subscriber groups', [
+            'post_id' => $post->ID
+        ]);
 
         $post_title = $post->post_title;
         $tiers = get_option('bema_crm_tiers', []);
         $groups = [];
+
+        // Log system configuration
+        $this->logger->debug('System configuration loaded', [
+            'tiers_configured' => count($tiers),
+            'tiers' => $tiers,
+            'wp_debug' => WP_DEBUG
+        ]);
 
         // Fetch album details
         $album_details = $this->utils->get_album_details($post_title);
         $album_release_year = $album_details['year'] ?? '';
         $album_artist = $album_details['artist'] ?? '';
 
+        // Validate album data
+        $required_fields = ['year', 'artist'];
+        $missing_fields = array_diff($required_fields, array_keys(array_filter($album_details)));
+        $this->logger->logDataValidation('album_details', $missing_fields, ['album_name' => $post_title]);
+
         // Generate group name, create the group and store group details in the database
         foreach ($tiers as $tier) {
+            $this->logger->startTimer("tier_processing");
+            
             $group_name = $this->utils->get_campaign_group_name(
                 $album_release_year,
                 $album_artist,
@@ -223,14 +261,29 @@ class Triggers
 
             if (!empty($group_name)) {
                 $campaign_name = $this->utils->get_campaign_name_from_text($group_name);
-                $campaign_id = $this->campaign_database->get_campaign_by_name($campaign_name)['id'];
+                $campaign_data = $this->campaign_database->get_campaign_by_name($campaign_name);
+                $campaign_id = $campaign_data['id'] ?? null;
 
-                // Create mailerlite subscriber group with post title
-                $this->logger->log("Creating group for: " . $group_name, 'info');
-                error_log("Creating group for: " . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                if (!$campaign_id) {
+                    $this->logger->warning('Campaign not found for group', [
+                        'campaign_name' => $campaign_name,
+                        'group_name' => $group_name
+                    ]);
+                    continue;
+                }
+
+                $this->logger->logApiCall('MailerLite', 'createGroup', [
+                    'group_name' => $group_name,
+                    'tier' => $tier
+                ]);
+                
                 $group_data = $this->mailerlite->createGroup($group_name);
-                $this->logger->log("MailerLite response for group: " . print_r($group_data, true), 'info');
-                error_log("MailerLite response for group: " . print_r($group_data, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+                
+                $this->logger->info("MailerLite group creation response", [
+                    'group_name' => $group_name,
+                    'success' => !empty($group_data) && isset($group_data['id']),
+                    'group_id' => $group_data['id'] ?? null
+                ]);
 
                 if (!empty($group_data) && isset($group_data['id'])) {
                     $groups[] = [
@@ -239,21 +292,33 @@ class Triggers
                         'campaign_id' => $campaign_id
                     ];
                 } else {
-                    $this->logger->log('Failed to create group via MailerLite API for: ' . $group_name, 'error');
-                    error_log('Failed to create group via MailerLite API for: ' . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                    $this->logger->error('MailerLite API failure: createGroup', [
+                        'group_name' => $group_name,
+                        'category' => 'external_service',
+                        'retry_possible' => true
+                    ]);
                 }
             } else {
-                $this->logger->log('Group name could not be generated for tier: ' . $tier, 'warning');
-                error_log('Group name could not be generated for tier: ' . $tier . "\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->warning('Group name generation failed', [
+                    'tier' => $tier,
+                    'album_details' => $album_details
+                ]);
             }
+            
+            $this->logger->endTimer("tier_processing");
         }
 
         if (!empty($groups)) {
+            $this->logger->info('Bulk database insert: groups', [
+                'group_count' => count($groups)
+            ]);
             $this->group_database->upsert_groups_bulk($groups);
         }
 
-        $this->logger->log('WP-Cron Trigger End: create subscriber groups', 'info');
-        error_log('WP-Cron Trigger End: create subscriber groups' . "\n", 3, dirname(__FILE__) . '/debug.log');
+        $this->logger->endTimer('group_creation', [
+            'groups_created' => count($groups),
+            'tiers_processed' => count($tiers)
+        ]);
     }
 
     /**
@@ -268,8 +333,7 @@ class Triggers
     public function create_subscriber_purchase_field_on_album_publish(string $new_status, string $old_status, \WP_Post $post): void
     {
         if ('download' === $post->post_type && 'publish' === $new_status && 'publish' !== $old_status) {
-            $this->logger->log('Scheduling purchase field creation for new album: ' . $post->post_title, 'info');
-            error_log('Scheduling purchase field creation for new album: ' . $post->post_title . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->info('Scheduling purchase field creation for new album: ' . $post->post_title);
 
             // Schedule a single event to run in 30 seconds, passing the post ID
             wp_schedule_single_event(
@@ -291,13 +355,11 @@ class Triggers
     {
         $post = get_post($post_id);
         if (!$post) {
-            $this->logger->log('WP-Cron event failed: Post not found for ID ' . $post_id, 'error');
-            error_log('WP-Cron event failed: Post not found for ID ' . $post_id . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->error('WP-Cron event failed: Post not found for ID ' . $post_id);
             return;
         }
 
-        $this->logger->log('WP-Cron Trigger Start: create subscriber purchase field', 'info', ['post_id' => $post->ID]);
-        error_log('WP-Cron Trigger Start: create subscriber purchase field' . ['post_id' => $post->ID] . "\n", 3, dirname(__FILE__) . '/debug.log');
+        $this->logger->info('WP-Cron Trigger Start: create subscriber purchase field', ['post_id' => $post->ID]);
 
         // Get album details and generate the field name
         $album_details = $this->utils->get_album_details($post->post_title);
@@ -312,18 +374,31 @@ class Triggers
         if (!empty($field_name)) {
             $field_id = $this->mailerlite->createField($field_name, 'number');
             $campaign_name = $this->utils->get_campaign_name_from_text($field_name);
-            $campaign_id = $this->campaign_database->get_campaign_by_name($campaign_name)['id'];
-            $this->field_database->upsert_field($field_id, $field_name, $campaign_id);
-
-            $this->logger->log("MailerLite field created and recorded in the database: field_name: {$field_name} , field_id: {$field_id}", 'info');
-            error_log("MailerLite field created and recorded in the database: field_name: {$field_name} , field_id: {$field_id}" . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $campaign_data = $this->campaign_database->get_campaign_by_name($campaign_name);
+            $campaign_id = $campaign_data['id'] ?? null;
+            
+            if ($campaign_id && $field_id) {
+                $this->field_database->upsert_field($field_id, $field_name, $campaign_id);
+                $this->logger->info("MailerLite field created and recorded in the database", [
+                    'field_name' => $field_name,
+                    'field_id' => $field_id
+                ]);
+            } else {
+                $this->logger->error('Failed to create field or find campaign', [
+                    'field_name' => $field_name,
+                    'campaign_name' => $campaign_name,
+                    'field_id' => $field_id,
+                    'campaign_id' => $campaign_id
+                ]);
+            }
         } else {
-            $this->logger->log('Failed to create field: name could not be generated.', 'warning', ['post_id' => $post->ID, 'post_title' => $post->post_title]);
-            error_log('Failed to create field: name could not be generated.' . ['post_id' => $post->ID, 'post_title' => $post->post_title] . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->warning('Failed to create field: name could not be generated.', [
+                'post_id' => $post->ID,
+                'post_title' => $post->post_title
+            ]);
         }
 
-        $this->logger->log('WP-Cron Trigger End: create subscriber purchase field', 'info');
-        error_log('WP-Cron Trigger End: create subscriber purchase field' . "\n", 3, dirname(__FILE__) . '/debug.log');
+        $this->logger->info('WP-Cron Trigger End: create subscriber purchase field');
     }
 
     /**
@@ -334,9 +409,7 @@ class Triggers
      */
     public function capture_deleted_album_title(int $post_id): void
     {
-        error_log('capture_deleted_album_title: Start' . "\n", 3, dirname(__FILE__) . '/debug.log');
         $post = get_post($post_id);
-        error_log('capture_deleted_album_title: post title: ' . $post->post_title . "\n", 3, dirname(__FILE__) . '/debug.log');
 
         if ($post && $post->post_type === 'download') {
             $this->deleted_album_details[$post_id] = [
@@ -347,11 +420,6 @@ class Triggers
                 ]
             ];
         }
-
-
-        error_log('capture_deleted_album_title:  $this->deleted_album_details is set' . print_r($this->deleted_album_details, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
-
-        error_log('capture_deleted_album_title: ended ' . "\n", 3, dirname(__FILE__) . '/debug.log');
     }
 
     /**
@@ -374,7 +442,7 @@ class Triggers
             );
 
             // Clean up temporary storage
-            unset($this->deleted_album_titles[$post_id]);
+            unset($this->deleted_album_details[$post_id]);
         }
     }
 
@@ -387,9 +455,6 @@ class Triggers
      */
     private function handle_deleted_album_fields(string $album_name, array $album_details): void
     {
-        error_log('handle_deleted_album_fields: Start' . "\n", 3, dirname(__FILE__) . '/debug.log');
-        error_log('handle_deleted_album_fields: Recieved - album_name: ' . $album_name . ' - album_details: ' . print_r($album_details, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
-
         $album_release_year = $album_details['year'] ?? '';
         $album_artist = $album_details['artist'] ?? '';
 
@@ -400,20 +465,18 @@ class Triggers
             $album_name,
             'PURCHASE'
         );
-        error_log('handle_deleted_album_fields: $field_name: ' . $field_name . "\n", 3, dirname(__FILE__) . '/debug.log');
 
         // Delete album purchase field on MailerLite
+        $this->logger->logApiCall('MailerLite', 'deleteField', ['field_name' => $field_name]);
         $is_field_deleted_on_mailerlite = $this->mailerlite->deleteField($field_name);
 
-        error_log('handle_deleted_album_fields: $is_field_deleted_on_mailerlite:' . $is_field_deleted_on_mailerlite . "\n", 3, dirname(__FILE__) . '/debug.log');
-
         if ($is_field_deleted_on_mailerlite) {
-            error_log('handle_deleted_album_fields: $is_field_deleted_on_mailerlite: successfully deleted on mailerlite' . "\n", 3, dirname(__FILE__) . '/debug.log');
             // Delete album field from local database
             $this->field_database->delete_field_by_name($field_name);
-            error_log('handle_deleted_album_fields: Delete field name from the database' . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->info('Field successfully deleted from MailerLite and database', ['field_name' => $field_name]);
+        } else {
+            $this->logger->error('Failed to delete field from MailerLite', ['field_name' => $field_name]);
         }
-
     }
 
     /**
@@ -426,46 +489,27 @@ class Triggers
      */
     private function handle_deleted_album_groups(string $album_name, array $album_details, array $tiers): void
     {
-        error_log('handle_deleted_album_groups: Start: ' . "\n", 3, dirname(__FILE__) . '/debug.log');
-        error_log('handle_deleted_album_groups: Received - album_name: ' . $album_name . ' - album_details: ' . print_r($album_details, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
-        error_log('handle_deleted_album_groups: Tiers: ' . print_r($tiers, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
-
         $album_release_year = $album_details['year'] ?? '';
         $album_artist = $album_details['artist'] ?? '';
 
         // Delete album groups on MailerLite
         foreach ($tiers as $tier) {
             $group_name = $this->utils->get_campaign_group_name('2025', 'Eko the beat', $album_name, $tier);
-            //     $album_release_year,
-            //     $album_artist,
-            //     $album_name,
-            //     $tier
-            // );
-
-            error_log('handle_deleted_album_groups: $group_name: ' . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
-
 
             if (!empty($group_name)) {
                 // Delete mailerlite subscriber group with post title
-                $this->logger->log("Creating group for: " . $group_name, 'info');
-                error_log("Creating group for: " . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->logApiCall('MailerLite', 'deleteGroup', ['group_name' => $group_name]);
 
                 $is_group_deleted_on_mailerlite = $this->mailerlite->deleteGroup($group_name);
-                $this->logger->log("MailerLite response for group: " . print_r($group_data, true), 'info');
-                error_log("MailerLite response for group: " . print_r($group_data, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
 
                 if ($is_group_deleted_on_mailerlite) {
                     $this->group_database->delete_group_by_name($group_name);
-                    error_log('handle_deleted_album_groups: Delete field name from the database' . "\n", 3, dirname(__FILE__) . '/debug.log');
+                    $this->logger->info("Album group: '{$group_name}' was permanently deleted.");
+                } else {
+                    $this->logger->error("Failed to delete group from MailerLite: '{$group_name}'");
                 }
-
-                $this->logger->log("Album group: '{$group_name}' was permanently deleted.", 'info');
-                error_log("Album group: '{$group_name}' was permanently deleted.\n", 3, dirname(__FILE__) . '/debug.log');
             } else {
-                $this->logger->log('Group name could not be generated for tier: ' . $tier, 'warning');
-                error_log('Group name could not be generated for tier: ' . $tier . "\n", 3, dirname(__FILE__) . '/debug.log');
-                $this->logger->log("Album group: '{$group_name}' was not deleted.", 'info');
-                error_log("Album group: '{$group_name}' was not deleted.\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->warning('Group name could not be generated for tier: ' . $tier);
             }
         }
     }
@@ -488,5 +532,4 @@ class Triggers
         // Handle group deletion
         $this->handle_deleted_album_groups($album_name, $album_details, $tiers);
     }
-
 }

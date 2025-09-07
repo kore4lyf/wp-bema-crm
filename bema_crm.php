@@ -72,12 +72,12 @@ spl_autoload_register(function ($class) {
         $class_file_map = [
             'Bema_CRM' => 'bema_crm.php',
             'Bema_CRM_Logger' => 'includes/class-bema-crm-logger.php',
-            'BemaCRMLogger' => 'includes/class-bema-logger.php',
             'Campaign_Manager' => 'em_sync/class.campaign_manager.php',
             'EM_Sync' => 'em_sync/class.em_sync.php',
             'EDD' => 'em_sync/class.edd.php',
             'Triggers' => 'em_sync/triggers/class-triggers.php',
             'Utils' => 'em_sync/utils/class-utils-trigger.php',
+            'Bema_CRM_Notifier' => 'includes/notification/class-bema-crm-notifier.php',
         ];
 
         // Remove the namespace prefix from the class name.
@@ -379,7 +379,7 @@ class Bema_CRM
             // Core files that must be loaded first
             $core_files = [
                 'includes/class-batch-processor.php',
-                'includes/class-bema-logger.php',
+                'includes/class-bema-crm-logger.php',
                 'includes/class-database-manager.php',
                 'includes/class-database-migrations.php',
                 'includes/class-sync-scheduler.php',
@@ -453,7 +453,7 @@ class Bema_CRM
     private function validate_dependencies(): void
     {
         $required_classes = [
-            'Bema\\BemaCRMLogger',
+            'Bema\\Bema_CRM_Logger',
             'Bema\\Database_Manager',
             'Bema\\EM_Sync',
             'Bema\\Sync_Scheduler',
@@ -479,13 +479,8 @@ class Bema_CRM
 
             // Initialize logger first
             if (!isset($this->logger)) {
-                $this->logger = new BemaCRMLogger();
+                $this->logger = Bema_CRM_Logger::create('bema-crm-core');
                 $this->component_registry['logger'] = $this->logger;
-            }
-
-            if (!isset($this->system_logger)) {
-                $this->system_logger = new Bema_CRM_Logger('system');
-                $this->component_registry['system_logger'] = $this->system_logger;
             }
 
             // Initialize utils
@@ -642,7 +637,7 @@ class Bema_CRM
                 'error_trace' => $e->getTraceAsString()
             ], 'SYNC_INIT_ERROR');
 
-            $this->logger?->log('Sync initialization failed', 'error', [
+            $this->logger->error('Sync initialization failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -669,7 +664,7 @@ class Bema_CRM
 
             // Update the order of parameters to match the constructor definition
             $this->admin_interface = new \Bema\Admin\Bema_Admin_Interface(
-                $this->logger,                              // Required: BemaCRMLogger
+                $this->logger,                              // Required: Bema_CRM_Logger
                 $this->settings,                           // Required: Bema_Settings
                 $has_edd ? $this->sync_instance : null,    // Optional: ?EM_Sync
                 $has_edd ? $this->sync_scheduler : null    // Optional: ?Sync_Scheduler
@@ -679,8 +674,9 @@ class Bema_CRM
             debug_to_file('Admin components initialized successfully');
         } catch (Exception $e) {
             debug_to_file('Admin initialization failed: ' . $e->getMessage());
-            $this->logger->log('Failed to initialize admin components', 'error', [
-                'error' => $e->getMessage()
+            $this->logger->error('Failed to initialize admin components', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
@@ -769,8 +765,9 @@ class Bema_CRM
             debug_to_file('Hooks added successfully');
         } catch (Exception $e) {
             debug_to_file('Error adding hooks: ' . $e->getMessage());
-            $this->logger?->log('Failed to add hooks', 'error', [
-                'error' => $e->getMessage()
+            $this->logger->error('Failed to add hooks', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
@@ -801,7 +798,7 @@ class Bema_CRM
                     \is_plugin_active('easy-digital-downloads-pro/easy-digital-downloads.php');
 
                 // Initialize admin interface with correct parameter order:
-                // BemaCRMLogger, Bema_Settings, ?EM_Sync, ?Sync_Scheduler
+                // Bema_CRM_Logger, Bema_Settings, ?EM_Sync, ?Sync_Scheduler
                 $this->admin_interface = new \Bema\Admin\Bema_Admin_Interface(
                     $this->logger,           // Required logger
                     $this->settings,         // Required settings
@@ -814,8 +811,9 @@ class Bema_CRM
             } catch (Exception $e) {
                 debug_to_file('Failed to initialize admin interface: ' . $e->getMessage());
                 if (isset($this->logger)) {
-                    $this->logger->log('Admin interface initialization failed', 'error', [
-                        'error' => $e->getMessage()
+                    $this->logger->error('Admin interface initialization failed', [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
                     ]);
                 }
             }
@@ -838,7 +836,7 @@ class Bema_CRM
 
         debug_to_file($error_message, 'ERROR');
 
-        $this->logger?->log($error_message, 'error', [
+        $this->logger->error($error_message, [
             'errno' => $errno,
             'file' => $errfile,
             'line' => $errline
@@ -859,7 +857,7 @@ class Bema_CRM
 
         debug_to_file($error_message, 'EXCEPTION');
 
-        $this->logger?->log($error_message, 'error', [
+        $this->logger->error($error_message, [
             'exception' => get_class($e),
             'file' => $e->getFile(),
             'line' => $e->getLine(),
@@ -914,7 +912,7 @@ class Bema_CRM
 
             debug_to_file($error_message, 'FATAL');
 
-            $this->logger?->log($error_message, 'critical', [
+            $this->logger->critical($error_message, [
                 'type' => $error['type'],
                 'file' => $error['file'],
                 'line' => $error['line']
@@ -932,7 +930,7 @@ class Bema_CRM
         debug_to_file($error_message, 'INIT_ERROR');
 
         if (isset($this->logger)) {
-            $this->logger->log($error_message, 'critical', [
+            $this->logger->critical($error_message, [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -975,10 +973,10 @@ class Bema_CRM
             }
 
             // Initialize database
-            require_once BEMA_PATH . 'includes/class-bema-logger.php';
+            require_once BEMA_PATH . 'includes/class-bema-crm-logger.php';
             require_once BEMA_PATH . 'includes/class-database-migrations.php';
 
-            $logger = new BemaCRMLogger();
+            $logger = Bema_CRM_Logger::create('plugin-activation');
             $migrations = new Database_Migrations($logger);
 
             if (!$migrations->install()) {
@@ -1355,3 +1353,4 @@ register_deactivation_hook(__FILE__, function () {
 });
 
 register_uninstall_hook(__FILE__, ['\Bema\Bema_CRM', 'uninstall']);
+

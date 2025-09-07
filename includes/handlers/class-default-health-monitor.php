@@ -3,7 +3,7 @@
 namespace Bema\Handlers;
 
 use Bema\Interfaces\Health_Monitor;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use function Bema\debug_to_file;
 
 if (!defined('ABSPATH')) {
@@ -16,7 +16,7 @@ class Default_Health_Monitor implements Health_Monitor
     private $activeJobs = [];
     private $status = [];
 
-    public function __construct(BemaCRMLogger $logger)
+    public function __construct(Bema_CRM_Logger $logger)
     {
         $this->logger = $logger;
     }
@@ -33,9 +33,9 @@ class Default_Health_Monitor implements Health_Monitor
             ];
 
             update_option('bema_health_status', $this->status);
-            $this->logger->log('Health monitoring initialized', 'info');
+            $this->logger->info('Health monitoring initialized');
         } catch (\Exception $e) {
-            $this->logger->log('Failed to initialize health monitoring', 'error', [
+            $this->logger->error('Failed to initialize health monitoring', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -57,7 +57,7 @@ class Default_Health_Monitor implements Health_Monitor
 
             update_option('bema_active_jobs', $this->activeJobs);
         } catch (\Exception $e) {
-            $this->logger->log('Failed to start monitoring', 'error', [
+            $this->logger->error('Failed to start monitoring', [
                 'job_id' => $jobId,
                 'error' => $e->getMessage()
             ]);
@@ -77,7 +77,7 @@ class Default_Health_Monitor implements Health_Monitor
                 ], 'HEALTH_MONITOR');
             }
         } catch (\Exception $e) {
-            $this->logger->log('Failed to stop monitoring', 'error', [
+            $this->logger->error('Failed to stop monitoring', [
                 'job_id' => $jobId,
                 'error' => $e->getMessage()
             ]);

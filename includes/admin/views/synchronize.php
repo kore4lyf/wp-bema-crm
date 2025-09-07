@@ -2,6 +2,8 @@
 
 namespace Bema\Admin\Views;
 
+use Bema_CRM_Notify;
+
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -86,10 +88,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'view_sync_record' && isset(
     wp_die();
 }
 
+
 // --- Load Current Status & Sync History ---
 $current_status = get_option($sync_option_key, []);
 
 $sync_history = $this->sync_db_manager->get_sync_records_without_data();
+
+$message = 'EDD token is missing. Visit <a href="' . $settings_url . '">settings page &raquo;</a>';
 
 ?>
 
@@ -137,8 +142,8 @@ $sync_history = $this->sync_db_manager->get_sync_records_without_data();
         </thead>
         <tbody>
             <?php if (empty($sync_history)): ?>
-                <tr>
-                    <td className="text-center" colspan="6">No sync history found.</td>
+                <tr class="text-center">
+                    <td colspan="6">No sync history found.</td>
                 </tr>
             <?php else: ?>
                 <?php foreach ($sync_history as $record): ?>
@@ -173,7 +178,6 @@ $sync_history = $this->sync_db_manager->get_sync_records_without_data();
 <style>
     .text-center {
         text-align: center;
-        border: 1px solid red;
     }
 
     .status-grid {

@@ -3,7 +3,7 @@
 namespace Bema\Database;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -18,12 +18,17 @@ class Campaign_Database_Manager
     private $wpdb;
     private $logger;
 
-    public function __construct(?BemaCRMLogger $logger = null)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
-        $this->logger = $logger ?? new BemaCRMLogger();
+        if ($logger) {
+            $this->logger = $logger;
+            $this->logger->setIdentifier('campaign-database');
+        } else {
+            $this->logger = Bema_CRM_Logger::create('campaign-database');
+        }
     }
 
     /**
@@ -58,9 +63,17 @@ class Campaign_Database_Manager
                 throw new Exception('Failed to create the database table.');
             }
 
+            // INFO: Log successful table creation for monitoring
+            $this->logger->info('Campaigns table created successfully', [
+                'table_name' => $this->table_name
+            ]);
+
             return true;
         } catch (Exception $e) {
-            $this->logger->log("Database Manager Error: " . $e->getMessage(), 'error');
+            $this->logger->error('Failed to create campaigns table', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -95,7 +108,12 @@ class Campaign_Database_Manager
 
             return absint($id);
         } catch (Exception $e) {
-            $this->logger->log('insert_campaign Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to insert campaign', [
+                'campaign' => $campaign,
+                'product_id' => $product_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -153,7 +171,10 @@ class Campaign_Database_Manager
 
             return $result;
         } catch (Exception $e) {
-            $this->logger->log('Campaign_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to get all campaigns', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -246,7 +267,10 @@ class Campaign_Database_Manager
             
             return $results ?: [];
         } catch (Exception $e) {
-            $this->logger->log('get_only_campaigns Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to get campaigns list', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return [];
         }
     }
@@ -328,7 +352,12 @@ class Campaign_Database_Manager
 
             return $updated > 0;
         } catch (Exception $e) {
-            $this->logger->log('update_campaign_by_id Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to update campaign by ID', [
+                'id' => $id,
+                'data' => $data,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -373,7 +402,12 @@ class Campaign_Database_Manager
 
             return $updated > 0;
         } catch (Exception $e) {
-            $this->logger->log('update_campaign_by_name Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to update campaign by name', [
+                'campaign' => $campaign,
+                'data' => $data,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -396,7 +430,12 @@ class Campaign_Database_Manager
                 return $this->insert_campaign($id, $campaign, $product_id) !== false;
             }
         } catch (Exception $e) {
-            $this->logger->log('upsert_campaign Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to upsert campaign', [
+                'campaign' => $campaign,
+                'product_id' => $product_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -420,7 +459,11 @@ class Campaign_Database_Manager
 
             return $deleted;
         } catch (Exception $e) {
-            $this->logger->log('delete_campaign_by_id Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to delete campaign by ID', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -443,7 +486,11 @@ class Campaign_Database_Manager
 
             return $deleted;
         } catch (Exception $e) {
-            $this->logger->log('delete_campaign_by_name Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to delete campaign by name', [
+                'campaign' => $campaign,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }
@@ -463,7 +510,11 @@ class Campaign_Database_Manager
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('delete_table Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to delete campaigns table', [
+                'table_name' => $this->table_name,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }

@@ -4,7 +4,7 @@ namespace Bema\Providers;
 
 use Exception;
 use WP_Object_Cache;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use Bema\Interfaces\Provider_Interface;
 use Bema\Exceptions\API_Exception;
 use Bema\Database\Group_Database_Manager;
@@ -35,7 +35,7 @@ class MailerLite implements Provider_Interface
     const CACHE_TTL = 3600; // 1 hour
     const RATE_LIMIT_KEY = 'mailerlite_rate_limit';
 
-    public function __construct($apiKey, ?BemaCRMLogger $logger = null)
+    public function __construct($apiKey, ?Bema_CRM_Logger $logger = null)
     {
         try {
             debug_to_file('Constructing MailerLite with API key present: ' . (!empty($apiKey) ? 'Yes' : 'No'), 'ML_INIT');
@@ -54,6 +54,10 @@ class MailerLite implements Provider_Interface
 
             debug_to_file('MailerLite instance constructed successfully', 'ML_INIT');
         } catch (Exception $e) {
+            $this->logger->error('Error constructing MailerLite', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             debug_to_file('Error constructing MailerLite: ' . $e->getMessage(), 'ML_ERROR');
         }
     }
@@ -102,7 +106,7 @@ class MailerLite implements Provider_Interface
         if ($this->rateLimitRemaining !== null && $this->rateLimitRemaining < 1) {
             $waitTime = max(0, $this->rateLimitReset - time());
             if ($waitTime > 0) {
-                $this->logger->log("Rate limit reached, waiting {$waitTime} seconds", 'warning');
+                $this->logger->warning("Rate limit reached, waiting {$waitTime} seconds");
                 sleep($waitTime);
             }
         }
@@ -309,11 +313,14 @@ class MailerLite implements Provider_Interface
     {
         try {
             if (empty($identifier)) {
-                $this->logger->log('Fetch failed: Missing subscriber identifier', 'error');
+                $this->logger->error('Fetch failed: Missing subscriber identifier', [
+                    'identifier' => $identifier,
+                    'operation' => 'getSubscriber'
+                ]);
                 throw new Exception('Missing subscriber identifier for fetch operation.');
             }
 
-            $this->logger->log('Attempting to fetch single subscriber', 'debug', ['identifier' => $identifier]);
+            $this->logger->debug('Attempting to fetch single subscriber', ['identifier' => $identifier]);
 
             // The MailerLite API uses the same endpoint for ID and email
             $response = $this->makeRequest("subscribers/{$identifier}", 'GET');
@@ -321,11 +328,11 @@ class MailerLite implements Provider_Interface
             // Check if the response was successful and contains data
             if (isset($response['data'])) {
                 $subscriberData = $response['data'];
-                $this->logger->log('Subscriber fetched successfully', 'info', ['id' => $subscriberData['id']]);
+                $this->logger->info('Subscriber fetched successfully', ['id' => $subscriberData['id']]);
                 return $subscriberData;
             } else {
                 // Log the API failure response and throw an exception
-                $this->logger->log('Failed to fetch subscriber from API', 'error', [
+                $this->logger->error('Failed to fetch subscriber from API', [
                     'identifier' => $identifier,
                     'response' => $response
                 ]);
@@ -496,13 +503,18 @@ class MailerLite implements Provider_Interface
             }
 
             $this->invalidateSubscriberCache($response['data']['id']);
-            $this->logger->log('Subscriber added/updated successfully', 'info', [
+            $this->logger->info('Subscriber added/updated successfully', [
                 'email' => $data['email'],
                 'id' => $response['data']['id']
             ]);
 
             return $response['data']['id'];
         } catch (Exception $e) {
+            $this->logger->error('Failed to add/update subscriber', [
+                'data' => $data,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             throw new API_Exception(
                 "Failed to add/update subscriber: {$e->getMessage()}",
                 'subscribers',
@@ -525,14 +537,14 @@ class MailerLite implements Provider_Interface
             );
 
             $this->invalidateSubscriberCache($subscriberId);
-            $this->logger->log('Subscriber added to group', 'info', [
+            $this->logger->info('Subscriber added to group', [
                 'subscriber_id' => $subscriberId,
                 'group_id' => $groupId
             ]);
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Failed to add subscriber to group', 'error', [
+            $this->logger->error('Failed to add subscriber to group', [
                 'subscriber_id' => $subscriberId,
                 'group_id' => $groupId,
                 'error' => $e->getMessage()
@@ -552,14 +564,14 @@ class MailerLite implements Provider_Interface
             );
 
             $this->invalidateSubscriberCache($subscriberId);
-            $this->logger->log('Subscriber removed from group', 'info', [
+            $this->logger->info('Subscriber removed from group', [
                 'subscriber_id' => $subscriberId,
                 'group_id' => $groupId
             ]);
 
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Failed to remove subscriber from group', 'error', [
+            $this->logger->error('Failed to remove subscriber from group', [
                 'subscriber_id' => $subscriberId,
                 'group_id' => $groupId,
                 'error' => $e->getMessage()
@@ -669,19 +681,19 @@ class MailerLite implements Provider_Interface
 
             // Send a POST request to the 'fields' endpoint.
             $response = $this->makeRequest('fields', 'POST', $payload);
-            error_log("Group Created: " . print_r($response, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->debug('Group Created', ['response' => $response]);
 
             // Check for a successful response by ensuring the 'id' key exists in the data array.
             return $response['data']['id'];
 
         } catch (Exception $e) {
             // Log the failure to create the field.
-            $this->logger->log('Failed to create MailerLite field', 'error', [
+            $this->logger->error('Failed to create MailerLite field', [
                 'field_name' => $name,
                 'field_type' => $type,
                 'error_message' => $e->getMessage()
             ]);
-            error_log("error creating group: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->error('Error creating group', ['error' => $e->getMessage()]);
             return '';
         }
     }
@@ -701,10 +713,10 @@ class MailerLite implements Provider_Interface
             $field = $this->field_db_manager->get_field_by_name($current_name);
 
             if (!$field || empty($field['field_id'])) {
-                $this->logger->log('Field not found in database', 'error', [
+                $this->logger->error('Field not found in database', [
                     'field_name' => $current_name
                 ]);
-                error_log("Field not found: " . $current_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->warning('Field not found', ['field_name' => $current_name]);
                 return false;
             }
 
@@ -720,7 +732,7 @@ class MailerLite implements Provider_Interface
             $response = $this->makeRequest($endpoint, 'PUT', $payload);
 
             // Log the response for debugging
-            error_log("Field Updated: " . print_r($response, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->debug('Field Updated', ['response' => $response]);
 
             if (isset($response['data'])) {
                 return true;
@@ -730,12 +742,12 @@ class MailerLite implements Provider_Interface
 
         } catch (Exception $e) {
             // Log any error during update
-            $this->logger->log('Failed to update MailerLite field', 'error', [
+            $this->logger->error('Failed to update MailerLite field', [
                 'current_name' => $current_name,
                 'new_name' => $new_name,
                 'error_message' => $e->getMessage()
             ]);
-            error_log("Error updating field: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->error('Error updating field', ['error' => $e->getMessage()]);
             return false;
         }
     }
@@ -750,18 +762,18 @@ class MailerLite implements Provider_Interface
     public function deleteField(string $field_name): bool
     {
         try {
-            error_log("deleteField: Start" . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->debug('deleteField: Start');
 
             // Get field details from the database
             $field = $this->field_db_manager->get_field_by_name($field_name);
-            error_log("deleteField: " . print_r($field, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->debug('deleteField', ['field' => $field]);
 
             if (!$field || empty($field['field_id'])) {
-                $this->logger->log('Field not found in database', 'error', [
+                $this->logger->error('Field not found in database', [
                     'field_name' => $field_name
                 ]);
 
-                error_log("Field not found: " . $field_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->warning('Field not found', ['field_name' => $field_name]);
                 return false;
             }
 
@@ -772,7 +784,7 @@ class MailerLite implements Provider_Interface
             $response = $this->makeRequest($endpoint, 'DELETE');
 
             // Log the response for debugging
-            error_log("Field Deleted Response: " . print_r($response, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->debug('Field Deleted Response', ['response' => $response]);
 
             // MailerLite returns 204 No Content on success, so response may be empty
             if ($response === null || $response === [] || (isset($response['status']) && $response['status'] === 204)) {
@@ -783,11 +795,11 @@ class MailerLite implements Provider_Interface
 
         } catch (Exception $e) {
             // Log any error during delete
-            $this->logger->log('Failed to delete MailerLite field', 'error', [
+            $this->logger->error('Failed to delete MailerLite field', [
                 'field_name' => $field_name,
                 'error_message' => $e->getMessage()
             ]);
-            error_log("Error deleting field: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->error('Error deleting field', ['error' => $e->getMessage()]);
             return false;
         }
     }
@@ -815,7 +827,7 @@ class MailerLite implements Provider_Interface
 
         } catch (Exception $e) {
             // Log the failure to create the group, including the name and error message.
-            $this->logger->log('Failed to create MailerLite group', 'error', [
+            $this->logger->error('Failed to create MailerLite group', [
                 'group_name' => $name,
                 'error_message' => $e->getMessage()
             ]);
@@ -836,14 +848,14 @@ class MailerLite implements Provider_Interface
             // Get group details from the database
             $group = $this->group_db_manager->get_group_by_name($group_name);
 
-            error_log("Unexpected delete group response: " . print_r($group, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->warning('Unexpected delete group response', ['group' => $group]);
 
 
             if (!$group || empty($group['group_id'])) {
-                $this->logger->log('Group not found in database', 'error', [
+                $this->logger->error('Group not found in database', [
                     'group_name' => $group_name
                 ]);
-                error_log("Group not found: " . $group_name . "\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->warning('Group not found', ['group_name' => $group_name]);
                 return false;
             }
 
@@ -859,16 +871,16 @@ class MailerLite implements Provider_Interface
             }
 
             // Log unexpected response
-            error_log("Unexpected delete group response: " . print_r($response, true) . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->warning('Unexpected delete group response', ['response' => $response]);
             return false;
 
         } catch (Exception $e) {
             // Log any error during delete
-            $this->logger->log('Failed to delete MailerLite group', 'error', [
+            $this->logger->error('Failed to delete MailerLite group', [
                 'group_name' => $group_name,
                 'error_message' => $e->getMessage()
             ]);
-            error_log("Error deleting group: " . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->error('Error deleting group', ['error' => $e->getMessage()]);
             return false;
         }
     }
@@ -974,7 +986,7 @@ class MailerLite implements Provider_Interface
 
             return $groupData;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get groups with subscribers', 'error', [
+            $this->logger->error('Failed to get groups with subscribers', [
                 'error' => $e->getMessage()
             ]);
             return [];
@@ -1005,7 +1017,7 @@ class MailerLite implements Provider_Interface
 
             return $groupData;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get groups with subscribers', 'error', [
+            $this->logger->error('Failed to get groups with subscribers', [
                 'error' => $e->getMessage()
             ]);
             return [];
@@ -1053,7 +1065,7 @@ class MailerLite implements Provider_Interface
             wp_cache_set($cacheKey, $groupData, self::CACHE_GROUP, self::CACHE_TTL);
             return $groupData;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get group details', 'error', [
+            $this->logger->error('Failed to get group details', [
                 'group_id' => $groupId,
                 'error' => $e->getMessage()
             ]);
@@ -1163,7 +1175,7 @@ class MailerLite implements Provider_Interface
     public function importBulkSubscribersToGroup(array $subscribers, string $groupId): bool
     {
         if (empty($subscribers)) {
-            $this->logger->log('No subscribers provided for bulk import.', 'warning', ['group_id' => $groupId]);
+            $this->logger->warning('No subscribers provided for bulk import.', ['group_id' => $groupId]);
             return false;
         }
 
@@ -1172,13 +1184,13 @@ class MailerLite implements Provider_Interface
             $endpoint = "groups/{$groupId}/subscribers/import";
             $data = ['subscribers' => $subscribers];
             $this->makeRequest($endpoint, 'POST', $data);
-            $this->logger->log('Successfully initiated bulk import for group.', 'info', [
+            $this->logger->info('Successfully initiated bulk import for group.', [
                 'group_id' => $groupId,
                 'subscriber_count' => count($subscribers)
             ]);
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Failed to initiate bulk import for group.', 'error', [
+            $this->logger->error('Failed to initiate bulk import for group.', [
                 'group_id' => $groupId,
                 'subscriber_count' => count($subscribers),
                 'error' => $e->getMessage()
@@ -1257,7 +1269,7 @@ class MailerLite implements Provider_Interface
         } catch (Exception $e) {
             // Log the error and return null to handle failures gracefully.
             // The logger is assumed to be part of the class, similar to the example.
-            $this->logger->log('Failed to create MailerLite campaign', 'error', [
+            $this->logger->error('Failed to create MailerLite campaign', [
                 'campaign_name' => $name,
                 'error_message' => $e->getMessage()
             ]);
@@ -1309,7 +1321,7 @@ class MailerLite implements Provider_Interface
             return null;
         } catch (Exception $e) {
             // Log the error and return null.
-            $this->logger->log('Failed to retrieve MailerLite campaign by name', 'error', [
+            $this->logger->error('Failed to retrieve MailerLite campaign by name', [
                 'campaign_name' => $campaign_name,
                 'error_message' => $e->getMessage()
             ]);
@@ -1380,7 +1392,7 @@ class MailerLite implements Provider_Interface
 
         } catch (Exception $e) {
             // Log the error with a descriptive message and the exception details.
-            $this->logger->log('Failed to retrieve all MailerLite campaigns', 'error', [
+            $this->logger->error('Failed to retrieve all MailerLite campaigns', [
                 'error_message' => $e->getMessage()
             ]);
             // Return null to indicate failure.
@@ -1439,7 +1451,7 @@ class MailerLite implements Provider_Interface
             return null;
         } catch (Exception $e) {
             // Log the error and return null.
-            $this->logger->log('Failed to retrieve MailerLite campaign by ID', 'error', [
+            $this->logger->error('Failed to retrieve MailerLite campaign by ID', [
                 'campaign_id' => $campaign_id,
                 'error_message' => $e->getMessage()
             ]);
@@ -1483,7 +1495,7 @@ class MailerLite implements Provider_Interface
             wp_cache_set($cacheKey, $groups, self::CACHE_GROUP, self::CACHE_TTL);
             return $groups;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get subscriber groups', 'error', [
+            $this->logger->error('Failed to get subscriber groups', [
                 'subscriber_id' => $subscriberId,
                 'error' => $e->getMessage()
             ]);
@@ -1512,7 +1524,7 @@ class MailerLite implements Provider_Interface
     {
         $pattern = 'subscribers_*';
         $this->clearCacheByPattern($pattern);
-        $this->logger->log('Subscriber cache invalidated', 'debug', [
+        $this->logger->debug('Subscriber cache invalidated', [
             'subscriber_id' => $subscriberId
         ]);
     }
@@ -1554,7 +1566,7 @@ class MailerLite implements Provider_Interface
             ], 'ML_API_ERROR');
 
             if ($this->logger) {
-                $this->logger->log('Failed to abort pending requests', 'error', [
+                $this->logger->error('Failed to abort pending requests', [
                     'error' => $e->getMessage()
                 ]);
             }
@@ -1606,13 +1618,13 @@ class MailerLite implements Provider_Interface
     {
         try {
             if (empty($id)) {
-                $this->logger->log('Update failed: Missing subscriber ID', 'error');
+                $this->logger->error('Update failed: Missing subscriber ID');
                 return false;
             }
 
             $fields = $data['fields'] ?? [];
             if (empty($fields)) {
-                $this->logger->log('Update failed: No fields provided', 'error', ['id' => $id]);
+                $this->logger->error('Update failed: No fields provided', ['id' => $id]);
                 return false;
             }
 
@@ -1622,7 +1634,7 @@ class MailerLite implements Provider_Interface
                 $updateData['fields'][strtolower($field)] = $value;
             }
 
-            $this->logger->log('Updating subscriber fields', 'debug', [
+            $this->logger->debug('Updating subscriber fields', [
                 'subscriber_id' => $id,
                 'fields' => $updateData['fields']
             ]);
@@ -1635,10 +1647,10 @@ class MailerLite implements Provider_Interface
                 ($statusCode === 0 && isset($response['data']['id']) && $response['data']['id'] === $id)
             ) {
 
-                $this->logger->log('Subscriber updated successfully', 'info', ['id' => $id]);
+                $this->logger->info('Subscriber updated successfully', ['id' => $id]);
                 return true;
             } else {
-                $this->logger->log('Update failed: API returned an unexpected response', 'error', [
+                $this->logger->error('Update failed: API returned an unexpected response', [
                     'id' => $id,
                     'status_code' => $statusCode,
                     'response' => $response
@@ -1647,7 +1659,7 @@ class MailerLite implements Provider_Interface
             }
 
         } catch (Exception $e) {
-            $this->logger->log('Failed to update subscriber due to exception', 'error', [
+            $this->logger->error('Failed to update subscriber due to exception', [
                 'id' => $id,
                 'error' => $e->getMessage()
             ]);
@@ -1776,6 +1788,10 @@ class MailerLite implements Provider_Interface
 
             return false;
         } catch (Exception $e) {
+            $this->logger->error('MailerLite connection test failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             debug_to_file('MailerLite test_connection exception: ' . $e->getMessage(), 'API_TEST');
             debug_to_file('Stack trace: ' . $e->getTraceAsString(), 'API_TEST');
             return false;

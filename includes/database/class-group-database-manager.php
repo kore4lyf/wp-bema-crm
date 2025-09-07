@@ -3,7 +3,7 @@
 namespace Bema\Database;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 use wpdb;
 
 if (!defined('ABSPATH')) {
@@ -32,24 +32,29 @@ class Group_Database_Manager
     private $wpdb;
 
     /**
-     * @var BemaCRMLogger The logger instance for recording errors.
+     * @var Bema_CRM_Logger The logger instance for recording errors.
      */
-    private BemaCRMLogger $logger;
+    private Bema_CRM_Logger $logger;
 
     /**
      * Group_Database_Manager constructor.
      *
      * Initializes the class by setting up the table names and the WordPress database object.
      *
-     * @param BemaCRMLogger|null $logger The logger instance. A new one is created if null.
+     * @param Bema_CRM_Logger|null $logger The logger instance. A new one is created if null.
      */
-    public function __construct(?BemaCRMLogger $logger = null)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_groupmeta';
         $this->campaign_table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
-        $this->logger = $logger ?? new BemaCRMLogger();
+        if ($logger) {
+            $this->logger = $logger;
+            $this->logger->setIdentifier('group-database');
+        } else {
+            $this->logger = Bema_CRM_Logger::create('group-database');
+        }
     }
 
     /**
@@ -82,7 +87,7 @@ class Group_Database_Manager
             }
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Group_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -142,7 +147,7 @@ class Group_Database_Manager
             }
 
         } catch (Exception $e) {
-            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Group_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -184,7 +189,7 @@ class Group_Database_Manager
             return $result;
         } catch (Exception $e) {
             echo 'Failed: ' . $e->getMessage();
-            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Group_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -209,7 +214,7 @@ class Group_Database_Manager
             }
             return $deleted;
         } catch (Exception $e) {
-            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Group_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -233,7 +238,7 @@ class Group_Database_Manager
             }
             return $deleted;
         } catch (Exception $e) {
-            $this->logger->log('Group_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Group_Database_Manager Error: ' . $e->getMessage());
             return false;
         }
     }
@@ -317,7 +322,7 @@ class Group_Database_Manager
             throw new Exception("Failed to delete the database table: {$this->table_name}");
 
         } catch (Exception $e) {
-            $this->logger->log('Database Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Database Manager Error: ' . $e->getMessage());
             return false;
         }
     }

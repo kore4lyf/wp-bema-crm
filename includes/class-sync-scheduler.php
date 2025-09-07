@@ -57,7 +57,7 @@ class Sync_Scheduler
     private static $instance = null;
 
     public static function get_instance(
-        BemaCRMLogger $logger,
+        Bema_CRM_Logger $logger,
         EM_Sync $sync_instance,
         ?Lock_Handler $lockHandler = null,
         ?Health_Monitor $healthMonitor = null,
@@ -70,7 +70,7 @@ class Sync_Scheduler
     }
 
     private function __construct(
-        BemaCRMLogger $logger,
+        Bema_CRM_Logger $logger,
         EM_Sync $sync_instance,
         Lock_Handler $lockHandler = null,
         Health_Monitor $healthMonitor = null,
@@ -354,7 +354,7 @@ class Sync_Scheduler
                 $this->trackTierTransitions($transitions);
             }
         } catch (Exception $e) {
-            $this->logger->log('Failed to process tier transitions', 'error', [
+            $this->logger->error('Failed to process tier transitions', [
                 'campaign' => $campaign['name'],
                 'error' => $e->getMessage()
             ]);
@@ -379,7 +379,7 @@ class Sync_Scheduler
     private function trackTierTransitions(array $transitions): void
     {
         try {
-            $this->logger->log('Tracking tier transitions', 'info', [
+            $this->logger->info('Tracking tier transitions', [
                 'transitions' => $transitions
             ]);
 
@@ -388,7 +388,7 @@ class Sync_Scheduler
                 'last_update' => current_time('mysql')
             ], false);
         } catch (Exception $e) {
-            $this->logger->log('Failed to track tier transitions', 'error', [
+            $this->logger->error('Failed to track tier transitions', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -499,7 +499,7 @@ class Sync_Scheduler
                 'end_time' => time()
             ]);
 
-            $this->logger->log('Custom sync failed', 'error', [
+            $this->logger->error('Custom sync failed', [
                 'error' => $e->getMessage(),
                 'args' => $args
             ]);
@@ -548,7 +548,7 @@ class Sync_Scheduler
         try {
             $this->run_sync_job('hourly', $args['campaigns'] ?? [], $args['settings'] ?? []);
         } catch (Exception $e) {
-            $this->logger->log('Hourly sync failed', 'error', [
+            $this->logger->error('Hourly sync failed', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -559,7 +559,7 @@ class Sync_Scheduler
         try {
             $this->run_sync_job('daily', $args['campaigns'] ?? [], $args['settings'] ?? []);
         } catch (Exception $e) {
-            $this->logger->log('Daily sync failed', 'error', [
+            $this->logger->error('Daily sync failed', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -570,7 +570,7 @@ class Sync_Scheduler
         try {
             $this->run_sync_job('weekly', $args['campaigns'] ?? [], $args['settings'] ?? []);
         } catch (Exception $e) {
-            $this->logger->log('Weekly sync failed', 'error', [
+            $this->logger->error('Weekly sync failed', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -581,7 +581,7 @@ class Sync_Scheduler
         try {
             $this->run_sync_job('retry', $args['campaigns'] ?? [], $args['settings'] ?? []);
         } catch (Exception $e) {
-            $this->logger->log('Retry sync failed', 'error', [
+            $this->logger->error('Retry sync failed', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -608,7 +608,7 @@ class Sync_Scheduler
                 $this->manage_memory();
             }
         } catch (Exception $e) {
-            $this->logger->log('Campaign processing failed', 'error', [
+            $this->logger->error('Campaign processing failed', [
                 'error' => $e->getMessage()
             ]);
             throw $e;
@@ -705,9 +705,9 @@ class Sync_Scheduler
                 $this->statsCollector->initialize();
             }
 
-            $this->logger->log('Monitoring system initialized', 'info');
+            $this->logger->info('Monitoring system initialized');
         } catch (Exception $e) {
-            $this->logger->log('Failed to initialize monitoring', 'error', [
+            $this->logger->error('Failed to initialize monitoring', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -786,11 +786,11 @@ class Sync_Scheduler
 
             update_option('bema_sync_progress', $progress, false);
 
-            $this->logger->log('Sync progress updated', 'debug', [
+            $this->logger->debug('Sync progress updated', [
                 'progress' => $progress
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to update progress', 'error', [
+            $this->logger->error('Failed to update progress', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -847,11 +847,11 @@ class Sync_Scheduler
             $failures = array_slice($failures, 0, 100); // Keep last 100 failures
             update_option('bema_sync_failures', $failures);
 
-            $this->logger->log('Batch failure recorded', 'error', [
+            $this->logger->error('Batch failure recorded', [
                 'failure' => $failureData
             ]);
         } catch (Exception $e) {
-            $this->logger->log('Failed to handle batch failure', 'error', [
+            $this->logger->error('Failed to handle batch failure', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -859,7 +859,7 @@ class Sync_Scheduler
 
     private function log_sync_start(string $type, string $jobId, array $campaigns): void
     {
-        $this->logger->log("Starting $type sync", 'info', [
+        $this->logger->info("Starting $type sync", [
             'job_id' => $jobId,
             'campaigns' => $campaigns,
             'memory' => memory_get_usage(true)
@@ -874,7 +874,7 @@ class Sync_Scheduler
         $status = $success ? 'completed' : 'failed';
         $this->update_sync_status($type, $status);
 
-        $this->logger->log("$type sync $status", 'info', [
+        $this->logger->info("$type sync $status", [
             'job_id' => $jobId,
             'memory_peak' => memory_get_peak_usage(true)
         ]);
@@ -890,10 +890,12 @@ class Sync_Scheduler
             // Clean up any running sync state
             $this->cleanup_existing_sync();
 
-            $this->logger?->log('Scheduler deactivated successfully');
+            $this->logger->info('Scheduler deactivated successfully');
         } catch (Exception $e) {
             // Just log the error but don't throw
-            error_log('Error deactivating scheduler: ' . $e->getMessage());
+            $this->logger->error('Error deactivating scheduler', [
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
@@ -960,7 +962,7 @@ class Sync_Scheduler
 
     private function log_schedule_creation(string $frequency, array $campaigns, int $timestamp): void
     {
-        $this->logger->log('Schedule created', 'info', [
+        $this->logger->info('Schedule created', [
             'frequency' => $frequency,
             'campaigns' => $campaigns,
             'next_run' => date('Y-m-d H:i:s', $timestamp)
@@ -969,7 +971,7 @@ class Sync_Scheduler
 
     private function handle_scheduling_error(Exception $e, string $frequency, array $campaigns): void
     {
-        $this->logger->log('Schedule creation failed', 'error', [
+        $this->logger->error('Schedule creation failed', [
             'frequency' => $frequency,
             'campaigns' => $campaigns,
             'error' => $e->getMessage()
@@ -978,7 +980,7 @@ class Sync_Scheduler
 
     private function handle_sync_error(Exception $e, string $type, string $jobId): void
     {
-        $this->logger->log('Sync failed', 'error', [
+        $this->logger->error('Sync failed', [
             'type' => $type,
             'job_id' => $jobId,
             'error' => $e->getMessage()
@@ -987,12 +989,12 @@ class Sync_Scheduler
 
     private function mark_campaign_success(string $campaign): void
     {
-        $this->logger->log('Campaign completed', 'info', ['campaign' => $campaign]);
+            
     }
 
     private function handle_campaign_error(string $campaign, Exception $e): void
     {
-        $this->logger->log('Campaign failed', 'error', [
+        $this->logger->error('Campaign failed', [
             'campaign' => $campaign,
             'error' => $e->getMessage()
         ]);
@@ -1000,7 +1002,7 @@ class Sync_Scheduler
 
     private function log_stale_lock_cleanup(array $lock): void
     {
-        $this->logger->log('Cleaned up stale lock', 'info', [
+        $this->logger->info('Cleaned up stale lock', [
             'key' => $lock['key'],
             'age' => time() - $lock['timestamp']
         ]);
@@ -1072,9 +1074,9 @@ class Sync_Scheduler
                 $this->sync_instance->stopSync();
             }
 
-            $this->logger->log('Sync cancelled by user', 'info');
+            $this->logger->info('Sync cancelled by user');
         } catch (Exception $e) {
-            $this->logger->log('Failed to cancel sync', 'error', [
+            $this->logger->error('Failed to cancel sync', [
                 'error' => $e->getMessage()
             ]);
             throw $e;

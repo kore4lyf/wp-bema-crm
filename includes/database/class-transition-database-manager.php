@@ -3,7 +3,7 @@
 namespace Bema\Database;
 
 use Exception;
-use Bema\BemaCRMLogger;
+use Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
  * @package Bema\Database
  * @property string $table_name The name of the transition metadata table.
  * @property object $wpdb The WordPress database abstraction object.
- * @property BemaCRMLogger $logger The logger instance for recording errors.
+ * @property Bema_CRM_Logger $logger The logger instance for recording errors.
  * @property string $campaigns_table The name of the campaigns metadata table.
  */
 class Transition_Database_Manager
@@ -32,15 +32,20 @@ class Transition_Database_Manager
     /**
      * Transition_Database_Manager constructor.
      *
-     * @param BemaCRMLogger|null $logger An optional logger instance.
+     * @param Bema_CRM_Logger|null $logger An optional logger instance.
      */
-    public function __construct(?BemaCRMLogger $logger = null)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_transitionsmeta';
         $this->campaigns_table = $wpdb->prefix . 'bemacrm_campaignsmeta';
-        $this->logger = $logger ?? new BemaCRMLogger();
+        if ($logger) {
+            $this->logger = $logger;
+            $this->logger->setIdentifier('transition-database');
+        } else {
+            $this->logger = Bema_CRM_Logger::create('transition-database');
+        }
     }
 
     /**
@@ -72,9 +77,19 @@ class Transition_Database_Manager
 
             dbDelta($sql);
 
+            // INFO: Log successful table creation for monitoring
+            $this->logger->info('Transitions table created successfully', [
+                'table_name' => $this->table_name,
+                'campaigns_table' => $this->campaigns_table
+            ]);
+
             return true;
         } catch (Exception $e) {
-            $this->logger->log('Transition_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to create transitions table', [
+                'table_name' => $this->table_name,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -110,9 +125,28 @@ class Transition_Database_Manager
                 throw new Exception($this->wpdb->last_error);
             }
 
-            return $this->wpdb->insert_id;
+            $record_id = $this->wpdb->insert_id;
+            
+            // INFO: Log transition record creation for monitoring
+            $this->logger->info('Transition record created', [
+                'record_id' => $record_id,
+                'source_id' => $source_id,
+                'destination_id' => $destination_id,
+                'status' => $status,
+                'subscribers' => $subscribers
+            ]);
+
+            return $record_id;
         } catch (Exception $e) {
-            $this->logger->log('Transition_Database_Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to insert transition record', [
+                'source_id' => $source_id,
+                'destination_id' => $destination_id,
+                'status' => $status,
+                'subscribers' => $subscribers,
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }
@@ -154,9 +188,26 @@ class Transition_Database_Manager
     {
         try {
             $this->wpdb->query("DROP TABLE IF EXISTS {$this->table_name}");
-            return $this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") !== $this->table_name;
+            $table_exists = $this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") === $this->table_name;
+            
+            if (!$table_exists) {
+                // CRITICAL: Log table deletion for security monitoring
+                $this->logger->critical('Transitions table deleted', [
+                    'table_name' => $this->table_name,
+                    'user_id' => get_current_user_id(),
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                ]);
+                return true;
+            }
+            
+            return false;
         } catch (Exception $e) {
-            $this->logger->log('Database Manager Error: ' . $e->getMessage(), 'error');
+            $this->logger->error('Failed to delete transitions table', [
+                'table_name' => $this->table_name,
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
             return false;
         }
     }

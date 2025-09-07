@@ -25,7 +25,7 @@ $tiers = is_array($tiers) ? $tiers : [];
                     </tr>
                 </thead>
                 <tbody id="tier-rows">
-                    <?php foreach ($tiers as $name ): ?>
+                    <?php foreach ($tiers as $name): ?>
                         <tr>
                             <td>
                                 <span class="tier-name-text"><?php echo esc_html($name); ?></span>

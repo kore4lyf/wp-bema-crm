@@ -34,8 +34,8 @@ if (isset($_POST['submit_transition_button'])) {
 }
 
 echo "<pre>";
-// echo 'Validate EDD Order: ' . var_dump(validate_edd_order_customer( 4, 'utejoe.ju@gmail.com'));
-
+echo 'Validate EDD Order: ' . var_dump(validate_edd_order_customer( 4, 'utejoe.ju@gmail.com'));
+echo validate_edd_order_and_customer( 5, 'utejoe.ju@gmail.com');
 echo "</pre>";
 
 // $admin->sync_instance->transition_campaigns('2024_WURRDIE_WT', '2025_ETB_GIG');

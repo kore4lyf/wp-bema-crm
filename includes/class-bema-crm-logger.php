@@ -15,9 +15,12 @@ if (!defined('ABSPATH')) {
 
 class Bema_CRM_Logger
 {
+    // ========================================
+    // CONSTANTS
+    // ========================================
+    
     /**
      * Log level constants, following the PSR-3 standard.
-     * @var string
      */
     const EMERGENCY = 'emergency';
     const ALERT = 'alert';
@@ -28,44 +31,115 @@ class Bema_CRM_Logger
     const INFO = 'info';
     const DEBUG = 'debug';
 
+    // ========================================
+    // STATIC PROPERTIES & FACTORY
+    // ========================================
+    
+    /**
+     * Default logger configuration
+     */
+    private static $default_config = [
+        'max_file_size_mb' => 10,
+        'max_file_age_days' => 30,
+        'log_level' => 'warning'
+    ];
+
+    /**
+     * Create a standardized logger instance
+     * 
+     * @param string $identifier Logger identifier
+     * @param array $config Optional configuration overrides
+     * @return self
+     */
+    public static function create(string $identifier, array $config = []): self
+    {
+        $merged_config = array_merge(self::$default_config, $config);
+        
+        // Set log level based on environment
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            $merged_config['log_level'] = self::DEBUG;
+        }
+        
+        return new self($identifier, self::validate_config($merged_config));
+    }
+
+    /**
+     * Validate logger configuration
+     * 
+     * @param array $config
+     * @return array Validated configuration
+     */
+    private static function validate_config(array $config): array
+    {
+        $validated = [];
+        
+        // Validate max file size
+        if (isset($config['max_file_size_mb'])) {
+            $validated['max_file_size_mb'] = max(1, min(100, (int)$config['max_file_size_mb']));
+        }
+        
+        // Validate max file age
+        if (isset($config['max_file_age_days'])) {
+            $validated['max_file_age_days'] = max(1, min(365, (int)$config['max_file_age_days']));
+        }
+        
+        // Validate log level
+        if (isset($config['log_level'])) {
+            $valid_levels = [
+                self::EMERGENCY, self::ALERT, self::CRITICAL, self::ERROR,
+                self::WARNING, self::NOTICE, self::INFO, self::DEBUG
+            ];
+            
+            if (in_array($config['log_level'], $valid_levels)) {
+                $validated['log_level'] = $config['log_level'];
+            }
+        }
+        
+        return array_merge(self::$default_config, $validated);
+    }
+
+    // ========================================
+    // INSTANCE PROPERTIES
+    // ========================================
+    
     /**
      * A unique identifier for the log file and directory.
-     * @var string
      */
     private $identifier;
 
     /**
      * The full path to the log directory.
-     * @var string
      */
     private $log_dir;
 
     /**
      * The full path to the primary log file.
-     * @var string
      */
     private $log_file;
 
     /**
      * Logger configuration settings.
-     * @var array
      */
     private $config;
 
     /**
-     * Default configuration options for the logger.
-     * @var array
+     * Current correlation ID for tracking related log entries.
      */
-    private $default_config = [
-        'max_file_size_mb' => 5,
-        'max_file_age_days' => 90,
-        'log_level' => 'warning', // Default to warning for production
-    ];
+    private $correlation_id;
 
+    /**
+     * Performance timer start times.
+     */
+    private $timers = [];
+
+    // ========================================
+    // CONSTRUCTOR & INITIALIZATION
+    // ========================================
+    
     /**
      * Bema_CRM_Logger constructor.
      *
-     * @param string $identifier A unique string to identify this logger instance.
+     * @param string $identifier A unique identifier for the log file.
      * @param array  $config     Optional array of configuration settings.
      */
     public function __construct($identifier, $config = [])
@@ -76,7 +150,7 @@ class Bema_CRM_Logger
             : preg_replace('/[^a-z0-9_\-]/i', '', strtolower($identifier));
 
         // Merge user-provided config with defaults.
-        $this->config = array_merge($this->default_config, $config);
+        $this->config = array_merge(self::$default_config, $config);
 
         // Set log level based on environment
         if (defined('WP_DEBUG') && WP_DEBUG) {
@@ -94,309 +168,298 @@ class Bema_CRM_Logger
         add_action('wp_loaded', [$this, 'schedule_log_cleanup']);
     }
 
-    /**
-     * Ensures the log directory exists and creates a .htaccess file to protect it.
-     *
-     * @return bool True if the directory exists or was created successfully, false otherwise.
-     */
-    private function ensure_log_directory()
-    {
-        if (!wp_mkdir_p($this->log_dir)) {
-            return false;
-        }
-
-        $htaccess_path = $this->log_dir . '/.htaccess';
-        // Create a .htaccess file to deny direct access to log files.
-        if (!file_exists($htaccess_path)) {
-            file_put_contents($htaccess_path, "deny from all\n");
-        }
-
-        return true;
-    }
-
-    /**
-     * Determines if a log message should be written based on the current log level.
-     *
-     * @param string $level The log level to check.
-     * @return bool True if the message should be logged, false otherwise.
-     */
-    private function should_log($level)
-    {
-        $levels = [
-            self::EMERGENCY => 7,
-            self::ALERT => 6,
-            self::CRITICAL => 5,
-            self::ERROR => 4,
-            self::WARNING => 3,
-            self::NOTICE => 2,
-            self::INFO => 1,
-            self::DEBUG => 0,
-        ];
-
-        $current_level = isset($levels[$this->config['log_level']]) ? $levels[$this->config['log_level']] : $levels[self::WARNING];
-        $message_level = isset($levels[$level]) ? $levels[$level] : $levels[self::DEBUG];
-
-        return $message_level >= $current_level;
-    }
-
-    /**
-     * Writes a log message to the log file.
-     *
-     * @param string $level   The log level (e.g., 'error', 'info').
-     * @param string $message The message to log.
-     * @param array  $context An optional array of additional data.
-     * @return void
-     */
-    private function log($level, $message, array $context = [])
-    {
-        // Check if the message should be logged based on the environment's log level
-        if (!$this->should_log($level)) {
-            return;
-        }
-
-        // Rotate the log file if it exceeds the maximum size.
-        $this->rotate_file_if_needed();
-
-        // Format the log entry string.
-        $formatted_message = $this->format_message($level, $message, $context);
-
-        // Create the file if it doesn't exist.
-        if (!file_exists($this->log_file)) {
-            touch($this->log_file);
-        }
-
-        // Append the message to the log file and WP_DEBUG log in development
-        error_log($formatted_message, 3, $this->log_file);
-        if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
-            error_log($formatted_message);
-        }
-    }
-
-    /**
-     * Formats the log message into a consistent string.
-     *
-     * @param string $level   The log level.
-     * @param string $message The log message.
-     * @param array  $context The context data.
-     * @return string The formatted log entry.
-     */
-    private function format_message($level, $message, $context)
-    {
-        // Get the current time in WordPress's configured timezone.
-        $timestamp = current_time('mysql');
-        // Encode context array to JSON for logging, sanitize to avoid sensitive data.
-        $context = array_map('sanitize_text_field', $context);
-        $context_str = empty($context) ? '' : ' ' . wp_json_encode($context);
-
-        return sprintf(
-            "[%s] [%s] %s: %s%s\n",
-            $timestamp,
-            strtoupper($level),
-            $this->identifier,
-            $message,
-            $context_str
-        );
-    }
-
-    /**
-     * Logs an emergency message.
-     * @param string $message The message to log.
-     * @param array  $context Optional context data.
-     */
+    // ========================================
+    // PSR-3 LOGGING METHODS
+    // ========================================
+    
     public function emergency($message, array $context = [])
     {
         $this->log(self::EMERGENCY, $message, $context);
     }
 
-    /**
-     * Logs an alert message.
-     * @param string $message The message to log.
-     * @param array  $context Optional context data.
-     */
     public function alert($message, array $context = [])
     {
         $this->log(self::ALERT, $message, $context);
     }
 
-    /**
-     * Logs a critical message.
-     * @param string $message The message to log.
-     * @param array  $context Optional context data.
-     */
     public function critical($message, array $context = [])
     {
         $this->log(self::CRITICAL, $message, $context);
     }
 
-    /**
-     * Logs an error message.
-     * @param string $message The message to log.
-     * @param array  $context Optional context data.
-     */
     public function error($message, array $context = [])
     {
         $this->log(self::ERROR, $message, $context);
     }
 
-    /**
-     * Logs a warning message.
-     * @param string $message The message to log.
-     * @param array  $context Optional context data.
-     */
     public function warning($message, array $context = [])
     {
         $this->log(self::WARNING, $message, $context);
     }
 
-    /**
-     * Logs a notice message.
-     * @param string $message The message to log.
-     * @param array  $context Optional context data.
-     */
     public function notice($message, array $context = [])
     {
         $this->log(self::NOTICE, $message, $context);
     }
 
-    /**
-     * Logs an informational message.
-     * @param string $message The message to log.
-     * @param array  $context Optional context data.
-     */
     public function info($message, array $context = [])
     {
         $this->log(self::INFO, $message, $context);
     }
 
-    /**
-     * Logs a debug message.
-     * @param string $message The message to log.
-     * @param array  $context Optional context data.
-     */
     public function debug($message, array $context = [])
     {
         $this->log(self::DEBUG, $message, $context);
     }
 
+    // ========================================
+    // CORE LOGGING LOGIC
+    // ========================================
+    
     /**
-     * Schedules a log cleanup routine to run once an hour.
-     * This prevents the cleanup from running on every page load.
-     * @return void
+     * Main logging method with built-in correlation support
      */
-    public function schedule_log_cleanup()
+    public function log($level, $message, array $context = [])
     {
-        $transient_key = $this->identifier . '_log_cleanup_transient';
+        // Check if this log level should be recorded based on configuration.
+        if (!$this->should_log($level)) {
+            return;
+        }
 
-        // Use a transient to ensure the cleanup function runs at most once per hour.
-        if (!get_transient($transient_key)) {
-            $this->cleanup_old_log_files();
-            set_transient($transient_key, true, HOUR_IN_SECONDS);
+        // Add correlation ID if set
+        if ($this->correlation_id) {
+            $context['correlation_id'] = $this->correlation_id;
+        }
+
+        // Format the log message.
+        $formatted_message = $this->format_message($level, $message, $context);
+
+        // Write the message to the log file.
+        $this->write_to_file($formatted_message);
+
+        // Perform log rotation if the file is too large.
+        $this->rotate_logs_if_needed();
+    }
+
+    // ========================================
+    // CORRELATION & PERFORMANCE TRACKING
+    // ========================================
+    
+    /**
+     * Set correlation ID for tracking related log entries
+     */
+    public function setCorrelationId(string $correlation_id): void
+    {
+        $this->correlation_id = $correlation_id;
+    }
+
+    /**
+     * Generate and set a new correlation ID
+     */
+    public function generateCorrelationId(): string
+    {
+        $this->correlation_id = uniqid('crm_', true);
+        return $this->correlation_id;
+    }
+
+    /**
+     * Get current correlation ID
+     */
+    public function getCorrelationId(): ?string
+    {
+        return $this->correlation_id;
+    }
+
+    /**
+     * Update logger identifier and file paths
+     */
+    public function setIdentifier(string $identifier): void
+    {
+        $this->identifier = function_exists('sanitize_title')
+            ? sanitize_title($identifier)
+            : preg_replace('/[^a-z0-9_\-]/i', '', strtolower($identifier));
+
+        $this->log_dir = WP_CONTENT_DIR . '/uploads/bema-crm/' . $this->identifier;
+        $this->log_file = $this->log_dir . '/' . $this->identifier . '.log';
+        
+        $this->ensure_log_directory();
+    }
+
+    /**
+     * Start a performance timer
+     */
+    public function startTimer(string $name): void
+    {
+        $this->timers[$name] = microtime(true);
+    }
+
+    /**
+     * End a performance timer and log the duration
+     */
+    public function endTimer(string $name, string $message = '', array $context = []): void
+    {
+        if (!isset($this->timers[$name])) {
+            $this->warning("Timer '{$name}' was not started");
+            return;
+        }
+
+        $duration = microtime(true) - $this->timers[$name];
+        unset($this->timers[$name]);
+
+        $context['duration_ms'] = round($duration * 1000, 2);
+        $context['timer_name'] = $name;
+
+        $logMessage = $message ?: "Timer '{$name}' completed";
+        $this->info($logMessage, $context);
+    }
+
+    // ========================================
+    // FILE MANAGEMENT
+    // ========================================
+    
+    /**
+     * Get log file contents
+     */
+    public function get_logs(): string
+    {
+        if (!file_exists($this->log_file)) {
+            return '';
+        }
+        return file_get_contents($this->log_file);
+    }
+
+    /**
+     * Clear all log files
+     */
+    public function clear_logs(): bool
+    {
+        $files = glob($this->log_dir . '/*.log*');
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Delete all log files and directory
+     */
+    public function delete_logs(): bool
+    {
+        $this->clear_logs();
+        if (is_dir($this->log_dir)) {
+            rmdir($this->log_dir);
+        }
+        return true;
+    }
+
+    // ========================================
+    // PRIVATE HELPER METHODS
+    // ========================================
+    
+    /**
+     * Check if a log level should be recorded
+     */
+    private function should_log($level): bool
+    {
+        $levels = [
+            self::DEBUG => 0,
+            self::INFO => 1,
+            self::NOTICE => 2,
+            self::WARNING => 3,
+            self::ERROR => 4,
+            self::CRITICAL => 5,
+            self::ALERT => 6,
+            self::EMERGENCY => 7,
+        ];
+
+        $current_level = $levels[$this->config['log_level']] ?? 3;
+        $message_level = $levels[$level] ?? 0;
+
+        return $message_level >= $current_level;
+    }
+
+    /**
+     * Format a log message
+     */
+    private function format_message($level, $message, array $context = []): string
+    {
+        $timestamp = current_time('Y-m-d H:i:s');
+        $level_upper = strtoupper($level);
+        
+        $formatted = "[{$timestamp}] {$level_upper}: {$message}";
+        
+        if (!empty($context)) {
+            $formatted .= ' ' . json_encode($context, JSON_UNESCAPED_SLASHES);
+        }
+        
+        return $formatted . PHP_EOL;
+    }
+
+    /**
+     * Write message to log file
+     */
+    private function write_to_file($message): void
+    {
+        file_put_contents($this->log_file, $message, FILE_APPEND | LOCK_EX);
+    }
+
+    /**
+     * Ensure log directory exists and is secure
+     */
+    private function ensure_log_directory(): void
+    {
+        if (!is_dir($this->log_dir)) {
+            wp_mkdir_p($this->log_dir);
+        }
+
+        $htaccess_file = $this->log_dir . '/.htaccess';
+        if (!file_exists($htaccess_file)) {
+            file_put_contents($htaccess_file, "Deny from all\n");
         }
     }
 
     /**
-     * Rotates the current log file if it exceeds the configured maximum size.
-     * The current log file is renamed with a timestamp.
-     * @return void
+     * Rotate logs if file is too large
      */
-    private function rotate_file_if_needed()
+    private function rotate_logs_if_needed(): void
     {
         if (!file_exists($this->log_file)) {
             return;
         }
 
-        // Calculate the file size in megabytes.
-        $file_size_mb = filesize($this->log_file) / 1024 / 1024;
-
-        if ($file_size_mb > $this->config['max_file_size_mb']) {
-            $backup_file = $this->log_dir . '/' . $this->identifier . '_' . date('Y-m-d_H-i-s') . '.log';
-            // Rename the current log file to a backup file.
+        $max_size = $this->config['max_file_size_mb'] * 1024 * 1024;
+        if (filesize($this->log_file) > $max_size) {
+            $backup_file = $this->log_file . '.' . date('Y-m-d-H-i-s');
             rename($this->log_file, $backup_file);
         }
     }
 
     /**
-     * Deletes log files that are older than the configured maximum age.
-     * @return void
+     * Schedule log cleanup
      */
-    private function cleanup_old_log_files()
+    public function schedule_log_cleanup(): void
     {
-        if (!is_dir($this->log_dir)) {
-            return;
+        if (!wp_next_scheduled('bema_crm_log_cleanup_' . $this->identifier)) {
+            wp_schedule_event(time(), 'daily', 'bema_crm_log_cleanup_' . $this->identifier);
         }
+        
+        add_action('bema_crm_log_cleanup_' . $this->identifier, [$this, 'cleanup_old_logs']);
+    }
 
-        // Find all log files in the directory.
-        $files = glob($this->log_dir . '/*.log');
-        // Calculate the timestamp for the cutoff date.
-        $cutoff_time = strtotime('-' . $this->config['max_file_age_days'] . ' days');
-
+    /**
+     * Clean up old log files
+     */
+    public function cleanup_old_logs(): void
+    {
+        $max_age = $this->config['max_file_age_days'] * 24 * 60 * 60;
+        $files = glob($this->log_dir . '/*.log.*');
+        
         foreach ($files as $file) {
-            // Delete the file if it's a file and its modification time is older than the cutoff.
-            if (is_file($file) && filemtime($file) < $cutoff_time) {
+            if (is_file($file) && (time() - filemtime($file)) > $max_age) {
                 unlink($file);
             }
         }
-    }
-
-    /**
-     * Retrieves the contents of the main log file.
-     *
-     * @return string|false The log file content or false if the file doesn't exist.
-     */
-    public function get_logs()
-    {
-        return file_exists($this->log_file) ? file_get_contents($this->log_file) : false;
-    }
-
-    /**
-     * Clears the main log file by deleting and re-creating it.
-     *
-     * @return bool True on success, false on failure.
-     */
-    public function clear_logs()
-    {
-        if (file_exists($this->log_file)) {
-            // Attempt to delete the log file.
-            if (!unlink($this->log_file)) {
-                return false;
-            }
-        }
-        // Re-create the log file.
-        return touch($this->log_file);
-    }
-
-    /**
-     * Deletes the log directory and all associated files (including .htaccess).
-     *
-     * @return bool True if successfully deleted, false otherwise.
-     */
-    public function delete_logs()
-    {
-        if (!is_dir($this->log_dir)) {
-            return false;
-        }
-
-        $success = true;
-
-        // Match all files, including hidden ones (.htaccess, .gitignore, etc.)
-        $files = array_merge(
-            glob($this->log_dir . '/*', GLOB_NOSORT) ?: [],
-            glob($this->log_dir . '/.*', GLOB_NOSORT) ?: [] // catches .htaccess
-        );
-
-        foreach ($files as $file) {
-            if (is_file($file)) {
-                if (!@unlink($file)) {
-                    $success = false;
-                }
-            }
-        }
-
-        // Try to remove the directory itself
-        if (!@rmdir($this->log_dir)) {
-            $success = false;
-        }
-
-        return $success;
     }
 }
