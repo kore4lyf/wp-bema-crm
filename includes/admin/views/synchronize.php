@@ -8,23 +8,24 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// --- Sync State Constants ---
+// Sync State Constants
 define('IDLE', 'Idle');
 define('RUNNING', 'Running');
 define('COMPLETE', 'Complete');
 
-// --- Option Key ---
+// Option Key
 $sync_option_key = 'bema_crm_sync_status';
 
-$sync_state = get_option($sync_option_key, []);
-$sync_state['status'] = COMPLETE;
-$sync_state['last_sync_time'] = date('F j, Y g:i A', strtotime(current_time('mysql')));
-update_option($sync_option_key, $sync_state);
-
-// --- Ensure DB Manager Available ---
+// Ensure DB Manager Available
 $this->sync_db_manager = new \Bema\Database\Sync_Database_Manager();
 
-// --- Helper to Trigger Immediate Sync ---
+if (wp_next_scheduled('bema_crm_sync_cron_job')) {
+    echo '<div class="notice notice-success"><p>bema_crm_sync_cron_job has already been started.</p></div>';
+} else {
+    echo '<div class="notice notice-success"><p>bema_crm_sync_cron_job is not active.</p></div>';
+}
+
+// Helper to Trigger Immediate Sync
 function trigger_immediate_sync()
 {
     if (!wp_next_scheduled('bema_crm_sync_cron_job')) {
@@ -32,36 +33,59 @@ function trigger_immediate_sync()
     }
 }
 
-// --- Handle Start Sync Form ---
+// Handle Start Sync Form
 if (isset($_POST['start_sync'])) {
-    $are_api_keys_missing = false;
+    // Load saved plugin settings once to avoid repeated get_option() calls
+    $settings = get_option('bema_crm_settings', []);
+    // Ensure 'api' is an array to avoid notices when accessing keys
+    $api = isset($settings['api']) && is_array($settings['api']) ? $settings['api'] : [];
 
-    if (empty(get_option('bema_crm_settings')['api']['mailerlite_api_key'])) {
-        echo '<div class="notice notice-error"><p><b>Error:</b> Mailerlite API key is missing. Visit <a href="' . admin_url() . 'admin.php?page=bema-settings' . '">settings page  »</a> .</p></div>';
-        $are_api_keys_missing = true;
-    } else if (empty(get_option('bema_crm_settings')['api']['edd_api_key'])) {
-        echo '<div class="notice notice-error"><p><b>Error:</b> EDD public key is missing. Visit <a href="' . admin_url() . 'admin.php?page=bema-settings' . '">settings page  »</a> .</p></div>';
-        $are_api_keys_missing = true;
-    } else if (empty(get_option('bema_crm_settings')['api']['edd_token'])) {
-        echo '<div class="notice notice-error"><p><b>Error:</b> EDD token is missing. Visit <a href="' . admin_url() . 'admin.php?page=bema-settings' . '">settings page  »</a> </p></div>';
-        $are_api_keys_missing = true;
+    // Define required keys and their human-friendly labels
+    $required = [
+        'mailerlite_api_key' => 'Mailerlite API key',
+        'edd_api_key'        => 'EDD public key',
+        'edd_token'          => 'EDD token',
+    ];
+
+    // Collect any missing keys so we can show a single message
+    $missing = [];
+    foreach ($required as $key => $label) {
+        if (empty($api[$key])) {
+            $missing[] = $label;
+        }
     }
 
-    if (!$are_api_keys_missing) {
-        $current_status = get_option($sync_option_key, []);
+    // If any keys are missing, show an error and stop the sync attempt
+    if (!empty($missing)) {
+        $link = esc_url(admin_url('admin.php?page=bema-settings')); // safe URL
+        $labels = implode(', ', array_map('esc_html', $missing));   // escape labels
+        echo '<div class="notice notice-error"><p><strong>Error:</strong> ' . $labels . ' missing. Visit <a href="' . $link . '">settings page »</a>.</p></div>';
+        return; // abort starting sync
+    }
 
-        if (empty($current_status) || $current_status['status'] === IDLE || $current_status['status'] === COMPLETE) {
-            $sync_state = [
-                'status' => RUNNING,
-                'last_sync_time' => date('F j, Y g:i A', strtotime(current_time('mysql')))
-            ];
-            update_option($sync_option_key, $sync_state);
-            trigger_immediate_sync();
-        }
+    // Read current sync status (provide default to avoid warnings)
+    $current_status = get_option($sync_option_key, []);
+    $status = isset($current_status['status']) ? $current_status['status'] : null;
+
+    // Only start a new sync if there is no active running state
+    if (empty($current_status) || in_array($status, [IDLE, COMPLETE], true)) {
+        // Prepare new sync state and store it
+        $sync_state = [
+            'status' => RUNNING,
+            // Use WP-aware current_time('timestamp') then format for display
+            'last_sync_time' => date('F j, Y g:i A', current_time('timestamp')),
+        ];
+        update_option($sync_option_key, $sync_state);
+
+        // Trigger the actual immediate sync process
+        trigger_immediate_sync();
+    } else {
+        // Inform the user that a sync is already in progress
+        echo '<div class="notice notice-info"><p>Sync is already running.</p></div>';
     }
 }
 
-// --- Handle AJAX Request for Sync Record ---
+// Handle AJAX Request for Sync Record
 if (isset($_POST['action']) && $_POST['action'] === 'view_sync_record' && isset($_POST['id'])) {
 
     $record_id = intval($_POST['id']);
@@ -89,12 +113,15 @@ if (isset($_POST['action']) && $_POST['action'] === 'view_sync_record' && isset(
 }
 
 
-// --- Load Current Status & Sync History ---
+// $admin->sync_instance->sync_album_campaign_data();
+// $admin->sync_instance->sync_mailerlite_group_data();
+
+// Load Current Status & Sync History
 $current_status = get_option($sync_option_key, []);
 
+// Load Sync History
 $sync_history = $this->sync_db_manager->get_sync_records_without_data();
 
-$message = 'EDD token is missing. Visit <a href="' . $settings_url . '">settings page &raquo;</a>';
 
 ?>
 

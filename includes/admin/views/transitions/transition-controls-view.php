@@ -21,10 +21,6 @@ function handle_campaign_transition($sync_instance) {
     $source_campaign = isset($_POST['source_campaign']) ? sanitize_text_field($_POST['source_campaign']) : '';
     $destination_campaign = isset($_POST['destination_campaign']) ? sanitize_text_field($_POST['destination_campaign']) : '';
 
-    echo "Source Campaign: " . $source_campaign . "<br>";
-    echo "Destination Campaign: " . $destination_campaign . "<br>";
-
-    echo "<pre>";
     $sync_instance->transition_campaigns($source_campaign, $destination_campaign);
 }
 
@@ -33,15 +29,6 @@ if (isset($_POST['submit_transition_button'])) {
     handle_campaign_transition($admin->sync_instance);
 }
 
-echo "<pre>";
-echo 'Validate EDD Order: ' . var_dump(validate_edd_order_customer( 4, 'utejoe.ju@gmail.com'));
-echo validate_edd_order_and_customer( 5, 'utejoe.ju@gmail.com');
-echo "</pre>";
-
-// $admin->sync_instance->transition_campaigns('2024_WURRDIE_WT', '2025_ETB_GIG');
-
-// $admin->system_logger->debug("Utils All Albums: ", $util_albums);
-// $admin->system_logger->debug("Campaign Database - Campaigns: ", $campaigns);
 
 
 ?>

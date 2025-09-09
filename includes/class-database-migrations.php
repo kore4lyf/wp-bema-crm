@@ -23,11 +23,11 @@ class Database_Migrations
     const STATUS_FAILED = 'failed';
     const STATUS_ROLLED_BACK = 'rolled_back';
 
-    public function __construct(Bema_CRM_Logger $logger)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
         global $wpdb;
         $this->wpdb = $wpdb;
-        $this->logger = $logger;
+        $this->logger = $logger ?? Bema_CRM_Logger::create('database-migrations');
 
         $this->tables = [
             'bemacrmmeta' => [

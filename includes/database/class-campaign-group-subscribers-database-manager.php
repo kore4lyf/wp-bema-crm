@@ -79,12 +79,7 @@ class Campaign_Group_Subscribers_Database_Manager
         $this->campaigns_table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
         $this->subscribers_table_name = $wpdb->prefix . 'bemacrm_subscribersmeta';
         $this->groups_table_name = $wpdb->prefix . 'bemacrm_groupmeta';
-        if ($logger) {
-            $this->logger = $logger;
-            $this->logger->setIdentifier('campaign-group-subscribers-database');
-        } else {
-            $this->logger = Bema_CRM_Logger::create('campaign-group-subscribers-database');
-        }
+        $this->logger = $logger ?? Bema_CRM_Logger::create('campaign-group-subscribers-database');
     }
 
     /**
@@ -399,7 +394,7 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
      */
     public function get_all_records(): array
     {
-        $query = $this->wpdb->prepare("SELECT T1.*, T2.campaign_name FROM {$this->table_name} AS T1 LEFT JOIN {$this->campaigns_table_name} AS T2 ON T1.campaign_id = T2.id");
+        $query = "SELECT T1.*, T2.campaign_name FROM {$this->table_name} AS T1 LEFT JOIN {$this->campaigns_table_name} AS T2 ON T1.campaign_id = T2.id";
         $results = $this->wpdb->get_results($query, ARRAY_A);
         return $results ?: [];
     }

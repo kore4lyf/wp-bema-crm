@@ -223,6 +223,19 @@ class Bema_CRM
 
             debug_to_file("Database instance");
 
+            $default_tiers = array(
+            'Opt-In',
+            'Wood',
+            'Gold',
+            'Silver',
+            'Bronze',
+            'Bronze Purchase',
+            'Silver Purchase',
+            'Gold Purchase',
+        );
+
+        update_option('bema_crm_tiers', $default_tiers);
+
             debug_to_file("Initialization complete");
         } catch (Exception $e) {
             debug_to_file("Initialization error: " . $e->getMessage());
@@ -236,7 +249,7 @@ class Bema_CRM
             BEMA_PATH . 'includes/admin',
             BEMA_PATH . 'em_sync',
             BEMA_PATH . 'includes/exceptions',
-            BEMA_PATH . 'includes/validators',
+
             BEMA_PATH . 'includes/handlers',
             BEMA_PATH . 'includes/interfaces'
         ];
@@ -398,7 +411,7 @@ class Bema_CRM
             // Load interfaces first
             $interface_files = [
                 'includes/interfaces/interface-provider.php',
-                'includes/interfaces/interface-validator.php',
+
                 'includes/interfaces/interface-lock-handler.php',
                 'includes/interfaces/interface-health-monitor.php',
                 'includes/interfaces/interface-stats-collector.php'
@@ -418,12 +431,8 @@ class Bema_CRM
                 'includes/exceptions/class-sync-exception.php',
                 'includes/exceptions/class-api-exception.php',
                 'includes/exceptions/class-database-exception.php',
-                'includes/exceptions/class-validation-exception.php',
                 'includes/exceptions/class-retryable-exception.php',
-                'includes/validators/class-base-validator.php',
-                'includes/validators/class-campaign-validator.php',
-                'includes/validators/class-subscriber-validator.php',
-                'includes/validators/class-tier-validator.php',
+
                 'includes/handlers/class-default-lock-handler.php',
                 'includes/handlers/class-default-health-monitor.php',
                 'includes/handlers/class-default-stats-collector.php',
@@ -491,14 +500,14 @@ class Bema_CRM
 
             // Initialize settings with logger
             if (!isset($this->settings) && isset($this->logger)) {
-                $this->settings = Bema_Settings::get_instance($this->logger);
+                $this->settings = Bema_Settings::get_instance();
                 $this->component_registry['settings'] = $this->settings;
             }
 
             // Initialize database manager
             if (!isset($this->db_manager) && isset($this->logger)) {
                 global $wpdb;
-                $this->db_manager = new Database_Manager($wpdb, $this->logger);
+                $this->db_manager = new Database_Manager($wpdb);
                 $this->component_registry['db_manager'] = $this->db_manager;
             }
 
@@ -580,16 +589,14 @@ class Bema_CRM
             // Initialize providers with logging
             debug_to_file('Initializing MailerLite provider', 'PROVIDER_INIT');
             $mailerlite = new \Bema\Providers\MailerLite(
-                $settings['api']['mailerlite_api_key'] ?? '',
-                $this->logger
+                $settings['api']['mailerlite_api_key'] ?? ''
             );
             debug_to_file('MailerLite provider initialized', 'PROVIDER_INIT');
 
             debug_to_file('Initializing EDD provider', 'PROVIDER_INIT');
             $edd = new \Bema\Providers\EDD(
                 $settings['api']['edd_api_key'] ?? '',
-                $settings['api']['edd_token'] ?? '',
-                $this->logger
+                $settings['api']['edd_token'] ?? ''
             );
             debug_to_file('EDD provider initialized', 'PROVIDER_INIT');
 
@@ -600,19 +607,17 @@ class Bema_CRM
             $this->sync_instance = new \Bema\EM_Sync(
                 $mailerlite,
                 $edd,
-                $this->logger,
                 $this->settings
             );
 
             // Initialize handlers
             $lock_handler = new \Bema\Handlers\Default_Lock_Handler();
-            $health_monitor = new \Bema\Handlers\Default_Health_Monitor($this->logger);
+            $health_monitor = new \Bema\Handlers\Default_Health_Monitor();
             $stats_collector = new \Bema\Handlers\Default_Stats_Collector();
 
             // Create Sync_Scheduler instance
             debug_to_file('Initializing Sync Scheduler', 'SYNC_INIT');
             $this->sync_scheduler = \Bema\Sync_Scheduler::get_instance(
-                $this->logger,
                 $this->sync_instance,
                 $lock_handler,
                 $health_monitor,
@@ -664,7 +669,6 @@ class Bema_CRM
 
             // Update the order of parameters to match the constructor definition
             $this->admin_interface = new \Bema\Admin\Bema_Admin_Interface(
-                $this->logger,                              // Required: Bema_CRM_Logger
                 $this->settings,                           // Required: Bema_Settings
                 $has_edd ? $this->sync_instance : null,    // Optional: ?EM_Sync
                 $has_edd ? $this->sync_scheduler : null    // Optional: ?Sync_Scheduler
@@ -752,8 +756,8 @@ class Bema_CRM
             }
 
             // Add CRM Trigger
-            $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '', $this->logger);
-            $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager, $this->logger);
+            $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '');
+            $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager);
             $triggers->init();
 
             // Register sync cron Hook
@@ -800,7 +804,6 @@ class Bema_CRM
                 // Initialize admin interface with correct parameter order:
                 // Bema_CRM_Logger, Bema_Settings, ?EM_Sync, ?Sync_Scheduler
                 $this->admin_interface = new \Bema\Admin\Bema_Admin_Interface(
-                    $this->logger,           // Required logger
                     $this->settings,         // Required settings
                     $has_edd ? $this->sync_instance : null,    // Optional sync instance
                     $has_edd ? $this->sync_scheduler : null    // Optional scheduler
@@ -857,12 +860,14 @@ class Bema_CRM
 
         debug_to_file($error_message, 'EXCEPTION');
 
-        $this->logger->error($error_message, [
-            'exception' => get_class($e),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-            'trace' => $e->getTraceAsString()
-        ]);
+        if ($this->logger) {
+            $this->logger->error($error_message, [
+                'exception' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
     }
 
     private function clear_plugin_cache(): void
@@ -912,11 +917,13 @@ class Bema_CRM
 
             debug_to_file($error_message, 'FATAL');
 
-            $this->logger->critical($error_message, [
-                'type' => $error['type'],
-                'file' => $error['file'],
-                'line' => $error['line']
-            ]);
+            if ($this->logger) {
+                $this->logger->critical($error_message, [
+                    'type' => $error['type'],
+                    'file' => $error['file'],
+                    'line' => $error['line']
+                ]);
+            }
         }
     }
 
@@ -977,7 +984,7 @@ class Bema_CRM
             require_once BEMA_PATH . 'includes/class-database-migrations.php';
 
             $logger = Bema_CRM_Logger::create('plugin-activation');
-            $migrations = new Database_Migrations($logger);
+            $migrations = new Database_Migrations();
 
             if (!$migrations->install()) {
                 throw new Exception('Database installation failed');
@@ -988,7 +995,7 @@ class Bema_CRM
 
             // Initialize database optimizer
             global $wpdb;
-            $db_manager = new Database_Manager($wpdb, $logger);
+            $db_manager = new Database_Manager($wpdb);
             $db_manager->optimize_tables();
 
             // Initialize default settings if not exists
@@ -1016,6 +1023,7 @@ class Bema_CRM
             }
 
             
+
             // Create campaign table
             (new \Bema\Database\Campaign_Database_Manager())->create_table();
             // Create group Table
@@ -1029,10 +1037,10 @@ class Bema_CRM
             // Create sync Table
             (new \Bema\Database\Sync_Database_Manager())->create_table();
             // Create transition table
-            (new \Bema\Database\Transition_Database_Manager())->create_table();           
+            (new \Bema\Database\Transition_Database_Manager())->create_table();
             // Create transition subscribers table
             (new \Bema\Database\Transition_Subscribers_Database_Manager())->create_table();
-            
+
             // Clear rewrite rules
             flush_rewrite_rules();
 
@@ -1090,7 +1098,7 @@ class Bema_CRM
             // Delete transition subscribers table
             (new \Bema\Database\Transition_Subscribers_Database_Manager())->delete_table();
             // Delete transition table
-            (new \Bema\Database\Transition_Database_Manager())->delete_table();            
+            (new \Bema\Database\Transition_Database_Manager())->delete_table();
             // Delete sync Table
             (new \Bema\Database\Sync_Database_Manager())->delete_table();
             // Delete campaign subscriber Table
@@ -1129,7 +1137,7 @@ class Bema_CRM
             }
 
             // Clean up database tables
-            $migrations = new Database_Migrations($instance->logger);
+            $migrations = new Database_Migrations();
             $migrations->uninstall();
 
             // Remove all plugin options
@@ -1220,7 +1228,7 @@ class Bema_CRM
             'Silver',
             'Bronze',
             'Bronze Purchase',
-            'Sliver Purchase',
+            'Silver Purchase',
             'Gold Purchase',
         );
 
@@ -1294,7 +1302,9 @@ class Bema_CRM
         }
     }
 
-    private function __clone() {}
+    private function __clone()
+    {
+    }
 
     public function __wakeup()
     {

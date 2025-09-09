@@ -31,7 +31,7 @@ class Bema_Settings
     private $tier_transition_matrix_group = 'bema_crm_transition_matrix_group';
     private $tier_transition_matrix_name = 'bema_crm_transition_matrix';
 
-    public static function get_instance(Bema_CRM_Logger $logger): self
+    public static function get_instance(?Bema_CRM_Logger $logger = null): self
     {
         if (null === self::$instance) {
             self::$instance = new self($logger);
@@ -39,10 +39,10 @@ class Bema_Settings
         return self::$instance;
     }
 
-    private function __construct(Bema_CRM_Logger $logger)
+    private function __construct(?Bema_CRM_Logger $logger = null)
     {
         try {
-            $this->logger = $logger;
+            $this->logger = $logger ?? Bema_CRM_Logger::create('settings');
             $this->init_default_settings();
 
             // Initialize settings immediately but only once
@@ -802,7 +802,7 @@ class Bema_Settings
 
         try {
             // Test MailerLite connection
-            $mailerLite = new MailerLite($settings['api']['mailerlite_api_key'], $this->logger);
+            $mailerLite = new MailerLite($settings['api']['mailerlite_api_key']);
             $result['mailerlite'] = $mailerLite->validateConnection();
 
             // Test EDD connection

@@ -32,12 +32,12 @@ class SyncBatchProcessor
     const MIN_MEMORY_REQUIRED = 64 * 1024 * 1024; // 64MB
 
     public function __construct(
-        Bema_CRM_Logger $logger,
         callable $processor,
         ?callable $progressCallback = null,
-        ?callable $failureCallback = null
+        ?callable $failureCallback = null,
+        ?Bema_CRM_Logger $logger = null
     ) {
-        $this->logger = $logger;
+        $this->logger = $logger ?? Bema_CRM_Logger::create('batch-processor');
         $this->processor = $processor;
         $this->progressCallback = $progressCallback;
         $this->failureCallback = $failureCallback;

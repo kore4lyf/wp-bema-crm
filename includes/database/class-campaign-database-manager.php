@@ -23,12 +23,7 @@ class Campaign_Database_Manager
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
-        if ($logger) {
-            $this->logger = $logger;
-            $this->logger->setIdentifier('campaign-database');
-        } else {
-            $this->logger = Bema_CRM_Logger::create('campaign-database');
-        }
+        $this->logger = $logger ?? Bema_CRM_Logger::create('campaign-database');
     }
 
     /**

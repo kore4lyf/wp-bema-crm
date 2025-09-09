@@ -40,12 +40,7 @@ class Transition_Database_Manager
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_transitionsmeta';
         $this->campaigns_table = $wpdb->prefix . 'bemacrm_campaignsmeta';
-        if ($logger) {
-            $this->logger = $logger;
-            $this->logger->setIdentifier('transition-database');
-        } else {
-            $this->logger = Bema_CRM_Logger::create('transition-database');
-        }
+        $this->logger = $logger ?? Bema_CRM_Logger::create('transition-database');
     }
 
     /**
@@ -158,7 +153,7 @@ class Transition_Database_Manager
      */
     public function get_all_records()
     {
-        $sql = $this->wpdb->prepare("
+        $sql = "
             SELECT
             t.id,
             s.campaign AS source,
@@ -174,9 +169,79 @@ class Transition_Database_Manager
             {$this->campaigns_table} AS d ON t.destination = d.id
             ORDER BY
             t.transition_date DESC
-        ");
+        ";
 
         return $this->wpdb->get_results($sql, ARRAY_A);
+    }
+
+    /**
+     * Updates an existing transition record.
+     *
+     * @param int $transition_id The ID of the transition record to update.
+     * @param string $status The new status of the transition ('Complete' or 'Failed').
+     * @param int $subscribers The updated number of subscribers involved in the transition.
+     *
+     * @return bool True on success, false on failure.
+     */
+    public function upsert_record(int $transition_id, string $status, int $subscribers): bool
+    {
+        try {
+            // Validate the transition ID exists
+            $existing_record = $this->wpdb->get_row(
+                $this->wpdb->prepare(
+                    "SELECT id FROM {$this->table_name} WHERE id = %d",
+                    absint($transition_id)
+                )
+            );
+
+            if (!$existing_record) {
+                $this->logger->error('Transition record not found for update', [
+                    'transition_id' => $transition_id,
+                    'status' => $status,
+                    'subscribers' => $subscribers
+                ]);
+                return false;
+            }
+
+            // Update the existing record
+            $update_data = [
+                'status' => sanitize_text_field($status),
+                'subscribers' => absint($subscribers),
+                'transition_date' => current_time('mysql'),
+            ];
+
+            $updated = $this->wpdb->update(
+                $this->table_name,
+                $update_data,
+                ['id' => absint($transition_id)],
+                ['%s', '%d', '%s'],
+                ['%d']
+            );
+
+            if ($updated === false) {
+                throw new Exception($this->wpdb->last_error);
+            }
+
+            // INFO: Log successful transition record update
+            $this->logger->info('Transition record updated successfully', [
+                'transition_id' => $transition_id,
+                'status' => $status,
+                'subscribers' => $subscribers,
+                'rows_affected' => $updated
+            ]);
+
+            return true;
+        } catch (Exception $e) {
+            $this->logger->error('Failed to update transition record', [
+                'transition_id' => $transition_id,
+                'status' => $status,
+                'subscribers' => $subscribers,
+                'db_error' => $this->wpdb->last_error,
+                'error' => $e->getMessage(),
+                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+            ]);
+            return false;
+        }
     }
 
     /**

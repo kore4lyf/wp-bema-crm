@@ -60,12 +60,7 @@ class Field_Database_Manager
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_fieldmeta';
         $this->campaign_table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
-        if ($logger) {
-            $this->logger = $logger;
-            $this->logger->setIdentifier('field-database');
-        } else {
-            $this->logger = Bema_CRM_Logger::create('field-database');
-        }
+        $this->logger = $logger ?? Bema_CRM_Logger::create('field-database');
     }
 
     /**
@@ -148,10 +143,10 @@ class Field_Database_Manager
      */
     public function upsert_fields_bulk(array $fields_to_upsert)
     {
-        error_log('Starting upsert_fields_bulk. Number of fields to upsert: ' . count($fields_to_upsert) . "\n", 3, dirname(__FILE__) . '/debug.log');
+        $this->logger->debug('Starting upsert_fields_bulk', ['field_count' => count($fields_to_upsert)]);
 
         if (empty($fields_to_upsert)) {
-            error_log('Aborting upsert_fields_bulk: Input array is empty.' . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->debug('Aborting upsert_fields_bulk: Input array is empty');
             return false;
         }
 
@@ -164,7 +159,11 @@ class Field_Database_Manager
                 $sanitized_field_name = sanitize_text_field($field['field_name']);
                 $sanitized_campaign_id = absint($field['campaign_id']);
 
-                error_log('Processing field: id=' . $sanitized_id . ', field_name=' . $sanitized_field_name . ', campaign_id=' . $sanitized_campaign_id . "\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->debug('Processing field', [
+                    'id' => $sanitized_id,
+                    'field_name' => $sanitized_field_name,
+                    'campaign_id' => $sanitized_campaign_id
+                ]);
 
                 $placeholders[] = "(%d, %s, %d)";
                 $values[] = $sanitized_id;
@@ -172,7 +171,10 @@ class Field_Database_Manager
                 $values[] = $sanitized_campaign_id;
             }
 
-            error_log('Generated ' . count($placeholders) . ' placeholders and ' . count($values) . ' values.' . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->debug('Generated placeholders and values', [
+                'placeholder_count' => count($placeholders),
+                'value_count' => count($values)
+            ]);
 
             $query = "INSERT INTO {$this->table_name} (id, field_name, campaign_id) VALUES " .
                 implode(', ', $placeholders) .
@@ -180,20 +182,19 @@ class Field_Database_Manager
 
             // Log the prepared query before execution
             $prepared_query = $this->wpdb->prepare($query, $values);
-            error_log('Prepared SQL Query: ' . $prepared_query . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->debug('Executing bulk upsert query', ['query' => $prepared_query]);
 
             $result = $this->wpdb->query($prepared_query);
 
             if (false === $result) {
-                error_log('Bulk upsert failed. Last database error: ' . $this->wpdb->last_error . "\n", 3, dirname(__FILE__) . '/debug.log');
+                $this->logger->error('Bulk upsert failed', ['db_error' => $this->wpdb->last_error]);
                 throw new Exception('Failed to bulk upsert fields: ' . $this->wpdb->last_error);
             }
 
-            error_log('Bulk upsert successful. Affected rows: ' . $result . "\n", 3, dirname(__FILE__) . '/debug.log');
+            $this->logger->info('Bulk upsert successful', ['affected_rows' => $result]);
             return $result;
         } catch (Exception $e) {
             $this->logger->error('Field_Database_Manager Error: ' . $e->getMessage());
-            error_log('Exception caught: ' . $e->getMessage() . "\n", 3, dirname(__FILE__) . '/debug.log');
             return false;
         }
     }

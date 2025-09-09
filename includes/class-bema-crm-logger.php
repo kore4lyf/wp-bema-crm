@@ -149,17 +149,15 @@ class Bema_CRM_Logger
             ? sanitize_title($identifier)
             : preg_replace('/[^a-z0-9_\-]/i', '', strtolower($identifier));
 
-        // Merge user-provided config with defaults.
-        $this->config = array_merge(self::$default_config, $config);
-
-        // Set log level based on environment
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            $this->config['log_level'] = self::DEBUG; // Verbose in development
-        }
+        // Use provided config directly (create() method handles validation and defaults)
+        $this->config = !empty($config) ? $config : self::$default_config;
 
         // Define log directory and file paths.
         $this->log_dir = WP_CONTENT_DIR . '/uploads/bema-crm/' . $this->identifier;
         $this->log_file = $this->log_dir . '/' . $this->identifier . '.log';
+
+        // Generate correlation ID for this logger instance
+        $this->correlation_id = uniqid('Bema_CRM_', true);
 
         // Ensure the log directory exists and is secure.
         $this->ensure_log_directory();
@@ -268,6 +266,14 @@ class Bema_CRM_Logger
     public function getCorrelationId(): ?string
     {
         return $this->correlation_id;
+    }
+
+    /**
+     * Get current logger identifier
+     */
+    public function getIdentifier(): string
+    {
+        return $this->identifier;
     }
 
     /**

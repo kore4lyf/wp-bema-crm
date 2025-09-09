@@ -29,6 +29,8 @@ class MailerLite implements Provider_Interface
     private $timeout = 30;
     private $rateLimitRemaining = null;
     private $rateLimitReset = null;
+    private $group_db_manager;
+    private $field_db_manager;
 
     // Cache settings
     const CACHE_GROUP = 'mailerlite_cache';
@@ -46,9 +48,9 @@ class MailerLite implements Provider_Interface
             }
 
             $this->apiKey = $apiKey;
-            $this->group_db_manager = new Group_Database_Manager($logger);
-            $this->field_db_manager = new Field_Database_Manager($logger);
-            $this->logger = $logger;
+            $this->group_db_manager = new Group_Database_Manager();
+            $this->field_db_manager = new Field_Database_Manager();
+            $this->logger = $logger ?? Bema_CRM_Logger::create('mailerlite-provider');
             $this->setHeaders();
             $this->initializeRateLimit();
 
@@ -997,7 +999,7 @@ class MailerLite implements Provider_Interface
      * Get all groups with full subscriber data
      * @return array
      */
-    public function getAllGroupsMap(): array
+    public function getAllGroupsNameMap(): array
     {
         try {
             $allGroups = $this->getGroups();
@@ -1005,6 +1007,37 @@ class MailerLite implements Provider_Interface
 
             foreach ($allGroups as $group) {
                 $groupData[strtoupper($group['name'])] = [
+                    'group_id' => $group['id'],
+                    'name' => $group['name'],
+                    'active_count' => $group['active_count'] ?? 0,
+                    'created_at' => $group['created_at'] ?? null
+                ];
+
+                // Rate limiting
+                usleep($this->rateLimitDelay * 1000000);
+            }
+
+            return $groupData;
+        } catch (Exception $e) {
+            $this->logger->error('Failed to get groups with subscribers', [
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Get all groups with full subscriber data
+     * @return array
+     */
+    public function getAllGroupsIdMap(): array
+    {
+        try {
+            $allGroups = $this->getGroups();
+            $groupData = [];
+
+            foreach ($allGroups as $group) {
+                $groupData[$group['id']] = [
                     'group_id' => $group['id'],
                     'name' => $group['name'],
                     'active_count' => $group['active_count'] ?? 0,
@@ -1410,7 +1443,7 @@ class MailerLite implements Provider_Interface
      * @return array An associative array of campaign names and their corresponding IDs.
      * Returns an empty array on failure or if no campaigns are found.
      */
-    public function get_campaigns_name_id_map(): array
+    public function get_campaigns_name_to_id_map(): array
     {
         $all_campaigns = $this->get_all_campaigns();
 

@@ -130,7 +130,7 @@ class Performance
     {
         $screen = get_current_screen();
 
-        if (strpos($screen->id, 'bema') !== false) {
+        if ($screen && strpos($screen->id, 'bema') !== false) {
             // Optimize Bema CRM pages
             add_filter('admin_body_class', function ($classes) {
                 return $classes . ' bema-optimized';

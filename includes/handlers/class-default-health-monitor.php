@@ -16,9 +16,9 @@ class Default_Health_Monitor implements Health_Monitor
     private $activeJobs = [];
     private $status = [];
 
-    public function __construct(Bema_CRM_Logger $logger)
+    public function __construct(?Bema_CRM_Logger $logger = null)
     {
-        $this->logger = $logger;
+        $this->logger = $logger ?? Bema_CRM_Logger::create('health-monitor');
     }
 
     public function initializeMonitoring(): void

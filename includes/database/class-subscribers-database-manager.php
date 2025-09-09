@@ -53,12 +53,7 @@ class Subscribers_Database_Manager
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_subscribersmeta';
-        if ($logger) {
-            $this->logger = $logger;
-            $this->logger->setIdentifier('subscribers-database');
-        } else {
-            $this->logger = Bema_CRM_Logger::create('subscribers-database');
-        }
+        $this->logger = $logger ?? Bema_CRM_Logger::create('subscribers-database');
     }
 
     /**

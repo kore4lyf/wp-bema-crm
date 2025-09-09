@@ -28,6 +28,8 @@ class Bema_Admin_Interface
     private $current_tab = '';
     private $max_retries = 3;
     private $campaign_manager;
+    private $system_logger;
+    private $sync_db_manager;
 
     const MENU_SLUG = 'bema-sync-manager';
     const CAPABILITY = 'manage_options';
@@ -41,18 +43,17 @@ class Bema_Admin_Interface
     const STATUS_INFO = 'info';
 
     public function __construct(
-        Bema_CRM_Logger $logger,
         Bema_Settings $settings,
         ?EM_Sync $sync_instance = null,
         ?Sync_Scheduler $sync_scheduler = null
     ) {
         global $wpdb;
         $this->wpdb = $wpdb;
-        $this->logger = $logger;
+        $this->logger = \Bema\Bema_CRM_Logger::create('admin-interface');
         $this->settings = $settings;
         $this->sync_instance = $sync_instance;
         $this->sync_scheduler = $sync_scheduler;
-        $this->system_logger = \Bema\Bema_CRM_Logger::create('admin-interface');
+        $this->system_logger = $this->logger;
         $this->utils = new \Bema\Utils();
         $this->current_tab = $_GET['tab'] ?? 'general';
 

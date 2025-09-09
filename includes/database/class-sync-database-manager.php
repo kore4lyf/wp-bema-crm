@@ -21,12 +21,7 @@ class Sync_Database_Manager
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_sync_log';
-        if ($logger) {
-            $this->logger = $logger;
-            $this->logger->setIdentifier('sync-database');
-        } else {
-            $this->logger = Bema_CRM_Logger::create('sync-database');
-        }
+        $this->logger = $logger ?? Bema_CRM_Logger::create('sync-database');
     }
 
     public function create_table()

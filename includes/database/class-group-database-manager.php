@@ -49,12 +49,7 @@ class Group_Database_Manager
         $this->wpdb = $wpdb;
         $this->table_name = $wpdb->prefix . 'bemacrm_groupmeta';
         $this->campaign_table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
-        if ($logger) {
-            $this->logger = $logger;
-            $this->logger->setIdentifier('group-database');
-        } else {
-            $this->logger = Bema_CRM_Logger::create('group-database');
-        }
+        $this->logger = $logger ?? Bema_CRM_Logger::create('group-database');
     }
 
     /**

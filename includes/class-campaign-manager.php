@@ -47,10 +47,10 @@ class Campaign_Manager
         'bronze_purchased' => 'optin'
     ];
 
-    public function __construct(Providers\MailerLite $mailerLiteInstance, Bema_CRM_Logger $logger)
+    public function __construct(Providers\MailerLite $mailerLiteInstance, ?Bema_CRM_Logger $logger = null)
     {
         $this->mailerLiteInstance = $mailerLiteInstance;
-        $this->logger = $logger;
+        $this->logger = $logger ?? Bema_CRM_Logger::create('campaign-manager');
 
         debug_to_file([
             'method' => 'Campaign_Manager_Constructor',

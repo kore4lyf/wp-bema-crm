@@ -29,12 +29,7 @@ class Transition_Subscribers_Database_Manager
 
         $this->transitions_table = $wpdb->prefix . 'bemacrm_transitionsmeta';
         $this->subscribers_table = $wpdb->prefix . 'bemacrm_subscribersmeta';
-        if ($logger) {
-            $this->logger = $logger;
-            $this->logger->setIdentifier('transition-subscribers-database');
-        } else {
-            $this->logger = Bema_CRM_Logger::create('transition-subscribers-database');
-        }
+        $this->logger = $logger ?? Bema_CRM_Logger::create('transition-subscribers-database');
     }
 
     /**
@@ -172,8 +167,8 @@ class Transition_Subscribers_Database_Manager
             $column_names = 'transition_id, subscriber_id';
 
             foreach ($records as $record) {
-                if ((isset($record['transition_id']) || !isempty($transition_id)) && isset($record['subscriber_id'])) {
-                    $values[] = !is_empty($transition_id) ? $transition_id : absint($record['transition_id']);
+                if ((isset($record['transition_id']) || !empty($transition_id)) && isset($record['subscriber_id'])) {
+                    $values[] = !empty($transition_id) ? $transition_id : absint($record['transition_id']);
                     $values[] = absint($record['id']);
                     $placeholders[] = "(%d, %d)";
                 }
@@ -204,7 +199,7 @@ class Transition_Subscribers_Database_Manager
      */
     public function get_all_records()
     {
-        $sql = $this->wpdb->prepare("
+        $sql = "
             SELECT
                 t.id,
                 t.transition_id,
@@ -220,7 +215,7 @@ class Transition_Subscribers_Database_Manager
                 {$this->subscribers_table} AS sm ON t.subscriber_id = sm.id
             ORDER BY
                 t.id DESC
-        ");
+        ";
 
         return $this->wpdb->get_results($sql, ARRAY_A);
     }

@@ -57,29 +57,29 @@ class Sync_Scheduler
     private static $instance = null;
 
     public static function get_instance(
-        Bema_CRM_Logger $logger,
         EM_Sync $sync_instance,
         ?Lock_Handler $lockHandler = null,
         ?Health_Monitor $healthMonitor = null,
-        ?Stats_Collector $statsCollector = null
+        ?Stats_Collector $statsCollector = null,
+        ?Bema_CRM_Logger $logger = null
     ): self {
         if (null === self::$instance) {
-            self::$instance = new self($logger, $sync_instance, $lockHandler, $healthMonitor, $statsCollector);
+            self::$instance = new self($sync_instance, $lockHandler, $healthMonitor, $statsCollector, $logger);
         }
         return self::$instance;
     }
 
     private function __construct(
-        Bema_CRM_Logger $logger,
         EM_Sync $sync_instance,
         Lock_Handler $lockHandler = null,
         Health_Monitor $healthMonitor = null,
-        Stats_Collector $statsCollector = null
+        Stats_Collector $statsCollector = null,
+        ?Bema_CRM_Logger $logger = null
     ) {
-        $this->logger = $logger;
+        $this->logger = $logger ?? Bema_CRM_Logger::create('sync-scheduler');
         $this->sync_instance = $sync_instance;
         $this->lockHandler = $lockHandler ?? new Default_Lock_Handler();
-        $this->healthMonitor = $healthMonitor ?? new Default_Health_Monitor($logger);
+        $this->healthMonitor = $healthMonitor ?? new Default_Health_Monitor();
         $this->statsCollector = $statsCollector ?? new Default_Stats_Collector();
 
         $this->lockKey = self::LOCK_KEY_PREFIX . wp_hash(__FILE__);

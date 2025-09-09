@@ -31,10 +31,10 @@ class Database_Manager
     const LOCK_TIMEOUT = 10; // seconds
     const DEADLOCK_RETRY_DELAY = 1; // seconds
 
-    public function __construct($wpdb, Bema_CRM_Logger $logger)
+    public function __construct($wpdb, ?Bema_CRM_Logger $logger = null)
     {
         $this->wpdb = $wpdb;
-        $this->logger = $logger;
+        $this->logger = $logger ?? Bema_CRM_Logger::create('database-manager');
 
         // Set error handler
         set_error_handler([$this, 'errorHandler']);
