@@ -926,7 +926,6 @@ class MailerLite implements Provider_Interface
                         'active_count' => $group['active_count'] ?? 0,
                         'unsubscribed_count' => $group['unsubscribed_count'] ?? 0,
                         'created_at' => $group['created_at'],
-                        'updated_at' => $group['updated_at']
                     ];
 
                     debug_to_file([

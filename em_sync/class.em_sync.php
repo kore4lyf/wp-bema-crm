@@ -7,8 +7,8 @@ use RuntimeException;
 use WP_Object_Cache;
 use Bema\Providers\EDD;
 use Bema\Providers\MailerLite;
-use Bema\Exceptions\Sync_Exception;
-use Bema\Exceptions\API_Exception;
+use BemaExceptions\Sync_Exception;
+use BemaExceptions\API_Exception;
 
 use Bema\SyncBatchProcessor;
 use Bema\Campaign_Manager;
@@ -3935,241 +3935,194 @@ class EM_Sync
     }
 
     /**
-     * Transitions subscribers from a source campaign to a destination campaign based on predefined rules.
+     * Validate an EDD customer order by ID and email.
+     * Compatible with both EDD 2.x (edd_payment) and 3.x+ (edd_get_order).
      *
-     * This function iterates through a set of transition rules, identifies subscribers in the source campaign,
-     * and transfers them to the corresponding group in the destination campaign. It handles an optional
-     * requirement for a valid purchase ID and logs all actions and errors.
+     * @param int    $order_id The EDD order ID (required).
+     * @param string $email    The customer's email address (required).
+     * @return bool True if valid match, false otherwise.
+     */
+    function validate_edd_order_and_customer(int $order_id, string $email): bool
+    {
+        // Sanitize inputs
+        echo "Debugging: Starting validation for Order ID: {$order_id} and Email: {$email}\n";
+        $order_id = absint($order_id);
+        $email = sanitize_email($email);
+        echo "Debugging: Sanitized Order ID: {$order_id} and Sanitized Email: {$email}\n";
+
+        if ($order_id <= 0 || empty($email)) {
+            echo "Debugging: Invalid input. Order ID is not positive or email is empty.\n";
+            return false;
+        }
+
+        $order_email = '';
+
+        // EDD 3.x and newer
+        if (function_exists('edd_get_order')) {
+            echo "Debugging: EDD 3.x detected. Attempting to get order.\n";
+            $order = edd_get_order($order_id);
+            if (!$order) {
+                echo "Debugging: Order not found for ID: {$order_id}\n";
+                return false;
+            }
+            $order_email = !empty($order->email) ? sanitize_email($order->email) : '';
+            echo "Debugging: Found order email (3.x): {$order_email}\n";
+        }
+        // EDD 2.x (legacy)
+        elseif (function_exists('edd_get_payment')) {
+            echo "Debugging: EDD 2.x detected. Attempting to get payment.\n";
+            $payment = edd_get_payment($order_id);
+            if (!$payment) {
+                echo "Debugging: Payment not found for ID: {$order_id}\n";
+                return false;
+            }
+            $order_email = !empty($payment->email) ? sanitize_email($payment->email) : '';
+            echo "Debugging: Found order email (2.x): {$order_email}\n";
+        } else {
+            // EDD not available
+            echo "Debugging: EDD core functions not found.\n";
+            return false;
+        }
+
+        // Compare email case-insensitively
+        $comparison_result = strcasecmp($order_email, $email) === 0;
+        echo "Debugging: Comparing emails '{$order_email}' and '{$email}'. Result: " . ($comparison_result ? 'Match' : 'No Match') . "\n";
+        return $comparison_result;
+    }
+
+    /**
+     * Transitions subscribers between campaigns based on defined rules.
      *
-     * @param string $source_campaign_name The name of the campaign to transition subscribers from.
-     * @param string $destination_campaign_name The name of the campaign to transition subscribers to.
-     * @throws \Exception If the source or destination campaign cannot be found, or for any other API/database error.
+     * This function handles the logic for moving subscribers from a source campaign to a destination campaign.
+     * It iterates through a set of predefined transition rules, identifies subscribers that meet the criteria
+     * (e.g., a purchase has been made), and moves them to the appropriate group in the destination campaign.
+     * The process includes validating campaign and group existence, retrieving subscribers, filtering them based on rules,
+     * performing a bulk import to the new group, and logging the transition for tracking purposes.
+     *
+     * @param string $source_campaign_name The name of the source campaign to transition subscribers from.
+     * @param string $destination_campaign_name The name of the destination campaign to transition subscribers to.
+     *
+     * @return void
      */
     public function transition_campaigns(string $source_campaign_name, string $destination_campaign_name)
     {
-
         try {
-            // Get transition rules from options. If none exist, log and exit.
+            // Retrieve transition rules from the options table.
             $transition_rules = get_option('bema_crm_transition_matrix', []);
-            $this->logger->info("transition_campaigns called", [
-                'source' => $source_campaign_name,
-                'destination' => $destination_campaign_name,
-                'rules_count' => count($transition_rules)
-            ]);
-
             if (empty($transition_rules)) {
-                $this->logger->warning('Transition rules are not defined - no transitions will be processed');
+                $this->logger->info('Transition rules are not defined.', 'info');
                 return;
             }
 
-            // Retrieve source campaign details from the database.
+            // Get the source campaign details by name.
             $source_campaign = $this->campaign_database->get_campaign_by_name($source_campaign_name);
             if (!$source_campaign) {
-                throw new \Exception("Source campaign '{$source_campaign_name}' not found.");
+                throw new Exception("Source campaign '{$source_campaign_name}' not found.");
             }
             $source_campaign_id = $source_campaign['id'];
 
-            // Retrieve destination campaign details from the database.
+            // Get the destination campaign details by name.
             $destination_campaign = $this->campaign_database->get_campaign_by_name($destination_campaign_name);
             if (!$destination_campaign) {
-                throw new \Exception("Destination campaign '{$destination_campaign_name}' not found.");
+                throw new Exception("Destination campaign '{$destination_campaign_name}' not found.");
             }
             $destination_campaign_id = $destination_campaign['id'];
 
-            $transferred_subscribers_count = 0;
-
-            // Log the transition in the database with error checking
-            $transition_id = $this->transition_database->insert_record($source_campaign_id, $destination_campaign_id, "Pending/Incomplete", $transferred_subscribers_count);
-
-            if (!$transition_id) {
-                throw new \Exception("Failed to create transition record in database");
-            }
-
-            // Start database transaction for data consistency
-            $this->dbManager->beginTransactionWithRetry(self::TRANSACTION_TIMEOUT);
-
+            // Record the transition in the database for historical tracking.
+            $transition_id = $this->transition_database->insert_record($source_campaign_id, $destination_campaign_id, "Complete", 0);
+            
+            // Total count of subscribers transferred.
+            $transfer_count = 0;
+            
             // Iterate through each defined transition rule.
-            foreach ($transition_rules as $rule) {
+            foreach ($transition_rules as $index => $rule) {
+                // Normalize the current tier name for consistent group naming.
                 $normalize_current_tier = strtoupper(str_replace(' ', '_', $rule['current_tier']));
-                // Fix field name construction - ensure consistent lowercase format
-                $source_purchase_field = strtolower($source_campaign_name . '_purchase');
+                $normalize_next_tier = strtoupper(str_replace(' ', '_', $rule['next_tier']));
 
-                // Find the source group by name.
+                // Construct the name of the custom field used to track purchases.
+                $source_purchase_field = strtolower($source_campaign_name . '_' . 'PURCHASE');
+
+                // Find the source group based on the campaign name and tier.
                 $source_group_name = $source_campaign_name . '_' . $normalize_current_tier;
                 $source_campaign_group = $this->group_database->get_group_by_name($source_group_name);
+
                 if (!$source_campaign_group) {
-                    $this->logger->warning("Source group '{$source_group_name}' not found. Skipping.");
-                    continue;
+                    $this->logger->log("Source group '{$source_group_name}' not found. Skipping.", 'warning');
+                    continue; // Skip this rule if the source group doesn't exist.
                 }
                 $source_campaign_group_id = $source_campaign_group['id'];
 
-                // Find the destination group by name.
-                $destination_group_name = $destination_campaign_name . '_' . $normalize_current_tier;
+                // Find the corresponding destination group.
+                $destination_group_name = $destination_campaign_name . '_' . $normalize_next_tier;
                 $destination_campaign_group = $this->group_database->get_group_by_name($destination_group_name);
 
                 if (!$destination_campaign_group) {
-                    $this->logger->warning("Destination group '{$destination_group_name}' not found. Skipping.");
-                    continue;
+                    $this->logger->log("Destination group '{$destination_group_name}' not found. Skipping.", 'warning');
+                    continue; // Skip this rule if the destination group doesn't exist.
                 }
 
                 $destination_campaign_group_id = $destination_campaign_group['id'];
 
-                // Get all subscribers from the source campaign group.
+                // Retrieve all subscribers from the source group.
                 $source_campaign_subscribers = $this->mailerLiteInstance->getGroupSubscribers($source_campaign_group_id);
 
-                // If no subscribers are found, log and move to the next rule.
                 if (empty($source_campaign_subscribers)) {
-                    $this->logger->info("No subscribers found in group '{$source_group_name}'. Skipping.");
-                    continue;
+                    $this->logger->log("No subscribers found in group '{$source_group_name}'. Skipping.", 'info');
+                    continue; // Skip if there are no subscribers to process.
                 }
 
                 $subscribers_to_transfer = [];
-                // Check if the transition rule requires a purchase.
-                if ($rule['requires_purchase']) {
-                    // Filter subscribers who have a valid purchase ID.
+                // Check if the rule requires a purchase for transition.
+                if (!empty($rule['requires_purchase'])) {
+                    // Filter subscribers based on the purchase field.
                     foreach ($source_campaign_subscribers as $subscriber) {
-
-                        // Check if the purchase field exists and its value is valid.
-                        if (isset($subscriber['fields'][$source_purchase_field]) && isset($subscriber['email'])) {
+                        $field_value = $subscriber['fields'][$source_purchase_field] ?? null;
+                        if ($field_value) {
+                            $is_valid_purchase = false;
                             try {
-                                $order_id = (int) $subscriber['fields'][$source_purchase_field];
-                                if ($this->validate_edd_order_and_customer($order_id, $subscriber['email'])) {
-                                    $subscribers_to_transfer[] = $subscriber;
-                                }
-                            } catch (\Exception $e) {
-                                $this->logger->warning("Validation failed for subscriber {$subscriber['email']}: " . $e->getMessage());
+                                // Validate the purchase using an external system (e.g., EDD).
+                                $is_valid_purchase = $this->validate_edd_order_and_customer($field_value, $subscriber['email']);
+                            } catch (Exception $ve) {
+                                // Suppress validation errors to continue processing.
+                                $this->logger->log("Validation error for subscriber '{$subscriber['email']}'", 'warning', ['error' => $ve->getMessage()]);
+                            }
+                            if ($is_valid_purchase) {
+                                $subscribers_to_transfer[] = $subscriber; // Add subscriber to the transfer list.
                             }
                         }
                     }
                 } else {
-                    // If no purchase is required, transfer all subscribers.
+                    // If no purchase is required, all subscribers are eligible for transfer.
                     $subscribers_to_transfer = $source_campaign_subscribers;
                 }
 
-                // If no subscribers meet the criteria, log and skip.
+                $transfer_count += count($subscribers_to_transfer);
+
                 if (empty($subscribers_to_transfer)) {
-                    $this->logger->info("No subscribers to transfer for group '{$source_group_name}' based on rules.");
-                    continue;
+                    $this->logger->log("No subscribers to transfer for group '{$source_group_name}' based on rules.", 'info');
+                    continue; // Skip if no subscribers meet the transfer criteria.
                 }
 
-                // Perform the bulk import of subscribers to the new group with error checking
-                $import_result = $this->mailerLiteInstance->importBulkSubscribersToGroup($subscribers_to_transfer, $destination_campaign_group_id);
-
-                if (!$import_result) {
-                    $this->logger->error("Failed to import subscribers to MailerLite group", [
-                        'source_group' => $source_group_name,
-                        'destination_group' => $destination_group_name,
-                        'subscriber_count' => count($subscribers_to_transfer)
-                    ]);
-                    // Continue with next rule instead of failing completely
-                    continue;
+                try {
+                    // Perform a bulk import of eligible subscribers to the destination group.
+                    $this->mailerLiteInstance->importBulkSubscribersToGroup($subscribers_to_transfer, $destination_campaign_group_id);
+                } catch (Exception $e) {
+                    // Log any errors that occur during the bulk import.
+                    $this->logger->info('Bulk import error', 'error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
                 }
 
-                // Update the count of transferred subscribers.
-                $transferred_subscribers_count += count($subscribers_to_transfer);
-
-                // Bulk upsert the transitioned subscribers into the transition subscribers table.
-                $bulk_upsert_result = $this->transition_subscribers_database->bulk_upsert($subscribers_to_transfer, $transition_id);
-
-                if (!$bulk_upsert_result) {
-                    $this->logger->warning("Failed to record transition subscribers in database", [
-                        'transition_id' => $transition_id,
-                        'subscriber_count' => count($subscribers_to_transfer)
-                    ]);
-                }
-
-                $this->logger->info("Successfully transferred subscribers", [
-                    'source_group' => $source_group_name,
-                    'destination_group' => $destination_group_name,
-                    'transferred_count' => count($subscribers_to_transfer)
-                ]);
+                // Store the transferred subscribers for the transition record.
+                $this->transition_subscribers_database->bulk_upsert($subscribers_to_transfer, $transition_id);
             }
 
-            // Commit the transaction
-            $this->dbManager->commit();
+            // Record the transition in the database for historical tracking.
+            $this->transition_database->upsert_record($transition_id, "Complete", $transfer_count);
 
-            // Update the transition record to "Complete" status with final subscriber count
-            $update_success = $this->transition_database->upsert_record($transition_id, "Complete", $transferred_subscribers_count);
-
-            if (!$update_success) {
-                $this->logger->warning('Failed to update transition record to Complete status', [
-                    'transition_id' => $transition_id,
-                    'transferred_count' => $transferred_subscribers_count
-                ]);
-            }
-
-            $this->logger->info('Campaign transition completed successfully', [
-                'source_campaign' => $source_campaign_name,
-                'destination_campaign' => $destination_campaign_name,
-                'total_transferred' => $transferred_subscribers_count,
-                'transition_id' => $transition_id
-            ]);
-
-        } catch (\Exception $e) {
-            // Rollback transaction on error
-            if (isset($this->dbManager)) {
-                $this->dbManager->rollback();
-            }
-
-            // Update transition record to failed status if we have a transition_id
-            if (isset($transition_id) && $transition_id) {
-                $this->transition_database->upsert_record($transition_id, "Failed", $transferred_subscribers_count ?? 0);
-            }
-
-            // Log the error with details
-            $this->logger->error('Error transitioning campaigns', [
-                'source_campaign' => $source_campaign_name,
-                'destination_campaign' => $destination_campaign_name,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'transferred_count' => $transferred_subscribers_count ?? 0
-            ]);
-
-            throw $e;
+        } catch (Exception $e) {
+            // Catch and log any global exceptions that occur during the function execution.
+            $this->logger->info('Error transitioning campaigns', 'error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         }
-    }
-
-    /**
-     * Updates the synchronization status in the database.
-     *
-     * This private helper method standardizes the process of updating the sync status
-     * and providing a consistent message, percentage, and completed task count.
-     *
-     * @param string $state The current state of the sync (e.g., 'Running', 'Completed', 'Idle').
-     * @param string $message A human-readable message describing the current step.
-     * @param int $completed_tasks The number of tasks completed so far.
-     * @param int $total_tasks The total number of tasks in the sync process.
-     * @param string $option_key The database key for the sync status option.
-     * @param int|null $subscribers_count Optional. The total number of subscribers fetched.
-     * @return void
-     */
-    private function update_sync_status(string $state, string $message, int $completed_tasks, int $total_tasks, string $option_key, ?int $subscribers_count = null): void
-    {
-        $sync_state = get_option($option_key, []);
-        $sync_state['state'] = $state;
-        $sync_state['completed_tasks'] = $completed_tasks;
-        $sync_state['total_tasks'] = $total_tasks;
-        $sync_state['percentage'] = round(($completed_tasks / $total_tasks) * 100);
-        $sync_state['status_message'] = $message;
-        $sync_state['last_sync_time'] = date('F j, Y g:i A', strtotime(current_time('mysql')));
-
-        if ($subscribers_count !== null) {
-            $sync_state['total_subscribers'] = $subscribers_count;
-        }
-        update_option($option_key, $sync_state);
-    }
-
-    /**
-     * Extracts the purchase ID from a subscriber's fields based on the campaign name.
-     *
-     * @param array $subscriber The subscriber data array from the MailerLite API.
-     * @param string $campaign_name The name of the campaign.
-     * @return string|null The purchase ID string or null if not found.
-     */
-    private function get_purchase_id_from_subscriber(array $subscriber, string $campaign_name): ?string
-    {
-        $purchase_field = strtolower($campaign_name . '_PURCHASE');
-        return $subscriber['fields'][$purchase_field] ?? null;
     }
 
     /**
@@ -4185,7 +4138,7 @@ class EM_Sync
     public function validate_group_data_in_database(): array
     {
         $this->logger->info('Starting group data validation against MailerLite');
-        
+
         $validation_results = [
             'status' => 'success',
             'total_db_groups' => 0,
@@ -4199,7 +4152,7 @@ class EM_Sync
             // Fetch all groups from MailerLite with ID as key
             $this->logger->debug('Fetching groups from MailerLite API');
             $mailerlite_groups_map = $this->mailerLiteInstance->getAllGroupsIdMap();
-            
+
             if (!is_array($mailerlite_groups_map)) {
                 throw new Exception('Failed to fetch groups from MailerLite or invalid response format');
             }
@@ -4212,13 +4165,13 @@ class EM_Sync
             // Fetch all groups from local database
             $this->logger->debug('Fetching groups from local database');
             $database_groups = $this->group_database->get_all_groups();
-            
+
             if (!is_array($database_groups)) {
                 throw new Exception('Failed to fetch groups from local database');
             }
 
             $validation_results['total_db_groups'] = count($database_groups);
-            
+
             $this->logger->info('Database groups fetched', [
                 'database_groups_count' => count($database_groups),
                 'group_ids' => array_column($database_groups, 'id')
@@ -4231,10 +4184,10 @@ class EM_Sync
             foreach ($database_groups as $db_group) {
                 $group_id = $db_group['id'];
                 $group_name = $db_group['group_name'];
-                
+
                 // Convert group ID to uppercase string for comparison (as getAllGroupsIdMap uses uppercase keys)
-                $group_id_key = strtoupper((string)$group_id);
-                
+                $group_id_key = strtoupper((string) $group_id);
+
                 $this->logger->debug('Validating group', [
                     'group_id' => $group_id,
                     'group_name' => $group_name,
@@ -4245,7 +4198,7 @@ class EM_Sync
                 if (isset($mailerlite_groups_map[$group_id_key])) {
                     // Group exists in MailerLite, mark as validated
                     $validation_results['validated_groups']++;
-                    
+
                     $this->logger->debug('Group validated - exists in MailerLite', [
                         'group_id' => $group_id,
                         'group_name' => $group_name
@@ -4259,11 +4212,11 @@ class EM_Sync
 
                     try {
                         $deleted_rows = $this->group_database->delete_group_by_id($group_id);
-                        
+
                         if ($deleted_rows !== false && $deleted_rows > 0) {
                             $validation_results['deleted_groups']++;
                             $validation_results['deleted_group_ids'][] = $group_id;
-                            
+
                             $this->logger->info('Group successfully deleted from database', [
                                 'group_id' => $group_id,
                                 'group_name' => $group_name,

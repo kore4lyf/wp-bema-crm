@@ -12,24 +12,23 @@ if (!defined('ABSPATH')) {
 define('IDLE', 'Idle');
 define('RUNNING', 'Running');
 define('COMPLETE', 'Complete');
+define('SYNC_CRON_JOB', 'bema_crm_sync_cron_job');
 
 // Option Key
 $sync_option_key = 'bema_crm_sync_status';
 
 // Ensure DB Manager Available
-$this->sync_db_manager = new \Bema\Database\Sync_Database_Manager();
+$sync_db_manager = new \Bema\Database\Sync_Database_Manager();
 
-if (wp_next_scheduled('bema_crm_sync_cron_job')) {
-    echo '<div class="notice notice-success"><p>bema_crm_sync_cron_job has already been started.</p></div>';
-} else {
-    echo '<div class="notice notice-success"><p>bema_crm_sync_cron_job is not active.</p></div>';
-}
+$sync_state = get_option($sync_option_key, []);
+$sync_state['status'] = COMPLETE;
+update_option($sync_option_key, $sync_state);
 
 // Helper to Trigger Immediate Sync
 function trigger_immediate_sync()
 {
-    if (!wp_next_scheduled('bema_crm_sync_cron_job')) {
-        wp_schedule_single_event(time(), 'bema_crm_sync_cron_job');
+    if (!wp_next_scheduled(SYNC_CRON_JOB)) {
+        wp_schedule_single_event(time(), SYNC_CRON_JOB);
     }
 }
 
@@ -77,6 +76,8 @@ if (isset($_POST['start_sync'])) {
         ];
         update_option($sync_option_key, $sync_state);
 
+        wp_clear_scheduled_hook( SYNC_CRON_JOB );
+
         // Trigger the actual immediate sync process
         trigger_immediate_sync();
     } else {
@@ -89,7 +90,7 @@ if (isset($_POST['start_sync'])) {
 if (isset($_POST['action']) && $_POST['action'] === 'view_sync_record' && isset($_POST['id'])) {
 
     $record_id = intval($_POST['id']);
-    $sync_record = $this->sync_db_manager->get_sync_record_by_id($record_id);
+    $sync_record = $sync_db_manager->get_sync_record_by_id($record_id);
 
     $response = ['success' => false];
     if ($sync_record) {
@@ -120,7 +121,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'view_sync_record' && isset(
 $current_status = get_option($sync_option_key, []);
 
 // Load Sync History
-$sync_history = $this->sync_db_manager->get_sync_records_without_data();
+$sync_history = $sync_db_manager->get_sync_records_without_data();
 
 
 ?>
@@ -133,8 +134,7 @@ $sync_history = $this->sync_db_manager->get_sync_records_without_data();
             <div class="label">Controls</div>
             <div class="status-gap"></div>
             <form method="post">
-                <input type="submit" name="start_sync" class="button button-primary"
-                    value="Start Sync"
+                <input type="submit" name="start_sync" class="button button-primary" value="Start Sync"
                     <?php echo (isset($current_status['status']) && $current_status['status'] === RUNNING) ? 'disabled' : ''; ?> />
                 <input type="submit" name="view_status" class="button button-secondary" value="View Sync Status" />
             </form>

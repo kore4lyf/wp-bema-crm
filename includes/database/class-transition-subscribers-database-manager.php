@@ -50,6 +50,7 @@ class Transition_Subscribers_Database_Manager
                 transition_id BIGINT UNSIGNED NOT NULL,
                 subscriber_id BIGINT UNSIGNED NOT NULL,
                 PRIMARY KEY (id),
+                UNIQUE KEY unique_transition_subscriber (transition_id, subscriber_id),
                 KEY transition_key (transition_id),
                 KEY subscriber_key (subscriber_id),
                 CONSTRAINT fk_transition FOREIGN KEY (transition_id) REFERENCES {$this->transitions_table}(id) ON DELETE CASCADE,
@@ -166,26 +167,35 @@ class Transition_Subscribers_Database_Manager
 
             $column_names = 'transition_id, subscriber_id';
 
-            foreach ($records as $record) {
-                if ((isset($record['transition_id']) || !empty($transition_id)) && isset($record['subscriber_id'])) {
-                    $values[] = !empty($transition_id) ? $transition_id : absint($record['transition_id']);
-                    $values[] = absint($record['id']);
+            foreach ($records as $index => $record) {
+                if ((isset($record['transition_id']) || !empty($transition_id)) && isset($record['id'])) {
+                    $val_transition = !empty($transition_id) ? $transition_id : absint($record['transition_id']);
+                    $val_subscriber = absint($record['id']);
+
+                    $values[] = $val_transition;
+                    $values[] = $val_subscriber;
                     $placeholders[] = "(%d, %d)";
                 }
             }
 
             if (empty($placeholders)) {
+                $this->logger->error('Transition_Subscribers_Database_Manager: No valid records to insert in bulk_upsert');
                 return false;
             }
 
-            $query = "INSERT INTO {$this->table_name} ($column_names) VALUES " . implode(', ', $placeholders) . " ON DUPLICATE KEY UPDATE id=id";
-            $sql = $this->wpdb->prepare($query, $values);
-            $this->wpdb->query($sql);
+            $query = "INSERT INTO {$this->table_name} ($column_names) VALUES " . implode(', ', $placeholders) . " ON DUPLICATE KEY UPDATE transition_id=VALUES(transition_id), subscriber_id=VALUES(subscriber_id)";
 
-            if ($this->wpdb->last_error) {
+            // Prepare SQL safely: call_user_func_array used so array of values is expanded for prepare
+            $prepare_args = array_merge([$query], $values);
+            $sql = call_user_func_array([$this->wpdb, 'prepare'], $prepare_args);
+
+            $result = $this->wpdb->query($sql);
+
+            if (!empty($this->wpdb->last_error)) {
                 throw new Exception("Bulk upsert failed: " . $this->wpdb->last_error);
             }
 
+            $this->logger->info("Transition_Subscribers_Database_Manager: Successfully bulk upserted {$result} records");
             return true;
         } catch (Exception $e) {
             $this->logger->error('Transition_Subscribers_Database_Manager Error: ' . $e->getMessage());
