@@ -3422,6 +3422,9 @@ class EM_Sync
             }
 
             $this->logger->info('MailerLite group data sync completed successfully');
+            
+            // Remove Groups that don't exist anymore on MailerLite.
+            $this->validate_group_data_in_database();
             return true;
         } catch (Exception $e) {
             // Log any exceptions that occur during the sync process.
@@ -3936,22 +3939,35 @@ class EM_Sync
 
     /**
      * Validate an EDD customer order by ID and email.
-     * Compatible with both EDD 2.x (edd_payment) and 3.x+ (edd_get_order).
      *
-     * @param int    $order_id The EDD order ID (required).
-     * @param string $email    The customer's email address (required).
+     * Maintain the original logic: sanitize inputs, detect EDD version,
+     * fetch order/payment, and compare emails case-insensitively.
+     *
+     * @param int    $order_id The EDD order ID (required).
+     * @param string $email    The customer's email address (required).
      * @return bool True if valid match, false otherwise.
      */
-    function validate_edd_order_and_customer(int $order_id, string $email): bool
+    public function validate_edd_order_and_customer(int $order_id, string $email): bool
     {
         // Sanitize inputs
-        echo "Debugging: Starting validation for Order ID: {$order_id} and Email: {$email}\n";
+        $this->logger->debug('Starting EDD order/customer validation', [
+            'order_id_raw' => $order_id,
+            'email_raw'    => $email,
+        ]);
+
         $order_id = absint($order_id);
-        $email = sanitize_email($email);
-        echo "Debugging: Sanitized Order ID: {$order_id} and Sanitized Email: {$email}\n";
+        $email    = sanitize_email($email);
+
+        $this->logger->debug('Sanitized inputs', [
+            'order_id' => $order_id,
+            'email'    => $email,
+        ]);
 
         if ($order_id <= 0 || empty($email)) {
-            echo "Debugging: Invalid input. Order ID is not positive or email is empty.\n";
+            $this->logger->warning('Invalid input for EDD validation: non-positive order_id or empty email', [
+                'order_id' => $order_id,
+                'email'    => $email,
+            ]);
             return false;
         }
 
@@ -3959,34 +3975,55 @@ class EM_Sync
 
         // EDD 3.x and newer
         if (function_exists('edd_get_order')) {
-            echo "Debugging: EDD 3.x detected. Attempting to get order.\n";
+            $this->logger->debug('EDD 3.x detected, attempting to fetch order', [
+                'order_id' => $order_id,
+            ]);
+
             $order = edd_get_order($order_id);
             if (!$order) {
-                echo "Debugging: Order not found for ID: {$order_id}\n";
+                $this->logger->warning('EDD 3.x: Order not found', [
+                    'order_id' => (int) $order_id,
+                ]);
                 return false;
             }
+
             $order_email = !empty($order->email) ? sanitize_email($order->email) : '';
-            echo "Debugging: Found order email (3.x): {$order_email}\n";
+            $this->logger->debug('EDD 3.x: Retrieved order email', [
+                'order_email' => $order_email,
+            ]);
         }
         // EDD 2.x (legacy)
         elseif (function_exists('edd_get_payment')) {
-            echo "Debugging: EDD 2.x detected. Attempting to get payment.\n";
+            $this->logger->debug('EDD 2.x detected, attempting to fetch payment', [
+                'order_id' => $order_id,
+            ]);
+
             $payment = edd_get_payment($order_id);
             if (!$payment) {
-                echo "Debugging: Payment not found for ID: {$order_id}\n";
+                $this->logger->warning('EDD 2.x: Payment not found', [
+                    'order_id' => (int) $order_id,
+                ]);
                 return false;
             }
+
             $order_email = !empty($payment->email) ? sanitize_email($payment->email) : '';
-            echo "Debugging: Found order email (2.x): {$order_email}\n";
+            $this->logger->debug('EDD 2.x: Retrieved order email', [
+                'order_email' => $order_email,
+            ]);
         } else {
             // EDD not available
-            echo "Debugging: EDD core functions not found.\n";
+            $this->logger->error('EDD core functions not found: neither edd_get_order nor edd_get_payment exists');
             return false;
         }
 
         // Compare email case-insensitively
         $comparison_result = strcasecmp($order_email, $email) === 0;
-        echo "Debugging: Comparing emails '{$order_email}' and '{$email}'. Result: " . ($comparison_result ? 'Match' : 'No Match') . "\n";
+        $this->logger->debug('Compared emails for match', [
+            'order_email'       => $order_email,
+            'provided_email'    => $email,
+            'comparison_result' => $comparison_result ? 'match' : 'no_match',
+        ]);
+
         return $comparison_result;
     }
 
@@ -4008,43 +4045,35 @@ class EM_Sync
     {
         try {
             // Retrieve transition rules from the options table.
-            $transition_rules = get_option('bema_crm_transition_matrix', []);
+            $transition_rules = $this->getTransitionRules();
             if (empty($transition_rules)) {
                 $this->logger->info('Transition rules are not defined.', 'info');
                 return;
             }
 
             // Get the source campaign details by name.
-            $source_campaign = $this->campaign_database->get_campaign_by_name($source_campaign_name);
-            if (!$source_campaign) {
-                throw new Exception("Source campaign '{$source_campaign_name}' not found.");
-            }
-            $source_campaign_id = $source_campaign['id'];
+            $source_campaign_id = $this->getCampaignIdByNameOrFail($source_campaign_name, true);
 
             // Get the destination campaign details by name.
-            $destination_campaign = $this->campaign_database->get_campaign_by_name($destination_campaign_name);
-            if (!$destination_campaign) {
-                throw new Exception("Destination campaign '{$destination_campaign_name}' not found.");
-            }
-            $destination_campaign_id = $destination_campaign['id'];
+            $destination_campaign_id = $this->getCampaignIdByNameOrFail($destination_campaign_name, false);
 
             // Record the transition in the database for historical tracking.
             $transition_id = $this->transition_database->insert_record($source_campaign_id, $destination_campaign_id, "Complete", 0);
-            
+
             // Total count of subscribers transferred.
             $transfer_count = 0;
-            
+
             // Iterate through each defined transition rule.
             foreach ($transition_rules as $index => $rule) {
                 // Normalize the current tier name for consistent group naming.
-                $normalize_current_tier = strtoupper(str_replace(' ', '_', $rule['current_tier']));
-                $normalize_next_tier = strtoupper(str_replace(' ', '_', $rule['next_tier']));
+                $normalize_current_tier = $this->normalizeTierName($rule['current_tier']);
+                $normalize_next_tier = $this->normalizeTierName($rule['next_tier']);
 
                 // Construct the name of the custom field used to track purchases.
-                $source_purchase_field = strtolower($source_campaign_name . '_' . 'PURCHASE');
+                $source_purchase_field = $this->buildSourcePurchaseFieldName($source_campaign_name);
 
                 // Find the source group based on the campaign name and tier.
-                $source_group_name = $source_campaign_name . '_' . $normalize_current_tier;
+                $source_group_name = $this->buildGroupName($source_campaign_name, $normalize_current_tier);
                 $source_campaign_group = $this->group_database->get_group_by_name($source_group_name);
 
                 if (!$source_campaign_group) {
@@ -4054,7 +4083,7 @@ class EM_Sync
                 $source_campaign_group_id = $source_campaign_group['id'];
 
                 // Find the corresponding destination group.
-                $destination_group_name = $destination_campaign_name . '_' . $normalize_next_tier;
+                $destination_group_name = $this->buildGroupName($destination_campaign_name, $normalize_next_tier);
                 $destination_campaign_group = $this->group_database->get_group_by_name($destination_group_name);
 
                 if (!$destination_campaign_group) {
@@ -4072,31 +4101,10 @@ class EM_Sync
                     continue; // Skip if there are no subscribers to process.
                 }
 
-                $subscribers_to_transfer = [];
-                // Check if the rule requires a purchase for transition.
-                if (!empty($rule['requires_purchase'])) {
-                    // Filter subscribers based on the purchase field.
-                    foreach ($source_campaign_subscribers as $subscriber) {
-                        $field_value = $subscriber['fields'][$source_purchase_field] ?? null;
-                        if ($field_value) {
-                            $is_valid_purchase = false;
-                            try {
-                                // Validate the purchase using an external system (e.g., EDD).
-                                $is_valid_purchase = $this->validate_edd_order_and_customer($field_value, $subscriber['email']);
-                            } catch (Exception $ve) {
-                                // Suppress validation errors to continue processing.
-                                $this->logger->log("Validation error for subscriber '{$subscriber['email']}'", 'warning', ['error' => $ve->getMessage()]);
-                            }
-                            if ($is_valid_purchase) {
-                                $subscribers_to_transfer[] = $subscriber; // Add subscriber to the transfer list.
-                            }
-                        }
-                    }
-                } else {
-                    // If no purchase is required, all subscribers are eligible for transfer.
-                    $subscribers_to_transfer = $source_campaign_subscribers;
-                }
+                // Determine eligible subscribers using the exact original logic.
+                $subscribers_to_transfer = $this->determineEligibleSubscribers($source_campaign_subscribers, $rule, $source_purchase_field);
 
+                // Keep exact logic: increment transfer count before emptiness check
                 $transfer_count += count($subscribers_to_transfer);
 
                 if (empty($subscribers_to_transfer)) {
@@ -4124,6 +4132,70 @@ class EM_Sync
             $this->logger->info('Error transitioning campaigns', 'error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         }
     }
+
+    // ===============  Helper methods (logic-preserving modularization) ===============
+
+    private function getTransitionRules(): array
+    {
+        return get_option('bema_crm_transition_matrix', []);
+    }
+
+    private function getCampaignIdByNameOrFail(string $campaign_name, bool $isSource): int
+    {
+        $campaign = $this->campaign_database->get_campaign_by_name($campaign_name);
+        if (!$campaign) {
+            if ($isSource) {
+                throw new Exception("Source campaign '{$campaign_name}' not found.");
+            }
+            throw new Exception("Destination campaign '{$campaign_name}' not found.");
+        }
+        return $campaign['id'];
+    }
+
+    private function normalizeTierName(string $tier): string
+    {
+        return strtoupper(str_replace(' ', '_', $tier));
+    }
+
+    private function buildSourcePurchaseFieldName(string $source_campaign_name): string
+    {
+        return strtolower($source_campaign_name . '_' . 'PURCHASE');
+    }
+
+    private function buildGroupName(string $campaign_name, string $normalized_tier): string
+    {
+        return $campaign_name . '_' . $normalized_tier;
+    }
+
+    private function determineEligibleSubscribers(array $source_campaign_subscribers, array $rule, string $source_purchase_field): array
+    {
+        $subscribers_to_transfer = [];
+        // Check if the rule requires a purchase for transition.
+        if (!empty($rule['requires_purchase'])) {
+            // Filter subscribers based on the purchase field.
+            foreach ($source_campaign_subscribers as $subscriber) {
+                $field_value = $subscriber['fields'][$source_purchase_field] ?? null;
+                if ($field_value) {
+                    $is_valid_purchase = false;
+                    try {
+                        // Validate the purchase using an external system (e.g., EDD).
+                        $is_valid_purchase = $this->validate_edd_order_and_customer($field_value, $subscriber['email']);
+                    } catch (Exception $ve) {
+                        // Suppress validation errors to continue processing.
+                        $this->logger->log("Validation error for subscriber '{$subscriber['email']}'", 'warning', ['error' => $ve->getMessage()]);
+                    }
+                    if ($is_valid_purchase) {
+                        $subscribers_to_transfer[] = $subscriber; // Add subscriber to the transfer list.
+                    }
+                }
+            }
+        } else {
+            // If no purchase is required, all subscribers are eligible for transfer.
+            $subscribers_to_transfer = $source_campaign_subscribers;
+        }
+        return $subscribers_to_transfer;
+    }
+
 
     /**
      * Validates group data in the database against MailerLite groups.

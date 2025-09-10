@@ -15,7 +15,8 @@ $transition_history = $transition_database->get_all_records();
 /**
  * Handles the form submission for campaign transition.
  */
-function handle_campaign_transition($sync_instance) {
+function handle_campaign_transition($sync_instance)
+{
 
     // Retrieve the values from the select options
     $source_campaign = isset($_POST['source_campaign']) ? sanitize_text_field($_POST['source_campaign']) : '';
@@ -36,7 +37,7 @@ if (isset($_POST['submit_transition_button'])) {
     <p>Initiate a transition from an old campaign to a new one.</p>
 
     <form method="post">
-        <?php wp_nonce_field( 'campaign_transition_nonce' ); ?>
+        <?php wp_nonce_field('campaign_transition_nonce'); ?>
         <input type="hidden" name="action" value="campaign_transition_action">
 
         <table class="form-table">
@@ -46,8 +47,9 @@ if (isset($_POST['submit_transition_button'])) {
                     <td>
                         <select name="source_campaign" id="source_campaign" class="regular-text">
                             <option value="">Campaign</option>
-                            <?php foreach ( $available_campaigns as $campaign ) : ?>
-                                <option value="<?php echo esc_attr( $campaign['campaign'] ); ?>"><?php echo esc_html( $campaign['campaign'] ); ?></option>
+                            <?php foreach ($available_campaigns as $campaign): ?>
+                                <option value="<?php echo esc_attr($campaign['campaign']); ?>">
+                                    <?php echo esc_html($campaign['campaign']); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </td>
@@ -57,8 +59,9 @@ if (isset($_POST['submit_transition_button'])) {
                     <td>
                         <select name="destination_campaign" id="destination_campaign" class="regular-text">
                             <option value="">Campaign</option>
-                            <?php foreach ( $available_campaigns as $campaign ) : ?>
-                                <option value="<?php echo esc_attr( $campaign['campaign'] ); ?>"><?php echo esc_html( $campaign['campaign'] ); ?></option>
+                            <?php foreach ($available_campaigns as $campaign): ?>
+                                <option value="<?php echo esc_attr($campaign['campaign']); ?>">
+                                    <?php echo esc_html($campaign['campaign']); ?></option>
                             <?php endforeach; ?>
                         </select>
                     </td>
@@ -87,17 +90,27 @@ if (isset($_POST['submit_transition_button'])) {
             </tr>
         </thead>
         <tbody>
-            <?php if ( ! empty( $transition_history ) ) : ?>
-                <?php foreach ( $transition_history as $row ) : ?>
+            <?php if (!empty($transition_history)): ?>
+                <?php foreach ($transition_history as $row): ?>
                     <tr>
-                        <td><?php echo esc_html( $row['source'] ); ?></td>
-                        <td><?php echo esc_html( $row['destination'] ); ?></td>
-                        <td><?php echo esc_html( $row['subscribers'] ); ?></td>
-                        <td><?php echo esc_html( $row['status'] ); ?></td>
-                        <td><?php echo esc_html( $row['transition_date'] ); ?></td>
+                        <td><?php echo esc_html($row['source']); ?></td>
+                        <td><?php echo esc_html($row['destination']); ?></td>
+                        <td><?php echo esc_html($row['subscribers']); ?></td>
+                        <td><?php echo esc_html($row['status']); ?></td>
+                        <td><?php
+                        try {
+                            $dateString = esc_html($row['transition_date']);
+                            $dateTime = new DateTime($dateString);
+                            echo $dateTime->format('F j, Y g:i A');
+                        } catch (Exception $e) {
+                            $logger->error('ERROR converting date: ' . $e->getMessage(), $row['transition_date']);
+                            echo '—';
+                        }
+                        ?>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
-            <?php else : ?>
+            <?php else: ?>
                 <tr>
                     <td class="text-center" colspan="5">No transition history found.</td>
                 </tr>
