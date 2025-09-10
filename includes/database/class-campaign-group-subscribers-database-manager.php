@@ -174,7 +174,7 @@ class Campaign_Group_Subscribers_Database_Manager
     public function get_campaign_subscriber(int $subscriber_id, int $campaign_id): ?array
     {
         $query = $this->wpdb->prepare(
-            "SELECT T1.*, T2.campaign_name FROM {$this->table_name} AS T1
+            "SELECT T1.*, T2.campaign FROM {$this->table_name} AS T1
              LEFT JOIN {$this->campaigns_table_name} AS T2 ON T1.campaign_id = T2.id
              WHERE T1.subscriber_id = %d AND T1.campaign_id = %d LIMIT 1",
             $subscriber_id,
@@ -196,7 +196,7 @@ class Campaign_Group_Subscribers_Database_Manager
     {
         return $this->wpdb->get_results(
             $this->wpdb->prepare(
-                "SELECT T1.*, T2.campaign_name FROM {$this->table_name} AS T1
+                "SELECT T1.*, T2.campaign FROM {$this->table_name} AS T1
                  LEFT JOIN {$this->campaigns_table_name} AS T2 ON T1.campaign_id = T2.id
                  WHERE T1.subscriber_id = %d",
                 $subscriber_id
@@ -330,7 +330,7 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
             $query_values[] = absint($record['subscriber_id']);
             $query_values[] = absint($record['group_id']);
             $query_values[] = absint($record['campaign_id']);
-            $query_values[] = sanitize_text_field($record['tier'] ?? '');
+            $query_values[] = sanitize_text_field($record['subscriber_tier'] ?? '');
             $query_values[] = isset($record['purchase_id']) ? absint($record['purchase_id']) : 0;
             $valid_records_count++;
         }
@@ -394,7 +394,7 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
      */
     public function get_all_records(): array
     {
-        $query = "SELECT T1.*, T2.campaign_name FROM {$this->table_name} AS T1 LEFT JOIN {$this->campaigns_table_name} AS T2 ON T1.campaign_id = T2.id";
+        $query = "SELECT T1.*, T2.campaign FROM {$this->table_name} AS T1 LEFT JOIN {$this->campaigns_table_name} AS T2 ON T1.campaign_id = T2.id";
         $results = $this->wpdb->get_results($query, ARRAY_A);
         return $results ?: [];
     }

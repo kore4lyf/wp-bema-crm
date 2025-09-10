@@ -153,7 +153,7 @@ class Bema_CRM_Logger
         $this->config = !empty($config) ? $config : self::$default_config;
 
         // Define log directory and file paths.
-        $this->log_dir = WP_CONTENT_DIR . '/uploads/bema-crm/' . $this->identifier;
+        $this->log_dir = WP_CONTENT_DIR . '/uploads/bema-crm-logger/' . $this->identifier;
         $this->log_file = $this->log_dir . '/' . $this->identifier . '.log';
 
         // Generate correlation ID for this logger instance

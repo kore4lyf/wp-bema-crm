@@ -17,7 +17,6 @@ $transition_history = $transition_database->get_all_records();
  */
 function handle_campaign_transition($sync_instance)
 {
-
     // Retrieve the values from the select options
     $source_campaign = isset($_POST['source_campaign']) ? sanitize_text_field($_POST['source_campaign']) : '';
     $destination_campaign = isset($_POST['destination_campaign']) ? sanitize_text_field($_POST['destination_campaign']) : '';
@@ -29,6 +28,9 @@ function handle_campaign_transition($sync_instance)
 if (isset($_POST['submit_transition_button'])) {
     handle_campaign_transition($admin->sync_instance);
 }
+
+
+$this->sync_instance->sync_mailerlite_campaign_group_subscribers();
 
 ?>
 

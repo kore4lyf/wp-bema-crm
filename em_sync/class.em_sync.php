@@ -3805,6 +3805,19 @@ class EM_Sync
     }
 
     /**
+     * Extracts the purchase ID from a subscriber's fields based on the campaign name.
+     *
+     * @param array $subscriber The subscriber data array from the MailerLite API.
+     * @param string $campaign_name The name of the campaign.
+     * @return string|null The purchase ID string or null if not found.
+     */
+    private function get_purchase_id_from_subscriber(array $subscriber, string $campaign_name): ?string
+    {
+        $purchase_field = strtolower($campaign_name . '_PURCHASE');
+        return $subscriber['fields'][$purchase_field] ?? null;
+    }
+
+    /**
      * Synchronizes all MailerLite data, including campaigns, fields, groups, and subscribers.
      *
      * This method orchestrates the entire synchronization process to ensure the local database

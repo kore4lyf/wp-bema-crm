@@ -33,7 +33,7 @@ class Triggers
         $this->utils = $utils;
         $this->group_database = $group_database;
         $this->field_database = $field_database;
-        $this->logger = $logger ?? Bema_CRM_Logger::create('wordpress-triggers');
+        $this->logger = $logger ?? Bema_CRM_Logger::create('triggers');
         $this->campaign_database = new Campaign_Database_Manager();
     }
 

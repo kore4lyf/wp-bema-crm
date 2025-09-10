@@ -41,12 +41,38 @@ $total_items = $subscriber_db->count_subscribers(
 );
 
 $total_pages = max(1, (int) ceil($total_items / $per_page));
+
+echo "start - ";
+echo $_POST['bulk-action-selector-top'];
+
+function resync() {
+    // Your resync logic here
+
+    // Start here
+    // We need to map the subscriber data to checkbox
+    // such that we can loop through it and perform resycn
+    // End Here
+
+    // resync_subscribers($subscribers) Leave this for now
+    echo "HEY Can't believe I am here";
+}
+
+// Bulk actions
+if (isset($_POST['action'])) {
+  switch (sanitize_text_field($_POST['bulk-action-selector-top'])) {
+	case 'resync':
+        resync_subscribers();
+		break;
+
+  }
+}
+
 ?>
 
 <div class="wrap">
 
 	<!-- Filter Form -->
-	<form method="get" action="">
+	<form method="get">
 		<input type="hidden" name="page" value="<?php echo esc_attr($_GET['page']); ?>" />
 
 		<div class="tablenav top">
@@ -81,12 +107,12 @@ $total_pages = max(1, (int) ceil($total_items / $per_page));
 	</form>
 
 	<!-- Bulk Actions Form -->
-	<form method="post" action="">
+	<form method="post">
 		<?php wp_nonce_field('bema_crm_bulk_action', 'bema_crm_nonce'); ?>
 
 		<div class="tablenav top bulk-pagination">
 			<div class="alignleft actions bulkactions">
-				<select name="action" id="bulk-action-selector-top">
+				<select name="bulk-action" id="bulk-action-selector-top">
 					<option value="-1">Bulk actions</option>
 					<option value="resync">Resync</option>
 				</select>
@@ -142,7 +168,7 @@ $total_pages = max(1, (int) ceil($total_items / $per_page));
 					<?php endforeach; ?>
 				<?php else: ?>
 					<tr>
-						<td class="text-center" colspan="<?php echo $selected_campaign ? 6 : 4; ?>">
+						<td class="text-center" colspan="<?php echo ($selected_campaign) ? 6 : 4; ?>">
 							No subscribers found.
 						</td>
 					</tr>
