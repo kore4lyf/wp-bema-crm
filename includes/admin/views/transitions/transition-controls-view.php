@@ -30,7 +30,6 @@ if (isset($_POST['submit_transition_button'])) {
 }
 
 
-$this->sync_instance->sync_mailerlite_campaign_group_subscribers();
 
 ?>
 
@@ -100,14 +99,14 @@ $this->sync_instance->sync_mailerlite_campaign_group_subscribers();
                         <td><?php echo esc_html($row['subscribers']); ?></td>
                         <td><?php echo esc_html($row['status']); ?></td>
                         <td><?php
-                        try {
-                            $dateString = esc_html($row['transition_date']);
-                            $dateTime = new DateTime($dateString);
-                            echo $dateTime->format('F j, Y g:i A');
-                        } catch (Exception $e) {
-                            $logger->error('ERROR converting date: ' . $e->getMessage(), $row['transition_date']);
-                            echo '—';
-                        }
+try {
+$dateString = esc_html($row['transition_date']);
+$dateTime = new DateTime($dateString);
+echo $dateTime->format('F j, Y g:i A');
+} catch (Exception $e) {
+$logger->error('ERROR converting date: ' . $e->getMessage(), $row['transition_date']);
+echo '—';
+}
                         ?>
                         </td>
                     </tr>

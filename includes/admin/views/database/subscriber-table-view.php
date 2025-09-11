@@ -162,7 +162,7 @@ if (isset($_POST['action'])) {
 							<td><?php echo esc_html(ucfirst($subscriber['status'] ?? '—')); ?></td>
 							<?php if ($selected_campaign): ?>
 								<td><?php echo esc_html($subscriber['tier'] ?? '—'); ?></td>
-								<td><?php echo esc_html($subscriber['purchase_id'] ?? '—'); ?></td>
+								<td><?php echo esc_html($subscriber['purchase_id'] ?: '—'); ?></td>
 							<?php endif; ?>
 						</tr>
 					<?php endforeach; ?>

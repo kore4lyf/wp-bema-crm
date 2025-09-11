@@ -445,8 +445,10 @@ VALUES " . implode(', ', $placeholders);
         string $tier = '',
         string $search = ''
     ): array {
+        $tier = trim($tier);
+        $campaign_name = trim($campaign_name);
         // Start with the base SELECT and FROM clauses.
-        $sql_select = "SELECT s.*, c.tier, c.purchase_id, t.campaign";
+        $sql_select = "SELECT " . (empty($campaign_name) ? "*" : "s.*, c.tier, c.purchase_id, t.campaign");
         $sql_from = "FROM {$this->table_name} AS s";
 
         // Initialize WHERE clause conditions and parameters for prepared statements.
@@ -456,25 +458,25 @@ VALUES " . implode(', ', $placeholders);
         // Conditionally add INNER JOINs to access campaign and tier data.
         // Joins are only added if a campaign or tier filter is present,
         // which optimizes the query for non-filtered calls.
-        if ($campaign_name !== '' || $tier !== '') {
+        if ($campaign_name || $tier) {
             $sql_from .= " INNER JOIN {$this->wpdb->prefix}bemacrm_campaign_subscribersmeta AS c ON s.id = c.subscriber_id";
             $sql_from .= " INNER JOIN {$this->wpdb->prefix}bemacrm_campaignsmeta AS t ON c.campaign_id = t.id";
         }
 
         // Build the WHERE clause based on the provided filters.
-        if ($campaign_name !== '') {
+        if ($campaign_name) {
             // Add condition for filtering by campaign name.
             $where[] = "t.campaign = %s";
             $params[] = $campaign_name;
         }
 
-        if ($tier !== '') {
+        if ($tier) {
             // Add condition for filtering by campaign tier.
             $where[] = "c.tier = %s";
             $params[] = $tier;
         }
 
-        if ($search !== '') {
+        if ($search) {
             // Add condition for searching by email using LIKE.
             $where[] = "s.email LIKE %s";
             $params[] = '%' . $this->wpdb->esc_like($search) . '%';
@@ -517,29 +519,35 @@ VALUES " . implode(', ', $placeholders);
         $where = [];
         $params = [];
 
-        if ($campaign_name !== '') {
-            $where[] = "c.campaign = %s";
-            $params[] = $campaign_name;
+        if ($campaign_name) {
+            $where[] = "c.campaign_id = %s";
+            $campaign_id = $this->wpdb->get_var(
+                $this->wpdb->prepare(
+                    "SELECT id FROM {$this->wpdb->prefix}bemacrm_campaignsmeta WHERE campaign = %s",
+                    $campaign_name
+                )
+            );
+            $params[] = $campaign_id;
         }
 
-        if ($tier !== '') {
+        if ($tier) {
             $where[] = "c.tier = %s";
             $params[] = $tier;
         }
 
-        if ($search !== '') {
+        if ($search) {
             $where[] = "s.email LIKE %s";
             $params[] = '%' . $this->wpdb->esc_like($search) . '%';
         }
 
         $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-        if ($campaign_name !== '') {
+        if ($campaign_name) {
             $sql = $this->wpdb->prepare(
                 "SELECT COUNT(*)
              FROM {$this->table_name} AS s
              INNER JOIN {$this->wpdb->prefix}bemacrm_campaign_subscribersmeta AS c
-               ON s.id = c.id
+               ON s.id = c.subscriber_id
              {$where_sql}",
                 ...$params
             );
