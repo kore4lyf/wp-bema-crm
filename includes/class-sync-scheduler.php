@@ -138,7 +138,7 @@ class Sync_Scheduler
     public function schedule_sync(string $frequency, array $campaigns): bool
     {
         try {
-            debug_to_file([
+            $this->logger->debug([
                 'frequency' => $frequency,
                 'campaigns' => $campaigns
             ], 'SCHEDULE_SYNC');
@@ -172,7 +172,7 @@ class Sync_Scheduler
             // Schedule new event
             $scheduled = wp_schedule_event($timestamp, $frequency, $hook, [$args]);
 
-            debug_to_file([
+            $this->logger->debug([
                 'hook' => $hook,
                 'timestamp' => $timestamp,
                 'args' => $args
@@ -184,7 +184,7 @@ class Sync_Scheduler
 
             return false;
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug([
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ], 'SCHEDULE_SYNC_ERROR');
@@ -202,7 +202,7 @@ class Sync_Scheduler
             // Execute the sync
             return $this->execute_sync($campaigns);
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug([
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ], 'SYNC_START_ERROR');
@@ -224,7 +224,7 @@ class Sync_Scheduler
             set_transient($lock_key, time(), 1800);
 
             try {
-                debug_to_file([
+                $this->logger->debug([
                     'starting_sync' => true,
                     'campaigns' => $campaigns,
                     'time' => time()
@@ -249,7 +249,7 @@ class Sync_Scheduler
                     'last_sync' => current_time('mysql')
                 ], false);
 
-                debug_to_file([
+                $this->logger->debug([
                     'sync_completed' => true,
                     'result' => $result ? 'success' : 'failed',
                     'end_time' => time()
@@ -260,7 +260,7 @@ class Sync_Scheduler
                 delete_transient($lock_key);
             }
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug([
                 'sync_failed' => true,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -281,25 +281,25 @@ class Sync_Scheduler
         // Check if there's an existing sync
         $current_status = get_option('bema_sync_status', ['status' => 'idle']);
 
-        debug_to_file([
+        $this->logger->debug([
             'current_sync_status' => $current_status
         ], 'SYNC_VALIDATE');
 
         // If status is running but lock doesn't exist, clean up
         if ($current_status['status'] === 'running' && !get_transient('bema_sync_lock')) {
-            debug_to_file('Found stale running status without lock', 'SYNC_VALIDATE');
+            $this->logger->debug('Found stale running status without lock');
             $this->cleanup_existing_sync();
             return;
         }
 
         // If lock exists but status isn't running, clean up
         if (get_transient('bema_sync_lock') && $current_status['status'] !== 'running') {
-            debug_to_file('Found lock without running status', 'SYNC_VALIDATE');
+            $this->logger->debug('Found lock without running status');
             $this->cleanup_existing_sync();
             return;
         }
 
-        debug_to_file('Sync state validated', 'SYNC_VALIDATE');
+        $this->logger->debug('Sync state validated');
     }
 
     private function cleanup_existing_sync(): void
@@ -320,7 +320,7 @@ class Sync_Scheduler
             $this->cleanup_existing_schedule();
         }
 
-        debug_to_file('Cleaned up existing sync state', 'SYNC_CLEANUP');
+        $this->logger->debug('Cleaned up existing sync state');
     }
 
     /**
@@ -409,15 +409,14 @@ class Sync_Scheduler
 
             update_option('bema_sync_schedules', $schedules, false);
 
-            debug_to_file([
-                'message' => 'Schedule registered',
+            $this->logger->debug('Schedule registered', [
                 'frequency' => $frequency,
                 'next_run' => date('Y-m-d H:i:s', $schedules[$frequency]['next_run'])
-            ], 'SCHEDULE_SYNC');
+            ]);
 
             return true;
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug([
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ], 'SCHEDULE_REGISTER_ERROR');
@@ -433,7 +432,7 @@ class Sync_Scheduler
             $this->register_schedule('hourly', []);
             $this->register_schedule('daily', []);
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug([
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ], 'SCHEDULE_SETUP_ERROR');
@@ -455,7 +454,7 @@ class Sync_Scheduler
         delete_transient('bema_sync_lock');
         wp_cache_delete('bema_sync_status');
 
-        debug_to_file('Cleaned up existing sync schedule', 'SYNC_CLEANUP');
+        $this->logger->debug('Cleaned up existing sync schedule');
     }
 
     public function run_bema_crm_custom_sync($args = []): void
@@ -471,7 +470,7 @@ class Sync_Scheduler
                 throw new Exception('Sync is already in progress');
             }
 
-            debug_to_file([
+            $this->logger->debug([
                 'starting_custom_sync' => true,
                 'campaigns' => $args['campaigns'],
                 'settings' => $args['settings'] ?? []
@@ -806,7 +805,7 @@ class Sync_Scheduler
             $current_status = get_option('bema_sync_status', ['status' => 'idle']);
             $lock_age = time() - $lock_time;
 
-            debug_to_file([
+            $this->logger->debug([
                 'lock_age' => $lock_age,
                 'current_status' => $current_status,
             ], 'LOCK_CHECK');
@@ -820,7 +819,7 @@ class Sync_Scheduler
                     'error' => 'Previous sync lock cleared due to timeout'
                 ], false);
 
-                debug_to_file('Cleared stale sync lock', 'LOCK_CLEANUP');
+                $this->logger->debug('Cleared stale sync lock');
                 return true;
             }
             return false;

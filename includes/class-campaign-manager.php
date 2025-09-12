@@ -3,7 +3,7 @@
 namespace Bema;
 
 use Exception;
-use function Bema\debug_to_file;
+use Bema\Bema_CRM_Logger;
 
 class Campaign_Manager
 {
@@ -52,13 +52,13 @@ class Campaign_Manager
         $this->mailerLiteInstance = $mailerLiteInstance;
         $this->logger = $logger ?? Bema_CRM_Logger::create('campaign-manager');
 
-        debug_to_file([
+        $this->logger->debug('Campaign Manager Constructor initialized', [
             'method' => 'Campaign_Manager_Constructor',
             'valid_campaigns' => $this->valid_campaigns,
             'has_groups' => array_map(function ($campaign) {
                 return isset($campaign['groups']);
             }, $this->valid_campaigns)
-        ], 'CAMPAIGN_DEBUG');
+        ]);
     }
 
     public function create_missing_groups(array $groups): array
@@ -77,7 +77,7 @@ class Campaign_Manager
                     $results['failed'][] = $group;
                 }
             } catch (Exception $e) {
-                $this->logger->log('Failed to create group', 'error', [
+                $this->logger->error('Failed to create group', [
                     'group' => $group,
                     'error' => $e->getMessage()
                 ]);
@@ -94,7 +94,7 @@ class Campaign_Manager
             return $this->valid_campaigns[$campaign_code];
         }
 
-        $this->logger->log('Invalid campaign code', 'warning', [
+        $this->logger->warning('Invalid campaign code', [
             'campaign_code' => $campaign_code,
             'valid_campaigns' => array_keys($this->valid_campaigns)
         ]);
@@ -104,18 +104,18 @@ class Campaign_Manager
 
     public function get_campaign_groups(string $campaign_code): ?array
     {
-        debug_to_file([
+        $this->logger->debug('Getting campaign groups', [
             'method' => 'get_campaign_groups',
             'campaign_code' => $campaign_code,
             'campaign_exists' => isset($this->valid_campaigns[$campaign_code]),
             'has_groups' => isset($this->valid_campaigns[$campaign_code]['groups'])
-        ], 'CAMPAIGN_DEBUG');
+        ]);
 
         if (
             !isset($this->valid_campaigns[$campaign_code]) ||
             !isset($this->valid_campaigns[$campaign_code]['groups'])
         ) {
-            $this->logger->log('No group mappings found for campaign', 'warning', [
+            $this->logger->warning('No group mappings found for campaign', [
                 'campaign_code' => $campaign_code
             ]);
             return null;
@@ -161,19 +161,19 @@ class Campaign_Manager
                 }
             }
 
-            debug_to_file([
+            $this->logger->debug('Validating MailerLite groups', [
                 'method' => 'validate_mailerlite_groups',
                 'required_groups' => $required_groups,
                 'existing_groups' => $existing_group_names,
                 'missing_groups' => $missing_groups
-            ], 'CAMPAIGN_DEBUG');
+            ]);
 
             return [
                 'valid' => empty($missing_groups),
                 'missing_groups' => array_values($missing_groups)
             ];
         } catch (Exception $e) {
-            $this->logger->log('Failed to validate MailerLite groups', 'error', [
+            $this->logger->error('Failed to validate MailerLite groups', [
                 'error' => $e->getMessage()
             ]);
             return [
@@ -187,22 +187,22 @@ class Campaign_Manager
     {
         $is_valid = isset($this->valid_campaigns[$campaign_code]);
 
-        debug_to_file([
+        $this->logger->debug('Checking if campaign is valid', [
             'method' => 'is_valid_campaign',
             'campaign_code' => $campaign_code,
             'is_valid' => $is_valid,
             'valid_campaigns' => $this->valid_campaigns
-        ], 'CAMPAIGN_DEBUG');
+        ]);
 
         return $is_valid;
     }
 
     public function get_all_valid_campaigns(): array
     {
-        debug_to_file([
+        $this->logger->debug('Getting all valid campaigns', [
             'method' => 'get_all_valid_campaigns',
             'valid_campaigns' => array_keys($this->valid_campaigns)
-        ], 'CAMPAIGN_DEBUG');
+        ]);
 
         return array_keys($this->valid_campaigns);
     }
@@ -266,7 +266,7 @@ class Campaign_Manager
     public function get_campaign_details(string $campaign_code): ?array
     {
         if (!isset($this->valid_campaigns[$campaign_code])) {
-            $this->logger->log('Campaign not found', 'warning', [
+            $this->logger->warning('Campaign not found', [
                 'campaign_code' => $campaign_code
             ]);
             return null;
@@ -299,7 +299,7 @@ class Campaign_Manager
             // For now, returning null as placeholder
             return null;
         } catch (Exception $e) {
-            $this->logger->log('Failed to get product ID', 'error', [
+            $this->logger->error('Failed to get product ID', [
                 'campaign' => $campaign_code,
                 'error' => $e->getMessage()
             ]);
@@ -322,7 +322,7 @@ class Campaign_Manager
             // Check if all required tiers exist
             foreach ($required_tiers as $tier) {
                 if (!$this->find_group_for_tier($groups, $tier)) {
-                    $this->logger->log('Missing required tier', 'error', [
+                    $this->logger->error('Missing required tier', [
                         'campaign' => $campaign_code,
                         'tier' => $tier
                     ]);
@@ -333,7 +333,7 @@ class Campaign_Manager
             // Check if all purchase tiers exist
             foreach ($required_purchase_tiers as $tier) {
                 if (!$this->find_group_for_tier($groups, $tier)) {
-                    $this->logger->log('Missing required purchase tier', 'error', [
+                    $this->logger->error('Missing required purchase tier', [
                         'campaign' => $campaign_code,
                         'tier' => $tier
                     ]);
@@ -416,11 +416,11 @@ class Campaign_Manager
             ]
         ];
 
-        debug_to_file([
+        $this->logger->debug('Getting group transitions', [
             'method' => 'get_group_transitions',
             'campaign_code' => $campaign_code,
             'transitions' => $transitions
-        ], 'CAMPAIGN_DEBUG');
+        ]);
 
         return $transitions;
     }

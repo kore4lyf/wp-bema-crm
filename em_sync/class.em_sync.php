@@ -3422,7 +3422,7 @@ class EM_Sync
             }
 
             $this->logger->info('MailerLite group data sync completed successfully');
-            
+
             // Remove Groups that don't exist anymore on MailerLite.
             $this->validate_group_data_in_database();
             return true;
@@ -3829,6 +3829,11 @@ class EM_Sync
      */
     public function sync_all_mailerlite_data(): void
     {
+        // Capability check
+        if (!current_user_can('manage_options')) {
+            wp_die('You do not have permission to perform this action.');
+        }
+
         $start_time = microtime(true);
         $sync_option_key = 'bema_crm_sync_status';
 
@@ -3965,21 +3970,21 @@ class EM_Sync
         // Sanitize inputs
         $this->logger->debug('Starting EDD order/customer validation', [
             'order_id_raw' => $order_id,
-            'email_raw'    => $email,
+            'email_raw' => $email,
         ]);
 
         $order_id = absint($order_id);
-        $email    = sanitize_email($email);
+        $email = sanitize_email($email);
 
         $this->logger->debug('Sanitized inputs', [
             'order_id' => $order_id,
-            'email'    => $email,
+            'email' => $email,
         ]);
 
         if ($order_id <= 0 || empty($email)) {
             $this->logger->warning('Invalid input for EDD validation: non-positive order_id or empty email', [
                 'order_id' => $order_id,
-                'email'    => $email,
+                'email' => $email,
             ]);
             return false;
         }
@@ -4032,8 +4037,8 @@ class EM_Sync
         // Compare email case-insensitively
         $comparison_result = strcasecmp($order_email, $email) === 0;
         $this->logger->debug('Compared emails for match', [
-            'order_email'       => $order_email,
-            'provided_email'    => $email,
+            'order_email' => $order_email,
+            'provided_email' => $email,
             'comparison_result' => $comparison_result ? 'match' : 'no_match',
         ]);
 
@@ -4057,6 +4062,11 @@ class EM_Sync
     public function transition_campaigns(string $source_campaign_name, string $destination_campaign_name)
     {
         try {
+            // Use capability check
+            if (!current_user_can('manage_options')) {
+                wp_die('You do not have permission to perform this action.');
+            }
+
             // Retrieve transition rules from the options table.
             $transition_rules = $this->getTransitionRules();
             if (empty($transition_rules)) {
@@ -4358,7 +4368,6 @@ class EM_Sync
             throw $e;
         }
     }
-
 }
 
 // Queue Manager Class with Priority Support

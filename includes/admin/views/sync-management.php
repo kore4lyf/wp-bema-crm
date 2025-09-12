@@ -3,7 +3,7 @@
 namespace Bema\Admin\Views;
 
 use Exception;
-use function Bema\debug_to_file;
+// Reuse Bema\Bema_CRM_Logger;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -52,16 +52,8 @@ try {
     if ($admin && method_exists($admin, 'get_campaign_manager')) {
         $campaign_manager = $admin->get_campaign_manager();
         if ($campaign_manager) {
-            $valid_campaigns = $campaign_manager->get_all_valid_campaigns();
-            debug_to_file([
-                'campaigns_loaded' => count($valid_campaigns),
-                'campaigns' => $valid_campaigns
-            ], 'SYNC_VIEW');
-        }
-    }
-} catch (Exception $e) {
-    if ($admin && $admin->logger) {
-        $admin->logger->log('Sync management error', 'error', [
+            $valid_campaigns = $campaign_manager->get_all_valid_campaign();
+        $admin->logger->debug('Sync management error', 'error', [
             'error' => $e->getMessage(),
             'file' => __FILE__,
             'line' => __LINE__
@@ -73,6 +65,7 @@ try {
         esc_html__('Error loading sync management page: ', 'bema-crm') . esc_html($e->getMessage())
     );
     return;
+}
 }
 ?>
 

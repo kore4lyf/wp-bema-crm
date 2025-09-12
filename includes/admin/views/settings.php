@@ -2,7 +2,7 @@
 
 namespace Bema\Admin\Views;
 
-use function Bema\debug_to_file;
+// Removed debug_to_file import - using Bema_CRM::get_logger() instead
 use Bema\Bema_CRM_Logger;
 
 $logger = Bema_CRM_Logger::create('admin-settings-view');
@@ -21,9 +21,8 @@ $has_sync = $admin->has_sync_capability();
 $sync_disabled = !$has_sync;
 
 // Debug logging to verify values
-debug_to_file([
-    'has_sync' => $has_sync ? 'yes' : 'no',
-    'sync_disabled' => $sync_disabled ? 'yes' : 'no',
+$logger->logger()->debug([
+   'sync_disabled' => $sync_disabled ? 'yes' : 'no',
     'current_settings' => !empty($current_settings) ? 'present' : 'empty'
 ], 'SETTINGS_PAGE_LOAD');
 

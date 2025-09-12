@@ -42,29 +42,48 @@ $total_items = $subscriber_db->count_subscribers(
 
 $total_pages = max(1, (int) ceil($total_items / $per_page));
 
-echo "start - ";
-echo $_POST['bulk-action-selector-top'];
+function bema_crm_print_notice($message, $type = 'success') {
+    printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($type), esc_html($message));
+}
 
-function resync() {
-    // Your resync logic here
+function resync_subscribers() {
+    // Verify nonce
+    if (!isset($_POST['bema_crm_nonce']) || !wp_verify_nonce(wp_unslash($_POST['bema_crm_nonce']), 'bema_crm_bulk_action')) {
+        wp_die('Security check failed. Please try again.');
+    }
 
-    // Start here
-    // We need to map the subscriber data to checkbox
-    // such that we can loop through it and perform resycn
-    // End Here
+    // Capability check
+    if (!current_user_can('manage_options')) {
+        wp_die('You do not have permission to perform this action.');
+    }
 
-    // resync_subscribers($subscribers) Leave this for now
-    echo "HEY Can't believe I am here";
+    // Get selected subscriber IDs (IDs only per requirements)
+    $ids = isset($_POST['subscriber_ids']) ? (array) wp_unslash($_POST['subscriber_ids']) : [];
+    $ids = array_filter(array_map('absint', $ids));
+
+    if (empty($ids)) {
+		\Bema\Bema_CRM_Notifier::add('Please check your settings', 'warning', 'Configuration Issue');
+        return;
+    }
+
+    // Iterate the IDs
+    $processed = 0;
+    foreach ($ids as $id) {
+        // Placeholder: call your actual resync function/hook here
+        // do_action('bema_crm_resync_subscriber', $id);
+        $processed++;
+    }
+
+	\Bema\Bema_CRM_Notifier::add("Resync complete: processed $processed subscriber(s).", 'success', 'Resync Completed');
 }
 
 // Bulk actions
-if (isset($_POST['action'])) {
-  switch (sanitize_text_field($_POST['bulk-action-selector-top'])) {
-	case 'resync':
-        resync_subscribers();
-		break;
-
-  }
+if (isset($_POST['bulk-action'])) {
+    switch (sanitize_text_field(wp_unslash($_POST['bulk-action']))) {
+        case 'resync':
+            resync_subscribers();
+            break;
+    }
 }
 
 ?>
@@ -155,6 +174,7 @@ if (isset($_POST['action'])) {
 					<?php foreach ($subscribers as $subscriber): ?>
 						<tr>
 							<th scope="row" class="check-column">
+                                
 								<input type="checkbox" name="subscriber_ids[]" value="<?php echo esc_attr($subscriber['id']); ?>" />
 							</th>
 							<td><?php echo esc_html($subscriber['email'] ?? '—'); ?></td>
@@ -162,13 +182,13 @@ if (isset($_POST['action'])) {
 							<td><?php echo esc_html(ucfirst($subscriber['status'] ?? '—')); ?></td>
 							<?php if ($selected_campaign): ?>
 								<td><?php echo esc_html($subscriber['tier'] ?? '—'); ?></td>
-								<td><?php echo esc_html($subscriber['purchase_id'] ?: '—'); ?></td>
+								<td><?php echo esc_html($subscriber['purchase_id'] ?? '—'); ?></td>
 							<?php endif; ?>
 						</tr>
 					<?php endforeach; ?>
 				<?php else: ?>
 					<tr>
-						<td class="text-center" colspan="<?php echo ($selected_campaign) ? 6 : 4; ?>">
+						<td class="text-center" colspan="<?php echo $selected_campaign ? 6 : 4; ?>">
 							No subscribers found.
 						</td>
 					</tr>

@@ -5,11 +5,11 @@ namespace Bema\Providers;
 use Exception;
 use WP_Object_Cache;
 use Bema\Bema_CRM_Logger;
+use Bema\Bema_CRM;
 use Bema\Interfaces\Provider_Interface;
 use Bema\Exceptions\API_Exception;
 use Bema\Database\Group_Database_Manager;
 use Bema\Database\Field_Database_Manager;
-use function Bema\debug_to_file;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -40,27 +40,27 @@ class MailerLite implements Provider_Interface
     public function __construct($apiKey, ?Bema_CRM_Logger $logger = null)
     {
         try {
-            debug_to_file('Constructing MailerLite with API key present: ' . (!empty($apiKey) ? 'Yes' : 'No'), 'ML_INIT');
+            $this->logger = $logger ?? Bema_CRM_Logger::create('mailerlite-provider');
+            $this->logger->info('Constructing MailerLite provider', [
+                'api_key_present' => !empty($apiKey)
+            ]);
 
             if (empty($apiKey)) {
-                debug_to_file('Warning: Empty MailerLite API key provided', 'ML_INIT');
+                $this->logger->warning('Empty MailerLite API key provided');
                 $apiKey = '';
             }
 
             $this->apiKey = $apiKey;
             $this->group_db_manager = new Group_Database_Manager();
             $this->field_db_manager = new Field_Database_Manager();
-            $this->logger = $logger ?? Bema_CRM_Logger::create('mailerlite-provider');
             $this->setHeaders();
             $this->initializeRateLimit();
-
-            debug_to_file('MailerLite instance constructed successfully', 'ML_INIT');
+            $this->logger->info('MailerLite instance constructed successfully');
         } catch (Exception $e) {
             $this->logger->error('Error constructing MailerLite', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            debug_to_file('Error constructing MailerLite: ' . $e->getMessage(), 'ML_ERROR');
         }
     }
 
@@ -125,12 +125,11 @@ class MailerLite implements Provider_Interface
                 401
             );
         }
-
-        debug_to_file([
+        $this->logger->debug('Making API request', [
             'request_started' => true,
             'endpoint' => $endpoint,
             'method' => $method
-        ], 'ML_API_REQUEST');
+        ]);
 
         $url = "{$this->baseUrl}/{$endpoint}";
         $attempts = 0;
@@ -139,12 +138,11 @@ class MailerLite implements Provider_Interface
         while ($attempts < $this->maxRetries) {
             try {
                 $this->waitForRateLimit();
-
-                debug_to_file([
+                $this->logger->debug('Making HTTP request', [
                     'making_request' => true,
                     'attempt' => $attempts + 1,
                     'url' => $url
-                ], 'ML_API_REQUEST');
+                ]);
 
                 $ch = curl_init($url);
 
@@ -174,12 +172,11 @@ class MailerLite implements Provider_Interface
                 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $error = curl_error($ch);
                 curl_close($ch);
-
-                debug_to_file([
+$this->logger->debug([
                     'response_received' => true,
                     'status_code' => $httpCode,
                     'response_length' => strlen($response)
-                ], 'ML_API_REQUEST');
+                ]);
 
                 if ($response === false) {
                     throw new API_Exception(
@@ -212,10 +209,10 @@ class MailerLite implements Provider_Interface
                     // If a group already exists, it's not a fatal error for this process.
                     // We can log it as a successful check and return to stop the loop.
                     if ($httpCode === 422 && strpos($errorMessage, 'The name has already been taken.') !== false) {
-                        debug_to_file([
+                        $this->logger->debug([
                             'action' => 'group_already_exists',
                             'message' => $errorMessage
-                        ], 'ML_API_INFO');
+                        ]);
                         // Return an empty array or a specific success signal
                         // to break the outer while loop successfully.
                         return ['status' => 'success', 'message' => 'Group already exists.'];
@@ -234,12 +231,11 @@ class MailerLite implements Provider_Interface
             } catch (Exception $e) {
                 $lastException = $e;
                 $attempts++;
-
-                debug_to_file([
+$this->logger->debug([
                     'request_failed' => true,
                     'attempt' => $attempts,
                     'error' => $e->getMessage()
-                ], 'ML_API_REQUEST');
+                ]);
 
                 if ($attempts >= $this->maxRetries) {
                     break;
@@ -265,10 +261,10 @@ class MailerLite implements Provider_Interface
     public function validateConnection(): bool
     {
         try {
-            debug_to_file('Testing MailerLite connection', 'ML_VALIDATE');
+            $this->logger->info('Testing MailerLite connection');
 
             if (empty($this->apiKey)) {
-                debug_to_file('MailerLite API key not provided', 'ML_VALIDATE');
+                $this->logger->warning('MailerLite API key not provided');
                 throw new API_Exception(
                     'MailerLite API key not provided',
                     'validation',
@@ -282,18 +278,17 @@ class MailerLite implements Provider_Interface
                 'groups?limit=1',
                 'GET'
             );
-
-            debug_to_file([
+$this->logger->debug([
                 'validation_response' => $response,
                 'validation_successful' => true
-            ], 'ML_VALIDATE');
+            ]);
 
             return true;
         } catch (Exception $e) {
-            debug_to_file([
+        $this->logger->debug([
                 'validation_failed' => true,
                 'error' => $e->getMessage()
-            ], 'ML_VALIDATE');
+            ]);
 
             throw new API_Exception(
                 'MailerLite API validation failed: ' . $e->getMessage(),
@@ -598,16 +593,20 @@ class MailerLite implements Provider_Interface
         $cacheKey = 'mailerlite_fields';
         $cachedFields = wp_cache_get($cacheKey, self::CACHE_GROUP);
 
+        if (empty($this->apiKey)) {
+        $cacheKey = 'mailerlite_fields';
+        $cachedFields = wp_cache_get($cacheKey, self::CACHE_GROUP);
+
         if ($cachedFields !== false) {
-            debug_to_file([
+            $this->logger->debug([
                 'using_cached_fields' => true,
                 'count' => count($cachedFields)
-            ], 'ML_FIELDS');
+            ]);
             return $cachedFields;
         }
 
         try {
-            debug_to_file('Fetching fields from MailerLite API', 'ML_FIELDS');
+            $this->logger->info('Fetching fields from MailerLite API');
             $this->waitForRateLimit();
 
             $fields = [];
@@ -631,13 +630,12 @@ class MailerLite implements Provider_Interface
                         'key' => $field['key'],
                         'type' => $field['type']
                     ];
-
-                    debug_to_file([
+$this->logger->debug([
                         'field_found' => [
                             'id' => $field['id'],
                             'name' => $field['name']
                         ]
-                    ], 'ML_FIELDS');
+                    ]);
                 }
 
                 $page++;
@@ -649,20 +647,20 @@ class MailerLite implements Provider_Interface
             }
 
             wp_cache_set($cacheKey, $fields, self::CACHE_GROUP, self::CACHE_TTL);
-
-            debug_to_file([
+$this->logger->debug([
                 'fields_fetched' => count($fields)
-            ], 'ML_FIELDS');
+            ]);
 
             return $fields;
         } catch (Exception $e) {
-            debug_to_file([
+        $this->logger->debug([
                 'fields_fetch_failed' => true,
                 'error' => $e->getMessage()
-            ], 'ML_FIELDS');
+            ]);
             throw $e;
         }
     }
+}
 
     /**
      * Creates a new custom field in MailerLite.
@@ -894,15 +892,15 @@ class MailerLite implements Provider_Interface
         $cachedGroups = wp_cache_get($cacheKey, self::CACHE_GROUP);
 
         if ($cachedGroups !== false) {
-            debug_to_file([
+            $this->logger->debug('Using cached groups', [
                 'using_cached_groups' => true,
                 'count' => count($cachedGroups)
-            ], 'ML_GROUPS');
+            ]);
             return $cachedGroups;
         }
 
         try {
-            debug_to_file('Fetching groups from MailerLite API', 'ML_GROUPS');
+            $this->logger->info('Fetching groups from MailerLite API');
             $this->waitForRateLimit();
 
             $groups = [];
@@ -927,13 +925,12 @@ class MailerLite implements Provider_Interface
                         'unsubscribed_count' => $group['unsubscribed_count'] ?? 0,
                         'created_at' => $group['created_at'],
                     ];
-
-                    debug_to_file([
+$this->logger->debug([
                         'group_found' => [
                             'id' => $group['id'],
                             'name' => $group['name']
                         ]
-                    ], 'ML_GROUPS');
+                    ]);
                 }
 
                 $page++;
@@ -945,17 +942,16 @@ class MailerLite implements Provider_Interface
             }
 
             wp_cache_set($cacheKey, $groups, self::CACHE_GROUP, self::CACHE_TTL);
-
-            debug_to_file([
+$this->logger->debug([
                 'groups_fetched' => count($groups)
-            ], 'ML_GROUPS');
+            ]);
 
             return $groups;
         } catch (Exception $e) {
-            debug_to_file([
+        $this->logger->debug([
                 'groups_fetch_failed' => true,
                 'error' => $e->getMessage()
-            ], 'ML_GROUPS');
+            ]);
             throw $e;
         }
     }
@@ -1573,7 +1569,7 @@ class MailerLite implements Provider_Interface
     public function abortPendingRequests(): void
     {
         try {
-            debug_to_file('Attempting to abort pending MailerLite requests', 'ML_API_DEBUG');
+            $this->logger->debug('Attempting to abort pending MailerLite requests');
 
             // Clear any cached requests
             wp_cache_delete('mailerlite_request', self::CACHE_GROUP);
@@ -1589,13 +1585,12 @@ class MailerLite implements Provider_Interface
 
             // Reset request headers with new request ID
             $this->setHeaders();
-
-            debug_to_file('Successfully aborted pending MailerLite requests', 'ML_API_DEBUG');
+            $this->logger->info('Successfully aborted pending MailerLite requests');
         } catch (Exception $e) {
-            debug_to_file([
+        $this->logger->debug([
                 'error' => 'Failed to abort pending requests',
                 'message' => $e->getMessage()
-            ], 'ML_API_ERROR');
+            ]);
 
             if ($this->logger) {
                 $this->logger->error('Failed to abort pending requests', [
@@ -1642,7 +1637,7 @@ class MailerLite implements Provider_Interface
      * Update a subscriber in MailerLite with the provided data.
      *
      * @param string|int $id Subscriber ID
-     * @param array $data Update data. Expected format: ['fields' => ['field_name' => 'value']].
+     * @param array $data Update data. Expected format: ['fields' => ['field_name' => 'value'].
      * @return bool Returns true if the update was successful, false otherwise.
      * @throws Exception Throws a custom API_Exception if the call fails unexpectedly.
      */
@@ -1716,8 +1711,8 @@ class MailerLite implements Provider_Interface
     public function test_connection(): bool
     {
         try {
-            if (empty($this->apiKey)) {
-                debug_to_file('MailerLite test failed - empty API key', 'API_TEST');
+            if (empty($this->apiKey)) {{
+                $this->logger->debug('MailerLite test failed - empty API key', 'API_TEST');
                 return false;
             }
 
@@ -1725,8 +1720,8 @@ class MailerLite implements Provider_Interface
             wp_cache_delete('mailerlite_test_connection', self::CACHE_GROUP);
 
             // First try using cURL directly with better error handling
-            if (function_exists('curl_init')) {
-                debug_to_file('Attempting cURL connection to MailerLite', 'API_TEST');
+           if (function_exists('curl_init')) {
+                $this->logger->debug('Attempting cURL connection to MailerLite', 'API_TEST');
 
                 $ch = curl_init('https://connect.mailerlite.com/api/subscribers?limit=1');
 
@@ -1752,8 +1747,7 @@ class MailerLite implements Provider_Interface
                 $response = curl_exec($ch);
                 $curl_info = curl_getinfo($ch);
                 $curl_error = curl_error($ch);
-
-                debug_to_file([
+$this->logger->debug([
                     'curl_info' => $curl_info,
                     'curl_error' => $curl_error,
                     'response_code' => $curl_info['http_code']
@@ -1767,7 +1761,7 @@ class MailerLite implements Provider_Interface
             }
 
             // Fallback to WordPress HTTP API
-            debug_to_file('Falling back to WP HTTP API', 'API_TEST');
+            $this->logger->debug('Falling back to WP HTTP API', 'API_TEST');
 
             $args = [
                 'headers' => [
@@ -1791,15 +1785,14 @@ class MailerLite implements Provider_Interface
             ];
 
             foreach ($urls as $url) {
-                debug_to_file("Trying MailerLite connection with URL: " . $url, 'API_TEST');
+            $this->logger->debug("Trying MailerLite connection with URL: " . $url, 'API_TEST');
 
                 $response = wp_remote_get($url, $args);
 
                 if (!is_wp_error($response)) {
                     $code = wp_remote_retrieve_response_code($response);
                     $body = wp_remote_retrieve_body($response);
-
-                    debug_to_file([
+$this->logger->debug([
                         'url' => $url,
                         'response_code' => $code,
                         'response_body' => substr($body, 0, 500)
@@ -1814,9 +1807,11 @@ class MailerLite implements Provider_Interface
                         continue;
                     }
                 } else {
-                    debug_to_file("WP Remote request failed for URL " . $url . ": " . $response->get_error_message(), 'API_TEST');
+                    $this->logger->debug("WP Remote request failed for URL " . $url . ": " . $response->get_error_message(), 'API_TEST');
                 }
             }
+        }
+            
 
             return false;
         } catch (Exception $e) {
@@ -1824,8 +1819,8 @@ class MailerLite implements Provider_Interface
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            debug_to_file('MailerLite test_connection exception: ' . $e->getMessage(), 'API_TEST');
-            debug_to_file('Stack trace: ' . $e->getTraceAsString(), 'API_TEST');
+             $this->logger->debug('MailerLite test_connection exception: ' . $e->getMessage(), 'API_TEST');
+             $this->logger->debug('Stack trace: ' . $e->getTraceAsString(), 'API_TEST');
             return false;
         }
     }

@@ -29,8 +29,6 @@ if (isset($_POST['submit_transition_button'])) {
     handle_campaign_transition($admin->sync_instance);
 }
 
-
-
 ?>
 
 <div>

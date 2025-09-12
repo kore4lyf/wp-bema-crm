@@ -3,11 +3,10 @@
 namespace Bema\Admin;
 
 use Exception;
-use Bema\Bema_CRM_Logger;
 use Bema\EM_Sync;
 use Bema\Sync_Scheduler;
 use Bema\Bema_Settings;
-use function Bema\debug_to_file;
+use Bema\Bema_CRM_Logger;
 use Bema\Providers\EDD;
 
 if (!defined('ABSPATH')) {
@@ -49,7 +48,7 @@ class Bema_Admin_Interface
     ) {
         global $wpdb;
         $this->wpdb = $wpdb;
-        $this->logger = \Bema\Bema_CRM_Logger::create('admin-interface');
+        $this->logger = Bema_CRM_Logger::create('admin-interface');
         $this->settings = $settings;
         $this->sync_instance = $sync_instance;
         $this->sync_scheduler = $sync_scheduler;
@@ -60,7 +59,7 @@ class Bema_Admin_Interface
         // Initialize campaign manager if sync instance exists
         if ($this->sync_instance) {
             try {
-                debug_to_file('Initializing campaign manager', 'ADMIN_INIT');
+                $this->logger->debug('Initializing campaign manager', []);
 
                 $mailerlite_instance = $this->sync_instance->getMailerLiteInstance();
 
@@ -69,21 +68,21 @@ class Bema_Admin_Interface
                         $mailerlite_instance,
                         $this->logger
                     );
-                    debug_to_file('Campaign manager initialized successfully', 'ADMIN_INIT');
+                    $this->logger->debug('Campaign manager initialized successfully', []);
                 } else {
-                    debug_to_file('MailerLite instance not available', 'ADMIN_INIT');
+                    $this->logger->debug('MailerLite instance not available', []);
                 }
             } catch (Exception $e) {
-                debug_to_file('Failed to initialize campaign manager: ' . $e->getMessage(), 'ADMIN_ERROR');
+                $this->logger->debug('Failed to initialize campaign manager: ' . $e->getMessage(), []);
             }
         }
 
-        debug_to_file([
+        $this->logger->debug('ADMIN_INTERFACE_INIT', [
             'sync_instance_provided' => isset($sync_instance) ? 'yes' : 'no',
             'sync_scheduler_provided' => isset($sync_scheduler) ? 'yes' : 'no',
             'settings_provided' => isset($settings) ? 'yes' : 'no',
             'logger_provided' => isset($logger) ? 'yes' : 'no'
-        ], 'ADMIN_INTERFACE_INIT');
+        ]);
 
         $this->init();
     }
@@ -108,17 +107,17 @@ class Bema_Admin_Interface
             // Check if either version is active
             $edd_active = is_plugin_active($edd_base) || is_plugin_active($edd_pro);
 
-            debug_to_file([
+            $this->logger->debug('SYNC_CAPABILITY_DETAILED_CHECK', [
                 'edd_base_active' => is_plugin_active($edd_base),
                 'edd_pro_active' => is_plugin_active($edd_pro),
                 'edd_active' => $edd_active,
                 'sync_instance' => isset($this->sync_instance),
                 'sync_scheduler' => isset($this->sync_scheduler)
-            ], 'SYNC_CAPABILITY_DETAILED_CHECK');
+            ]);
 
             // If EDD is not active, return false
             if (!$edd_active) {
-                debug_to_file('EDD not active', 'SYNC_CHECK');
+                $this->logger->debug('EDD not active', []);
                 $capability = false;
                 return false;
             }
@@ -126,27 +125,27 @@ class Bema_Admin_Interface
             // Check that our sync components are initialized
             $has_components = isset($this->sync_instance) && isset($this->sync_scheduler);
             if (!$has_components) {
-                debug_to_file([
+                $this->logger->debug('SYNC_COMPONENTS_CHECK', [
                     'sync_instance_exists' => isset($this->sync_instance),
                     'sync_scheduler_exists' => isset($this->sync_scheduler)
-                ], 'SYNC_COMPONENTS_CHECK');
+                ]);
                 $capability = false;
                 return false;
             }
 
             // Check EDD core functionality
             if (!class_exists('\\Easy_Digital_Downloads')) {
-                debug_to_file('Main EDD class not found', 'EDD_CLASS_CHECK');
+                $this->logger->debug('Main EDD class not found', []);
                 $capability = false;
                 return false;
             }
 
             // All checks passed
-            debug_to_file('Sync capability check passed', 'SYNC_CHECK');
+            $this->logger->debug('Sync capability check passed', []);
             $capability = true;
             return true;
         } catch (Exception $e) {
-            debug_to_file('Error checking sync capability: ' . $e->getMessage(), 'SYNC_ERROR');
+            $this->logger->error('Error checking sync capability: ' . $e->getMessage(), ['context' => 'SYNC_ERROR']);
             $capability = false;
             return false;
         }
@@ -156,12 +155,12 @@ class Bema_Admin_Interface
     {
         $sync_disabled = !$this->has_sync_capability();
 
-        debug_to_file([
+        $this->logger->debug('SYNC_DISABLED_CLASS_CHECK', [
             'sync_disabled' => $sync_disabled ? 'yes' : 'no',
             'has_sync_capability' => $this->has_sync_capability() ? 'yes' : 'no',
             'sync_instance_exists' => isset($this->sync_instance) ? 'yes' : 'no',
             'sync_scheduler_exists' => isset($this->sync_scheduler) ? 'yes' : 'no'
-        ], 'SYNC_DISABLED_CLASS_CHECK');
+        ]);
 
         return $sync_disabled ? ' disabled' : '';
     }
@@ -254,7 +253,7 @@ class Bema_Admin_Interface
         add_action('wp_ajax_bema_validate_groups', [$this, 'handle_validate_groups']);
         add_action('wp_ajax_bema_sync_groups', [$this, 'handle_sync_groups']);
 
-        debug_to_file('AJAX handlers registered', 'AJAX_INIT');
+        $this->logger->debug('AJAX handlers registered', []);
     }
 
     public function add_menu_pages(): void
@@ -345,7 +344,7 @@ class Bema_Admin_Interface
         }
 
         try {
-            debug_to_file('Enqueuing assets for hook: ' . $hook, 'ASSETS');
+            $this->logger->debug('Enqueuing assets for hook: ' . $hook, []);
 
             // Core styles
             wp_enqueue_style(
@@ -453,9 +452,9 @@ class Bema_Admin_Interface
                 ]);
             }
 
-            debug_to_file('Assets enqueued successfully', 'ASSETS');
+            $this->logger->debug('Assets enqueued successfully', []);
         } catch (Exception $e) {
-            debug_to_file('Failed to enqueue assets: ' . $e->getMessage(), 'ASSETS_ERROR');
+            $this->logger->debug('Failed to enqueue assets: ' . $e->getMessage(), []);
         }
     }
 
@@ -599,16 +598,16 @@ class Bema_Admin_Interface
     public function handle_start_sync(): void
     {
         try {
-            debug_to_file('Starting sync handler', 'SYNC_HANDLER');
+            $this->logger->debug('Starting sync handler', []);
             check_ajax_referer('bema_admin_nonce', 'nonce');
 
             $campaigns_json = isset($_POST['campaigns']) ? stripslashes($_POST['campaigns']) : '';
             $campaigns = json_decode($campaigns_json, true);
 
-            debug_to_file([
+            $this->logger->debug('SYNC_HANDLER', [
                 'raw_campaigns_json' => $campaigns_json,
                 'decoded_campaigns' => $campaigns
-            ], 'SYNC_HANDLER');
+            ]);
 
             if (empty($campaigns)) {
                 throw new Exception(__('No campaigns selected', 'bema-crm'));
@@ -622,20 +621,20 @@ class Bema_Admin_Interface
 
                 // Verify campaign is valid
                 if (!$this->campaign_manager || !$this->campaign_manager->is_valid_campaign($campaign['name'])) {
-                    debug_to_file([
+                    $this->logger->debug('SYNC_VALIDATION', [
                         'error' => 'Invalid campaign',
                         'campaign' => $campaign['name']
-                    ], 'SYNC_VALIDATION');
+                    ]);
                     continue;
                 }
 
                 // Verify campaign has groups
                 $groups = $this->campaign_manager->get_campaign_groups($campaign['name']);
                 if (!$groups) {
-                    debug_to_file([
+                    $this->logger->debug('SYNC_VALIDATION_GROUPS', [
                         'error' => 'No groups found for campaign',
                         'campaign' => $campaign['name']
-                    ], 'SYNC_VALIDATION');
+                    ]);
                     continue;
                 }
 
@@ -661,10 +660,10 @@ class Bema_Admin_Interface
                 throw new Exception(__('Failed to schedule sync', 'bema-crm'));
             }
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug('SYNC_HANDLER_ERROR', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
-            ], 'SYNC_HANDLER_ERROR');
+            ]);
 
             wp_send_json_error([
                 'message' => $e->getMessage()
@@ -687,15 +686,15 @@ class Bema_Admin_Interface
             $status['memory_usage'] = size_format(memory_get_usage(true));
             $status['peak_memory'] = size_format(memory_get_peak_usage(true));
 
-            debug_to_file([
+            $this->logger->debug('GET_SYNC_STATUS', [
                 'status' => $status
-            ], 'GET_SYNC_STATUS');
+            ]);
 
             wp_send_json_success($status);
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug('GET_SYNC_STATUS_ERROR', [
                 'error' => $e->getMessage()
-            ], 'GET_SYNC_STATUS_ERROR');
+            ]);
 
             wp_send_json_error([
                 'message' => $e->getMessage()
@@ -716,7 +715,7 @@ class Bema_Admin_Interface
                 throw new Exception('Sync instance not initialized');
             }
 
-            debug_to_file('Attempting to stop sync through AJAX handler', 'STOP_SYNC');
+            $this->logger->debug('Attempting to stop sync through AJAX handler', []);
 
             // Get current sync status before stopping
             $current_status = $this->sync_instance->getCurrentProgress();
@@ -744,11 +743,11 @@ class Bema_Admin_Interface
             // Send proper JSON response
             wp_send_json_success($response_data);
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug('STOP_SYNC_ERROR', [
                 'stop_sync_failed' => true,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
-            ], 'STOP_SYNC_ERROR');
+            ]);
 
             wp_send_json_error(array(
                 'message' => $e->getMessage(),
@@ -845,12 +844,12 @@ class Bema_Admin_Interface
                 'total' => $this->sync_instance ? $this->sync_instance->getCurrentProgress()['total'] : 0
             ], false);
 
-            debug_to_file('Sync state cleaned up successfully', 'SYNC_CLEANUP');
+            $this->logger->debug('Sync state cleaned up successfully', []);
         } catch (Exception $e) {
-            debug_to_file([
+            $this->logger->debug('SYNC_CLEANUP_ERROR', [
                 'cleanup_failed' => true,
                 'error' => $e->getMessage()
-            ], 'SYNC_CLEANUP_ERROR');
+            ]);
 
             if ($this->logger) {
                 $this->logger->log('Failed to cleanup sync state', 'error', [
@@ -1008,7 +1007,7 @@ class Bema_Admin_Interface
     public function get_campaign_manager()
     {
         if (!$this->campaign_manager) {
-            debug_to_file('Campaign manager not initialized', 'ADMIN_ERROR');
+            $this->logger->debug('Campaign manager not initialized', []);
             return null;
         }
         return $this->campaign_manager;
@@ -1194,7 +1193,7 @@ class Bema_Admin_Interface
         $data = $_POST['data'] ?? '';
         $label = sanitize_text_field($_POST['label'] ?? '');
 
-        debug_to_file($data, $label);
+        $this->logger->debug($data, $label);
         wp_send_json_success();
     }
 
@@ -1347,12 +1346,12 @@ class Bema_Admin_Interface
                     }
 
                     // Log the data retrieval
-                    debug_to_file([
+                    $this->logger->debug('SUBSCRIBER_DETAILS', [
                         'subscriber_details_retrieved' => true,
                         'email' => $subscriber['subscriber'],
                         'has_mailerlite_data' => !empty($ml_status),
                         'has_purchase_data' => !empty($purchase_history)
-                    ], 'SUBSCRIBER_DETAILS');
+                    ]);
                 } catch (Exception $e) {
                     // Log the error but don't throw it - we still want to return the basic subscriber data
                     $this->logger->log('Error fetching additional subscriber data', 'warning', [
@@ -1518,8 +1517,7 @@ class Bema_Admin_Interface
             $results['status'] = ($results['mailerlite'] || $results['edd']) ? 'success' : 'error';
 
             // Debug logging
-            debug_to_file('API connection test results:', 'API_TEST');
-            debug_to_file($results, 'API_TEST');
+            $this->logger->debug('API connection test results', $results);
         } catch (Exception $e) {
             $this->logger->error('API test error', [
                 'error' => $e->getMessage()
@@ -1565,16 +1563,15 @@ class Bema_Admin_Interface
                 define('DOING_API_TEST', true);
             }
 
-            debug_to_file('Starting API connection test', 'API_TEST');
+            $this->logger->debug('Starting API connection test', []);
             $settings = $this->settings->get_settings();
-            debug_to_file([
+            $this->logger->debug('API connection test settings check', [
                 'mailerlite_key_exists' => !empty($settings['api']['mailerlite_api_key']),
                 'edd_key_exists' => !empty($settings['api']['edd_api_key'])
-            ], 'API_TEST');
+            ]);
 
             $results = $this->test_api_connections();
-            debug_to_file('API test completed', 'API_TEST');
-            debug_to_file($results, 'API_TEST');
+            $this->logger->debug('API test completed', $results);
 
             // Store results
             set_transient('bema_api_test_results', [
@@ -1596,7 +1593,7 @@ class Bema_Admin_Interface
             // Clean up on error
             delete_transient('bema_api_test_in_progress');
 
-            debug_to_file('Test connection handler error: ' . $e->getMessage(), 'API_TEST');
+            $this->logger->error('Test connection handler error: ' . $e->getMessage(), ['context' => 'API_TEST']);
 
             set_transient('bema_api_test_results', [
                 'status' => 'error',

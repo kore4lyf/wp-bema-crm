@@ -19,27 +19,9 @@ define('BEMA_AJAX_NONCE', 'bema_ajax_nonce');
 use Exception;
 use \Throwable;
 
-// Debug function
-if (!function_exists('Bema\\debug_to_file')) {
-    function debug_to_file($data, $label = '')
-    {
-        if (!defined('WP_DEBUG_LOG') || !WP_DEBUG_LOG) {
-            return;
-        }
-
-        $output = date('Y-m-d H:i:s') . " " . $label . ": ";
-        if (is_array($data) || is_object($data)) {
-            $output .= print_r($data, true);
-        } else {
-            $output .= $data;
-        }
-
-        $log_file = defined('WP_CONTENT_DIR') ?
-            WP_CONTENT_DIR . '/debug.log' :
-            dirname(__FILE__) . '/debug.log';
-
-        error_log($output . "\n", 3, $log_file);
-    }
+// Initialize logger for plugin-wide use
+if (!class_exists('Bema_CRM_Logger')) {
+    require_once BEMA_PATH . 'includes/class-bema-crm-logger.php';
 }
 
 /**
@@ -113,18 +95,17 @@ spl_autoload_register(function ($class) {
             require_once $normalized_path;
         }
     } catch (Exception $e) {
-        if (function_exists('debug_to_file')) {
-            debug_to_file("Autoloader error: {$e->getMessage()}", 'AUTOLOADER_ERROR');
-        }
+        Bema_CRM::get_logger()->error("Autoloader error: {$e->getMessage()}", ['context' => 'AUTOLOADER_ERROR']);
     }
 });
 
-debug_to_file('Autoloader registered');
+Bema_CRM::get_logger()->info('Autoloader registered');
 
 // Main plugin class
 class Bema_CRM
 {
     private static $instance = null;
+    private static $static_logger = null;
     private $logger;
     private $sync_instance;
     private $utils;
@@ -175,6 +156,17 @@ class Bema_CRM
     const OPTION_TIERS = 'bema_crm_tiers';
     const OPTION_TRANSITION_MATRIX = 'bema_crm_transition_matrix';
 
+    /**
+     * Get logger instance - works from anywhere in the code
+     * @return Bema_CRM_Logger
+     */
+    public static function get_logger() {
+        if (self::$static_logger === null) {
+            self::$static_logger = Bema_CRM_Logger::create('bema-crm-main');
+        }
+        return self::$static_logger;
+    }
+
     public static function get_instance(): ?self
     {
         if (self::$instance_creating) {
@@ -188,9 +180,9 @@ class Bema_CRM
                     return null;
                 }
                 self::$instance = new self();
-                debug_to_file('Plugin instance created successfully');
+                Bema_CRM::get_logger()->info('Plugin instance created successfully');
             } catch (Exception $e) {
-                debug_to_file('Failed to create plugin instance: ' . $e->getMessage());
+                Bema_CRM::get_logger()->error('Failed to create plugin instance: ' . $e->getMessage());
                 return null;
             } finally {
                 self::$instance_creating = false;
@@ -202,26 +194,26 @@ class Bema_CRM
     private function __construct()
     {
         try {
-            debug_to_file("Starting constructor");
+            Bema_CRM::get_logger()->debug("Starting constructor");
 
             // Verify critical paths exist
             $this->verify_critical_paths();
 
             $this->init_error_handling();
-            debug_to_file("Error handling initialized");
+            Bema_CRM::get_logger()->debug("Error handling initialized");
 
             $this->load_dependencies();
-            debug_to_file("Dependencies loaded");
+            Bema_CRM::get_logger()->debug("Dependencies loaded");
 
             $this->init_components();
-            debug_to_file("Components initialized");
+            Bema_CRM::get_logger()->debug("Components initialized");
 
             $this->add_hooks();
-            debug_to_file("Hooks added");
+            Bema_CRM::get_logger()->debug("Hooks added");
 
             $this->initialized = true;
 
-            debug_to_file("Database instance");
+            Bema_CRM::get_logger()->debug("Database instance");
 
             $default_tiers = array(
             'Opt-In',
@@ -236,9 +228,9 @@ class Bema_CRM
 
         update_option('bema_crm_tiers', $default_tiers);
 
-            debug_to_file("Initialization complete");
+            Bema_CRM::get_logger()->info("Initialization complete");
         } catch (Exception $e) {
-            debug_to_file("Initialization error: " . $e->getMessage());
+            Bema_CRM::get_logger()->error("Initialization error: " . $e->getMessage());
             $this->handle_initialization_error($e);
         }
     }
@@ -264,7 +256,7 @@ class Bema_CRM
     private static function check_requirements(): bool
     {
         try {
-            debug_to_file('Starting requirements check');
+            Bema_CRM::get_logger()->debug('Starting requirements check');
 
             // Check PHP version
             if (version_compare(PHP_VERSION, self::MIN_PHP_VERSION, '<')) {
@@ -305,8 +297,9 @@ class Bema_CRM
                 $edd_active = $base_active || $pro_active;
 
                 // Detailed logging
-                debug_to_file('EDD Status Check:', 'EDD_CHECK');
-                debug_to_file([
+                Bema_CRM::get_logger()->debug('EDD Status Check:', ['context' => 'EDD_CHECK']);
+                Bema_CRM::get_logger()->debug('EDD Status Details', [
+                    'context' => 'EDD_CHECK',
                     'edd_exists' => $edd_exists,
                     'edd_active' => $edd_active,
                     'base_exists' => $base_exists,
@@ -317,16 +310,17 @@ class Bema_CRM
                     'pro_path' => $pro_path,
                     'wp_plugin_dir' => WP_PLUGIN_DIR,
                     'is_admin' => is_admin() ? 'yes' : 'no'
-                ], 'EDD_CHECK');
+                ]);
 
                 // Check if EDD classes are available
                 if ($edd_active) {
-                    debug_to_file([
+                    Bema_CRM::get_logger()->debug('EDD Class Check', [
+                        'context' => 'EDD_CLASS_CHECK',
                         'edd_class_exists' => class_exists('Easy_Digital_Downloads'),
                         'edd_req_check_exists' => class_exists('EDD_Requirements_Check'),
                         'edd_payment_exists' => class_exists('EDD_Payment'),
                         'edd_customer_exists' => class_exists('EDD_Customer')
-                    ], 'EDD_CLASS_CHECK');
+                    ]);
                 }
 
                 // Only show messages if there's actually an issue
@@ -355,7 +349,7 @@ class Bema_CRM
 
                 // Only show this if there's a core functionality issue
                 if ($edd_active && !class_exists('Easy_Digital_Downloads')) {
-                    debug_to_file('EDD active but core class not found', 'EDD_CHECK');
+                    Bema_CRM::get_logger()->warning('EDD active but core class not found', ['context' => 'EDD_CHECK']);
                     add_action('admin_notices', function () {
                         printf(
                             '<div class="notice notice-error is-dismissible"><p>%s</p></div>',
@@ -365,10 +359,10 @@ class Bema_CRM
                 }
             }
 
-            debug_to_file('Requirements check completed successfully');
+            Bema_CRM::get_logger()->info('Requirements check completed successfully');
             return true;
         } catch (Exception $e) {
-            debug_to_file('Requirements check failed: ' . $e->getMessage());
+            Bema_CRM::get_logger()->error('Requirements check failed: ' . $e->getMessage());
             add_action('admin_notices', function () use ($e) {
                 printf(
                     '<div class="notice notice-error"><p>%s</p></div>',
@@ -495,7 +489,7 @@ class Bema_CRM
             // Initialize utils
             if (!isset($this->utils)) {
                 $this->utils = new Utils;
-                $this->component_registry['utils'] = $this->settings;
+                $this->component_registry['utils'] = $this->utils;
             }
 
             // Initialize settings with logger
@@ -524,7 +518,7 @@ class Bema_CRM
                     $this->initialize_sync_components();
                 }
             } else {
-                debug_to_file('EDD not active - skipping sync component initialization');
+                Bema_CRM::get_logger()->info('EDD not active - skipping sync component initialization');
             }
 
             // Initialize admin components
@@ -558,7 +552,7 @@ class Bema_CRM
     private function initialize_sync_components(): void
     {
         try {
-            debug_to_file('Initializing sync components with detailed logging');
+            Bema_CRM::get_logger()->info('Initializing sync components with detailed logging');
 
             // Enhanced EDD check
             if (!function_exists('is_plugin_active')) {
@@ -569,7 +563,8 @@ class Bema_CRM
             $edd_pro = 'easy-digital-downloads-pro/easy-digital-downloads.php';
             $edd_active = \is_plugin_active($edd_base) || \is_plugin_active($edd_pro);
 
-            debug_to_file([
+            Bema_CRM::get_logger()->debug('Sync initialization check', [
+                'context' => 'SYNC_INIT_CHECK',
                 'edd_active' => $edd_active ? 'yes' : 'no',
                 'base_active' => \is_plugin_active($edd_base) ? 'yes' : 'no',
                 'pro_active' => \is_plugin_active($edd_pro) ? 'yes' : 'no',
@@ -577,31 +572,31 @@ class Bema_CRM
                 'pro_exists' => file_exists(WP_PLUGIN_DIR . '/' . $edd_pro) ? 'yes' : 'no',
                 'base_path' => WP_PLUGIN_DIR . '/' . $edd_base,
                 'pro_path' => WP_PLUGIN_DIR . '/' . $edd_pro
-            ], 'SYNC_INIT_CHECK');
+            ]);
 
             if (!$edd_active) {
-                debug_to_file('EDD not active - skipping sync component initialization', 'SYNC_INIT');
+                Bema_CRM::get_logger()->info('EDD not active - skipping sync component initialization', ['context' => 'SYNC_INIT']);
                 return;
             }
 
             $settings = get_option('bema_crm_settings');
 
             // Initialize providers with logging
-            debug_to_file('Initializing MailerLite provider', 'PROVIDER_INIT');
+            Bema_CRM::get_logger()->debug('Initializing MailerLite provider', ['context' => 'PROVIDER_INIT']);
             $mailerlite = new \Bema\Providers\MailerLite(
                 $settings['api']['mailerlite_api_key'] ?? ''
             );
-            debug_to_file('MailerLite provider initialized', 'PROVIDER_INIT');
+            Bema_CRM::get_logger()->debug('MailerLite provider initialized', ['context' => 'PROVIDER_INIT']);
 
-            debug_to_file('Initializing EDD provider', 'PROVIDER_INIT');
+            Bema_CRM::get_logger()->debug('Initializing EDD provider', ['context' => 'PROVIDER_INIT']);
             $edd = new \Bema\Providers\EDD(
                 $settings['api']['edd_api_key'] ?? '',
                 $settings['api']['edd_token'] ?? ''
             );
-            debug_to_file('EDD provider initialized', 'PROVIDER_INIT');
+            Bema_CRM::get_logger()->debug('EDD provider initialized', ['context' => 'PROVIDER_INIT']);
 
             // Initialize sync instance with logging
-            debug_to_file('Initializing EM_Sync instance', 'SYNC_INIT');
+            Bema_CRM::get_logger()->debug('Initializing EM_Sync instance', ['context' => 'SYNC_INIT']);
 
             // Create EM_Sync instance first
             $this->sync_instance = new \Bema\EM_Sync(
@@ -616,7 +611,7 @@ class Bema_CRM
             $stats_collector = new \Bema\Handlers\Default_Stats_Collector();
 
             // Create Sync_Scheduler instance
-            debug_to_file('Initializing Sync Scheduler', 'SYNC_INIT');
+            Bema_CRM::get_logger()->debug('Initializing Sync Scheduler', ['context' => 'SYNC_INIT']);
             $this->sync_scheduler = \Bema\Sync_Scheduler::get_instance(
                 $this->sync_instance,
                 $lock_handler,
@@ -627,22 +622,24 @@ class Bema_CRM
             // Update EM_Sync with the scheduler
             if ($this->sync_instance && method_exists($this->sync_instance, 'setSyncScheduler')) {
                 $this->sync_instance->setSyncScheduler($this->sync_scheduler);
-                debug_to_file('Sync scheduler set in EM_Sync', 'SYNC_INIT');
+                Bema_CRM::get_logger()->debug('Sync scheduler set in EM_Sync', ['context' => 'SYNC_INIT']);
             }
 
-            debug_to_file([
+            Bema_CRM::get_logger()->debug('Sync components status', [
+                'context' => 'SYNC_COMPONENTS_STATUS',
                 'sync_instance_created' => isset($this->sync_instance) ? 'yes' : 'no',
                 'sync_scheduler_created' => isset($this->sync_scheduler) ? 'yes' : 'no'
-            ], 'SYNC_COMPONENTS_STATUS');
+            ]);
 
-            debug_to_file('Sync components initialized successfully');
+            Bema_CRM::get_logger()->info('Sync components initialized successfully');
         } catch (Exception $e) {
-            debug_to_file([
+            Bema_CRM::get_logger()->error('Sync initialization error', [
+                'context' => 'SYNC_INIT_ERROR',
                 'error_message' => $e->getMessage(),
                 'error_trace' => $e->getTraceAsString()
-            ], 'SYNC_INIT_ERROR');
+            ]);
 
-            $this->logger->error('Sync initialization failed', [
+            Bema_CRM::get_logger()->error('Sync initialization failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -652,10 +649,10 @@ class Bema_CRM
     private function initialize_admin_components(): void
     {
         try {
-            debug_to_file('Initializing admin components');
+            Bema_CRM::get_logger()->debug('Initializing admin components');
 
             if (!$this->settings || !$this->logger) {
-                debug_to_file('Missing required settings or logger');
+                Bema_CRM::get_logger()->warning('Missing required settings or logger');
                 return;
             }
 
@@ -675,10 +672,10 @@ class Bema_CRM
             );
 
             $this->component_registry['admin'] = $this->admin_interface;
-            debug_to_file('Admin components initialized successfully');
+            Bema_CRM::get_logger()->info('Admin components initialized successfully');
         } catch (Exception $e) {
-            debug_to_file('Admin initialization failed: ' . $e->getMessage());
-            $this->logger->error('Failed to initialize admin components', [
+            Bema_CRM::get_logger()->error('Admin initialization failed: ' . $e->getMessage());
+            Bema_CRM::get_logger()->error('Failed to initialize admin components', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -695,7 +692,7 @@ class Bema_CRM
             false,
             dirname(plugin_basename(BEMA_FILE)) . '/languages'
         );
-        debug_to_file('Text domain loaded');
+        Bema_CRM::get_logger()->debug('Text domain loaded');
     }
 
     /**
@@ -714,11 +711,12 @@ class Bema_CRM
             // Check if either EDD or EDD Pro is active
             $edd_active = is_plugin_active($edd_base) || is_plugin_active($edd_pro);
 
-            debug_to_file([
+            Bema_CRM::get_logger()->debug('Dependencies check', [
+                'context' => 'DEPENDENCIES_CHECK',
                 'edd_base_active' => is_plugin_active($edd_base),
                 'edd_pro_active' => is_plugin_active($edd_pro),
                 'edd_active' => $edd_active
-            ], 'DEPENDENCIES_CHECK');
+            ]);
 
             // Only show notice if neither is active
             if (!$edd_active) {
@@ -733,7 +731,7 @@ class Bema_CRM
                 });
             }
         } catch (Exception $e) {
-            debug_to_file('Plugin dependency check failed: ' . $e->getMessage(), 'DEPENDENCIES_ERROR');
+            Bema_CRM::get_logger()->error('Plugin dependency check failed: ' . $e->getMessage(), ['context' => 'DEPENDENCIES_ERROR']);
         }
     }
 
@@ -742,7 +740,7 @@ class Bema_CRM
      */
     private function add_hooks(): void
     {
-        debug_to_file('Adding hooks');
+        Bema_CRM::get_logger()->debug('Adding hooks');
 
         try {
             // WordPress core hooks
@@ -755,6 +753,9 @@ class Bema_CRM
                 add_action('admin_notices', [$this, 'display_admin_notices']);
             }
 
+            // Add notification handler
+            \Bema\Bema_CRM_Notifier::init();
+
             // Add CRM Trigger
             $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '');
             $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager);
@@ -766,10 +767,10 @@ class Bema_CRM
                 $this->sync_instance->sync_all_mailerlite_data();
             });
 
-            debug_to_file('Hooks added successfully');
+            Bema_CRM::get_logger()->debug('Hooks added successfully');
         } catch (Exception $e) {
-            debug_to_file('Error adding hooks: ' . $e->getMessage());
-            $this->logger->error('Failed to add hooks', [
+            Bema_CRM::get_logger()->error('Error adding hooks: ' . $e->getMessage());
+            Bema_CRM::get_logger()->error('Failed to add hooks', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -810,11 +811,11 @@ class Bema_CRM
                 );
 
                 $this->component_registry['admin'] = $this->admin_interface;
-                debug_to_file('Admin interface initialized');
+                Bema_CRM::get_logger()->debug('Admin interface initialized');
             } catch (Exception $e) {
-                debug_to_file('Failed to initialize admin interface: ' . $e->getMessage());
+                Bema_CRM::get_logger()->error('Failed to initialize admin interface: ' . $e->getMessage());
                 if (isset($this->logger)) {
-                    $this->logger->error('Admin interface initialization failed', [
+                    Bema_CRM::get_logger()->error('Admin interface initialization failed', [
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString()
                     ]);
@@ -837,9 +838,9 @@ class Bema_CRM
             $errline
         );
 
-        debug_to_file($error_message, 'ERROR');
+        Bema_CRM::get_logger()->error($error_message, ['context' => 'ERROR']);
 
-        $this->logger->error($error_message, [
+        Bema_CRM::get_logger()->error($error_message, [
             'errno' => $errno,
             'file' => $errfile,
             'line' => $errline
@@ -858,10 +859,10 @@ class Bema_CRM
             $e->getLine()
         );
 
-        debug_to_file($error_message, 'EXCEPTION');
+        Bema_CRM::get_logger()->error($error_message, ['context' => 'EXCEPTION']);
 
         if ($this->logger) {
-            $this->logger->error($error_message, [
+            Bema_CRM::get_logger()->error($error_message, [
                 'exception' => get_class($e),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
@@ -898,9 +899,9 @@ class Bema_CRM
             wp_cache_delete('edd_api_test', 'edd_cache');
             wp_cache_delete('mailerlite_test_connection', 'mailerlite_cache');
 
-            debug_to_file('Plugin cache cleared successfully', 'CACHE_CLEAR');
+            Bema_CRM::get_logger()->info('Plugin cache cleared successfully', ['context' => 'CACHE_CLEAR']);
         } catch (Exception $e) {
-            debug_to_file('Error clearing cache: ' . $e->getMessage(), 'CACHE_ERROR');
+            Bema_CRM::get_logger()->error('Error clearing cache: ' . $e->getMessage(), ['context' => 'CACHE_ERROR']);
         }
     }
 
@@ -915,10 +916,10 @@ class Bema_CRM
                 $error['line']
             );
 
-            debug_to_file($error_message, 'FATAL');
+            Bema_CRM::get_logger()->critical($error_message, ['context' => 'FATAL']);
 
             if ($this->logger) {
-                $this->logger->critical($error_message, [
+                Bema_CRM::get_logger()->critical($error_message, [
                     'type' => $error['type'],
                     'file' => $error['file'],
                     'line' => $error['line']
@@ -934,10 +935,10 @@ class Bema_CRM
             $e->getMessage()
         );
 
-        debug_to_file($error_message, 'INIT_ERROR');
+        Bema_CRM::get_logger()->error($error_message, ['context' => 'INIT_ERROR']);
 
         if (isset($this->logger)) {
-            $this->logger->critical($error_message, [
+            Bema_CRM::get_logger()->critical($error_message, [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -958,7 +959,7 @@ class Bema_CRM
         }
 
         try {
-            debug_to_file('Starting plugin activation');
+            Bema_CRM::get_logger()->info('Starting plugin activation');
 
             // Check PHP version
             if (version_compare(PHP_VERSION, self::MIN_PHP_VERSION, '<')) {
@@ -1044,9 +1045,9 @@ class Bema_CRM
             // Clear rewrite rules
             flush_rewrite_rules();
 
-            debug_to_file('Plugin activation completed successfully');
+            Bema_CRM::get_logger()->info('Plugin activation completed successfully');
         } catch (Exception $e) {
-            debug_to_file('Activation failed: ' . $e->getMessage());
+            Bema_CRM::get_logger()->error('Activation failed: ' . $e->getMessage());
             wp_die(
                 esc_html($e->getMessage()),
                 'Plugin Activation Error',
@@ -1058,7 +1059,7 @@ class Bema_CRM
     public static function deactivate(): void
     {
         try {
-            debug_to_file('Starting plugin deactivation');
+            Bema_CRM::get_logger()->info('Starting plugin deactivation');
 
             // Clear scheduled hooks
             $hooks_to_clear = [
@@ -1115,9 +1116,9 @@ class Bema_CRM
             // Clear rewrite rules
             flush_rewrite_rules();
 
-            debug_to_file('Plugin deactivation completed successfully');
+            Bema_CRM::get_logger()->info('Plugin deactivation completed successfully');
         } catch (Exception $e) {
-            debug_to_file('Deactivation error: ' . $e->getMessage());
+            Bema_CRM::get_logger()->error('Deactivation error: ' . $e->getMessage());
             error_log('Bema CRM deactivation error: ' . $e->getMessage());
         }
     }
@@ -1129,7 +1130,7 @@ class Bema_CRM
         }
 
         try {
-            debug_to_file('Starting plugin uninstallation');
+            Bema_CRM::get_logger()->info('Starting plugin uninstallation');
 
             $instance = self::get_instance();
             if (!$instance) {
@@ -1156,9 +1157,9 @@ class Bema_CRM
             // Remove plugin directories
             self::remove_plugin_directories();
 
-            debug_to_file('Plugin uninstallation completed successfully');
+            Bema_CRM::get_logger()->info('Plugin uninstallation completed successfully');
         } catch (Exception $e) {
-            debug_to_file('Uninstallation error: ' . $e->getMessage());
+            Bema_CRM::get_logger()->error('Uninstallation error: ' . $e->getMessage());
             error_log('Bema CRM uninstall error: ' . $e->getMessage());
         }
     }
@@ -1216,7 +1217,7 @@ class Bema_CRM
         ];
 
         update_option(self::OPTION_SETTINGS, $default_settings);
-        debug_to_file('Default settings initialized');
+        Bema_CRM::get_logger()->debug('Default settings initialized');
     }
 
     private static function initialize_tier_settings(): void
@@ -1233,7 +1234,7 @@ class Bema_CRM
         );
 
         add_option('bema_crm_tiers', $default_tiers);
-        debug_to_file('Default tier settings initialized');
+        Bema_CRM::get_logger()->debug('Default tier settings initialized');
     }
 
     private static function initialize_transition_settings(): void
@@ -1257,7 +1258,7 @@ class Bema_CRM
         ];
 
         add_option('bema_crm_transition_matrix', $default_transition_matrix);
-        debug_to_file('Default transition matrix settings initialized');
+        Bema_CRM::get_logger()->debug('Default transition matrix settings initialized');
     }
 
 
@@ -1272,7 +1273,7 @@ class Bema_CRM
                 file_put_contents($path . '/.htaccess', 'deny from all');
                 file_put_contents($path . '/index.php', '<?php // Silence is golden');
                 chmod($path, 0755);
-                debug_to_file("Created protected directory: {$dir}");
+                Bema_CRM::get_logger()->debug("Created protected directory: {$dir}");
             }
         }
     }
@@ -1288,7 +1289,7 @@ class Bema_CRM
                 }
             }
             rmdir($dir);
-            debug_to_file("Removed directory: {$dir}");
+            Bema_CRM::get_logger()->debug("Removed directory: {$dir}");
         }
     }
 
@@ -1314,7 +1315,7 @@ class Bema_CRM
 
 // Initialize the plugin
 add_action('plugins_loaded', function () {
-    debug_to_file('Initializing plugin through plugins_loaded hook');
+    Bema_CRM::get_logger()->info('Initializing plugin through plugins_loaded hook');
     try {
         // Initialize performance optimizations first
         if (is_admin()) {
@@ -1330,20 +1331,20 @@ add_action('plugins_loaded', function () {
             throw new Exception('Failed to create plugin instance');
         }
 
-        debug_to_file('Plugin instance created successfully');
+        Bema_CRM::get_logger()->info('Plugin instance created successfully');
     } catch (Exception $e) {
-        debug_to_file('Error initializing plugin: ' . $e->getMessage());
+        Bema_CRM::get_logger()->error('Error initializing plugin: ' . $e->getMessage());
         error_log('Bema CRM initialization error: ' . $e->getMessage());
     }
 }, 5);
 
 // Register activation and deactivation hooks
 register_activation_hook(__FILE__, function () {
-    debug_to_file('Activation hook triggered');
+    Bema_CRM::get_logger()->info('Activation hook triggered');
     try {
         Bema_CRM::activate();
     } catch (Exception $e) {
-        debug_to_file('Activation error: ' . $e->getMessage());
+        Bema_CRM::get_logger()->error('Activation error: ' . $e->getMessage());
         wp_die(
             esc_html($e->getMessage()),
             'Plugin Activation Error',
@@ -1353,11 +1354,11 @@ register_activation_hook(__FILE__, function () {
 });
 
 register_deactivation_hook(__FILE__, function () {
-    debug_to_file('Deactivation hook triggered');
+    Bema_CRM::get_logger()->info('Deactivation hook triggered');
     try {
         Bema_CRM::deactivate();
     } catch (Exception $e) {
-        debug_to_file('Deactivation error: ' . $e->getMessage());
+        Bema_CRM::get_logger()->error('Deactivation error: ' . $e->getMessage());
         error_log('Bema CRM deactivation error: ' . $e->getMessage());
     }
 });

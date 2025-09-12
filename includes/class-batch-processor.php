@@ -97,7 +97,7 @@ class SyncBatchProcessor
             $this->updateProgress($batchIndex + 1, $totalBatches);
 
             $batchDuration = microtime(true) - $batchStartTime;
-            $this->logger->log('Batch processed successfully', 'info', [
+            $this->logger->info('Batch processed successfully', [
                 'batch_size' => count($batch),
                 'duration' => round($batchDuration, 2),
                 'memory_used' => $this->formatBytes(memory_get_usage(true))
@@ -123,7 +123,7 @@ class SyncBatchProcessor
 
                 if ($attempt < $this->retry_attempts) {
                     $retryDelay = $this->calculateRetryDelay($attempt);
-                    $this->logger->log('Retrying batch', 'warning', [
+                    $this->logger->warning('Retrying batch', [
                         'attempt' => $attempt,
                         'delay' => $retryDelay,
                         'error' => $e->getMessage()
@@ -187,7 +187,7 @@ class SyncBatchProcessor
     {
         if (function_exists('gc_collect_cycles')) {
             $collected = gc_collect_cycles();
-            $this->logger->log('Memory cleanup performed', 'debug', [
+            $this->logger->debug('Memory cleanup performed', [
                 'collected' => $collected,
                 'memory_before' => $this->formatBytes(memory_get_usage(true))
             ]);
@@ -272,7 +272,7 @@ class SyncBatchProcessor
     {
         $results['memory_peak'] = memory_get_peak_usage(true);
 
-        $this->logger->log('Batch processing completed', 'info', [
+        $this->logger->info('Batch processing completed', [
             'results' => $results,
             'memory_peak' => $this->formatBytes($results['memory_peak'])
         ]);

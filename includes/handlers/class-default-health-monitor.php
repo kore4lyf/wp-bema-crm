@@ -4,7 +4,6 @@ namespace Bema\Handlers;
 
 use Bema\Interfaces\Health_Monitor;
 use Bema\Bema_CRM_Logger;
-use function Bema\debug_to_file;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -50,7 +49,7 @@ class Default_Health_Monitor implements Health_Monitor
                 'status' => 'running'
             ];
 
-            debug_to_file([
+            $this->logger->debug([
                 'job_id' => $jobId,
                 'action' => 'start_monitoring'
             ], 'HEALTH_MONITOR');
@@ -71,7 +70,7 @@ class Default_Health_Monitor implements Health_Monitor
                 unset($this->activeJobs[$jobId]);
                 update_option('bema_active_jobs', $this->activeJobs);
 
-                debug_to_file([
+                $this->logger->debug([
                     'job_id' => $jobId,
                     'action' => 'stop_monitoring'
                 ], 'HEALTH_MONITOR');

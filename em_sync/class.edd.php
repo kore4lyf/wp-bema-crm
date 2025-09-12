@@ -7,7 +7,6 @@ use WP_Object_Cache;
 use Bema\Bema_CRM_Logger;
 use Bema\Interfaces\Provider_Interface;
 use Bema\Exceptions\API_Exception;
-use function Bema\debug_to_file;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -41,14 +40,15 @@ class EDD implements Provider_Interface
     public function __construct($apiKey, $token, ?Bema_CRM_Logger $logger = null)
     {
         try {
-            debug_to_file('Constructing EDD with API key present: ' . (!empty($apiKey) ? 'Yes' : 'No'), 'EDD_INIT');
-            debug_to_file('Token present: ' . (!empty($token) ? 'Yes' : 'No'), 'EDD_INIT');
+            $this->logger = $logger ?? Bema_CRM_Logger::create('edd-provider');
+            $this->logger->debug('Constructing EDD with API key present: ' . (!empty($apiKey) ? 'Yes' : 'No'), ['context' => 'EDD_INIT']);
+            $this->logger->debug('Token present: ' . (!empty($token) ? 'Yes' : 'No'), ['context' => 'EDD_INIT']);
 
             global $wpdb;
             $this->wpdb = $wpdb;
 
             if (empty($apiKey)) {
-                debug_to_file('Warning: Empty EDD credentials provided', 'EDD_INIT');
+                $this->logger->debug('Warning: Empty EDD credentials provided', ['context' => 'EDD_INIT']);
                 $apiKey = '';
                 $token = '';
             }
@@ -56,16 +56,15 @@ class EDD implements Provider_Interface
             $this->apiKey = $apiKey;
             $this->token = $token;
             $this->siteUrl = site_url();
-            $this->logger = $logger ?? Bema_CRM_Logger::create('edd-provider');
             $this->setHeaders();
 
-            debug_to_file('EDD instance constructed successfully', 'EDD_INIT');
+            $this->logger->debug('EDD instance constructed successfully', ['context' => 'EDD_INIT']);
         } catch (Exception $e) {
             $this->logger->error('Error constructing EDD', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            debug_to_file('Error constructing EDD: ' . $e->getMessage(), 'EDD_ERROR');
+            $this->logger->debug('Error constructing EDD: ' . $e->getMessage(), ['context' => 'EDD_ERROR']);
         }
     }
 
@@ -176,7 +175,7 @@ class EDD implements Provider_Interface
                 // Use longer timeout for local environment
                 $timeout = 30; // 30 seconds fixed timeout for local environment
 
-                debug_to_file([
+                $this->logger->debug([
                     'request_started' => true,
                     'attempt' => $attempts + 1,
                     'url' => $request_url,
@@ -202,7 +201,7 @@ class EDD implements Provider_Interface
                 $end_time = microtime(true);
                 $duration = round($end_time - $start_time, 2);
 
-                debug_to_file([
+                $this->logger->debug([
                     'request_duration' => $duration,
                     'attempt' => $attempts + 1
                 ], 'EDD_API_REQUEST');
@@ -219,7 +218,7 @@ class EDD implements Provider_Interface
                 $statusCode = wp_remote_retrieve_response_code($response);
                 $body = wp_remote_retrieve_body($response);
 
-                debug_to_file([
+                $this->logger->debug([
                     'response_received' => true,
                     'status_code' => $statusCode,
                     'response_length' => strlen($body)
@@ -241,7 +240,7 @@ class EDD implements Provider_Interface
                 $lastException = $e;
                 $attempts++;
 
-                debug_to_file([
+                $this->logger->debug([
                     'request_failed' => true,
                     'attempt' => $attempts,
                     'error' => $e->getMessage()
@@ -609,7 +608,7 @@ class EDD implements Provider_Interface
     public function findProductByNamePattern(string $artist, string $product): ?int
     {
         try {
-            debug_to_file([
+            $this->logger->debug([
                 'searching_for_product' => true,
                 'artist' => $artist,
                 'product' => $product
@@ -638,7 +637,7 @@ class EDD implements Provider_Interface
 
             $productId = $this->wpdb->get_var($query);
 
-            debug_to_file([
+            $this->logger->debug([
                 'product_search_results' => [
                     'product_code' => $product,
                     'product_title' => $productTitle,
@@ -655,7 +654,7 @@ class EDD implements Provider_Interface
                 'trace' => $e->getTraceAsString()
             ]);
 
-            debug_to_file([
+            $this->logger->debug([
                 'product_search_failed' => true,
                 'error' => $e->getMessage()
             ], 'EDD_PRODUCT_SEARCH');
@@ -667,7 +666,7 @@ class EDD implements Provider_Interface
     public function hasUserPurchasedProduct(int $user_id, int $product_id)
     {
         try {
-            debug_to_file([
+            $this->logger->debug([
                 'checking_purchase' => 1,
                 'user_id' => $user_id,
                 'product_id' => $product_id
@@ -676,7 +675,7 @@ class EDD implements Provider_Interface
 
             $has_purchased =  edd_has_user_purchased( absint($user_id), $product_id );
 
-            debug_to_file([
+            $this->logger->debug([
                 'purchase_check_result' => [
                     'user_id' => $user_id,
                     'product_id' => $product_id,
@@ -748,12 +747,12 @@ class EDD implements Provider_Interface
                 \is_plugin_active('easy-digital-downloads-pro/easy-digital-downloads.php');
 
             if (!$edd_active) {
-                debug_to_file('EDD or EDD Pro not active', 'API_TEST');
+                $this->logger->debug('EDD or EDD Pro not active', 'API_TEST');
                 return false;
             }
 
             if (empty($this->apiKey) || empty($this->token)) {
-                debug_to_file('EDD API credentials missing', 'API_TEST');
+                $this->logger->debug('EDD API credentials missing', 'API_TEST');
                 return false;
             }
 
@@ -783,7 +782,7 @@ class EDD implements Provider_Interface
                 $api_url = add_query_arg(['edd-api' => $endpoint], $api_url);
                 $test_url = add_query_arg($api_params, $api_url);
 
-                debug_to_file("Testing EDD API URL (attempt " . ($attempts + 1) . "): " . $test_url, 'API_TEST');
+                $this->logger->debug("Testing EDD API URL (attempt " . ($attempts + 1) . "): " . $test_url, 'API_TEST');
 
                 // Progressively increase timeout with each attempt
                 $timeout = 5 + ($attempts * 2);
@@ -803,21 +802,21 @@ class EDD implements Provider_Interface
                 ];
 
                 $start_time = microtime(true);
-                debug_to_file("Starting API request with {$timeout}s timeout...", 'API_TEST');
+                $this->logger->debug("Starting API request with {$timeout}s timeout...", 'API_TEST');
 
                 $response = wp_remote_get($test_url, $args);
 
                 $end_time = microtime(true);
                 $duration = round($end_time - $start_time, 2);
-                debug_to_file("API request took {$duration} seconds", 'API_TEST');
+                $this->logger->debug("API request took {$duration} seconds", 'API_TEST');
 
                 if (!is_wp_error($response)) {
                     $code = wp_remote_retrieve_response_code($response);
                     $body = wp_remote_retrieve_body($response);
 
-                    debug_to_file('EDD API response details:', 'API_TEST');
-                    debug_to_file('Status code: ' . $code, 'API_TEST');
-                    debug_to_file('Response body: ' . substr($body, 0, 500), 'API_TEST');
+                    $this->logger->debug('EDD API response details:', 'API_TEST');
+                    $this->logger->debug('Status code: ' . $code, 'API_TEST');
+                    $this->logger->debug('Response body: ' . substr($body, 0, 500), 'API_TEST');
 
                     // If we get any valid response, consider it a success
                     if ($code >= 200 && $code < 300) {
@@ -825,7 +824,7 @@ class EDD implements Provider_Interface
                     }
                 }
 
-                debug_to_file('Attempt ' . ($attempts + 1) . ' failed, trying next endpoint', 'API_TEST');
+                $this->logger->debug('Attempt ' . ($attempts + 1) . ' failed, trying next endpoint', 'API_TEST');
                 $attempts++;
 
                 // Short delay between attempts
@@ -834,15 +833,15 @@ class EDD implements Provider_Interface
                 }
             }
 
-            debug_to_file('All attempts failed', 'API_TEST');
+            $this->logger->debug('All attempts failed', 'API_TEST');
             return false;
         } catch (Exception $e) {
             $this->logger->error('EDD connection test failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            debug_to_file('EDD test_connection exception: ' . $e->getMessage(), 'API_TEST');
-            debug_to_file('Stack trace: ' . $e->getTraceAsString(), 'API_TEST');
+            $this->logger->debug('EDD test_connection exception: ' . $e->getMessage(), 'API_TEST');
+            $this->logger->debug('Stack trace: ' . $e->getTraceAsString(), 'API_TEST');
             return false;
         }
     }

@@ -66,13 +66,13 @@ class Bema_Settings
     public function ensure_settings_initialized(): void
     {
         try {
-            debug_to_file('Ensuring settings are initialized');
+            $this->logger->debug('Ensuring settings are initialized');
             if (get_option($this->options_key, false) === false) {
-                debug_to_file('Initializing default settings');
+                $this->logger->debug('Initializing default settings');
                 update_option($this->options_key, $this->default_settings);
             }
         } catch (Exception $e) {
-            debug_to_file('Error ensuring settings: ' . $e->getMessage());
+            $this->logger->error('Error ensuring settings: ' . $e->getMessage());
         }
     }
 
@@ -667,12 +667,12 @@ class Bema_Settings
         // API Settings Validation
         if (isset($settings['api'])) {
             if (empty($settings['api']['mailerlite_api_key'])) {
-                debug_to_file('Warning: MailerLite API key is empty');
+                $this->logger->warning('Warning: MailerLite API key is empty');
                 // Don't throw exception, just log warning
             }
 
             if (empty($settings['api']['edd_api_key']) || empty($settings['api']['edd_token'])) {
-                debug_to_file('Warning: EDD credentials are incomplete');
+                $this->logger->warning('Warning: EDD credentials are incomplete');
                 // Don't throw exception, just log warning
             }
         }
@@ -681,13 +681,13 @@ class Bema_Settings
         if (isset($settings['sync']['batch_size'])) {
             if ($settings['sync']['batch_size'] < 100 || $settings['sync']['batch_size'] > 10000) {
                 $settings['sync']['batch_size'] = 1000; // Set default instead of throwing error
-                debug_to_file('Warning: Invalid batch size, setting to default 1000');
+                $this->logger->warning('Warning: Invalid batch size, setting to default 1000');
             }
         }
 
         // If we want to collect all validation errors
         if (!empty($errors)) {
-            debug_to_file('Settings validation errors: ' . print_r($errors, true));
+            $this->logger->error('Settings validation errors: ' . print_r($errors, true));
             // Instead of throwing exception, just log errors
             $this->logger->warning('Settings validation warnings', [
                 'errors' => $errors
