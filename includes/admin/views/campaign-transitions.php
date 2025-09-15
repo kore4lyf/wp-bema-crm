@@ -1,5 +1,7 @@
-<?php if (!defined('ABSPATH'))
-    exit; ?>
+<?php
+if (!defined('ABSPATH'))
+    exit;
+?>
 
 <?php
 // Fetch current tab
@@ -17,9 +19,9 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
     <!-- Navigation Tabs -->
     <nav class="nav-tab-wrapper">
         <a href="?page=bema-transitions&tab=controls"
-        class="nav-tab <?php echo $current_tab === 'controls' ? 'nav-tab-active' : ''; ?>"> Controls </a>
+            class="nav-tab <?php echo $current_tab === 'controls' ? 'nav-tab-active' : ''; ?>"> Controls </a>
         <a href="?page=bema-transitions&tab=history"
-        class="nav-tab <?php echo $current_tab === 'history' ? 'nav-tab-active' : ''; ?>"> History </a>
+            class="nav-tab <?php echo $current_tab === 'history' ? 'nav-tab-active' : ''; ?>"> History </a>
         <a href="?page=bema-transitions&tab=settings"
             class="nav-tab <?php echo $current_tab === 'settings' ? 'nav-tab-active' : ''; ?>"> Settings </a>
     </nav>
@@ -28,56 +30,37 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
 
         <!-- Tiers  -->
         <?php
-        $transition_controls_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'transition-controls-view.php';
+            $transition_controls_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'transition-controls-view.php';
 
-        if (file_exists($transition_controls_view_path)) {
-            include $transition_controls_view_path;
-        } else {
-            echo '<div class="notice notice-error"><p>Missing view file: transition-controls-view.php</p></div>';
-        }
-        ?>  
+            if (file_exists($transition_controls_view_path)) {
+                include $transition_controls_view_path;
+            } else {
+                echo '<div class="notice notice-error"><p>Missing view file: transition-controls-view.php</p></div>';
+            }
+        ?>
 
     <?php elseif ($current_tab === 'history'): ?>
         <!-- Campaign Connections -->
-        <div class="postbox">
-            <h2 class="transitions-subtitle"><span><?php _e('Campaign Connections', 'bema-crm'); ?></span></h2>
+        <?php
+            $transition_history_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'transition-history-view.php';
 
-            <div class="inside">
-                <table class="wp-list-table widefat fixed striped">
-                    <thead>
-                        <tr>
-                            <th><?php _e('Source Campaign', 'bema-crm'); ?></th>
-                            <th><?php _e('Destination Campaign', 'bema-crm'); ?></th>
-                            <th><?php _e('Status', 'bema-crm'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($campaign_connections as $connection): ?>
-                            <tr>
-                                <td><?php echo esc_html($connection['source']); ?></td>
-                                <td><?php echo esc_html($connection['destination']); ?></td>
-                                <td>
-                                    <span class="status-indicator <?php echo $connection['valid'] ? 'valid' : 'invalid'; ?>">
-                                        <?php echo $connection['valid'] ? '✓' : '✗'; ?>
-                                    </span>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+            if (file_exists($transition_history_view_path)) {
+                include $transition_history_view_path;
+            } else {
+                echo '<div class="notice notice-error"><p>Missing view file: transition-history-view.php</p></div>';
+            }
+        ?>
 
     <?php elseif ($current_tab === 'settings'): ?>
         <!-- Tiers  -->
         <?php
-        $tier_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'tier-view.php';
+            $tier_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'tier-view.php';
 
-        if (file_exists($tier_table_view_path)) {
-            include $tier_table_view_path;
-        } else {
-            echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
-        }
+            if (file_exists($tier_table_view_path)) {
+                include $tier_table_view_path;
+            } else {
+                echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
+            }
         ?>
 
 
