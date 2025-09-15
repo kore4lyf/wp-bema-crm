@@ -8,6 +8,9 @@ use Bema\Sync_Scheduler;
 use Bema\Bema_Settings;
 use Bema\Bema_CRM_Logger;
 use Bema\Providers\EDD;
+use Bema\Sync_Manager;
+use Bema\Transition_Manager;
+use Bema\Manager_Factory;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -29,6 +32,8 @@ class Bema_Admin_Interface
     private $campaign_manager;
     private $system_logger;
     private $sync_db_manager;
+    private $sync_manager;
+    private $transition_manager;
 
     const MENU_SLUG = 'bema-sync-manager';
     const CAPABILITY = 'manage_options';
@@ -75,7 +80,14 @@ class Bema_Admin_Interface
             } catch (Exception $e) {
                 $this->logger->debug('Failed to initialize campaign manager: ' . $e->getMessage(), []);
             }
-        }
+        // Initialize new managers
+        try {
+            $this->sync_manager = Manager_Factory::get_sync_manager();
+            $this->transition_manager = Manager_Factory::get_transition_manager();
+            $this->logger->debug('New managers initialized successfully', []);
+        } catch (Exception $e) {
+            $this->logger->error('Failed to initialize new managers: ' . $e->getMessage(), []);
+        }        }
 
         $this->logger->debug('ADMIN_INTERFACE_INIT', [
             'sync_instance_provided' => isset($sync_instance) ? 'yes' : 'no',
@@ -252,6 +264,8 @@ class Bema_Admin_Interface
         add_action('wp_ajax_bema_get_sync_status', [$this, 'handle_get_sync_status']);
         add_action('wp_ajax_bema_validate_groups', [$this, 'handle_validate_groups']);
         add_action('wp_ajax_bema_sync_groups', [$this, 'handle_sync_groups']);
+        add_action('wp_ajax_bema_sync_with_manager', [$this, 'handle_sync_with_manager']);
+        add_action('wp_ajax_bema_transition_campaigns', [$this, 'handle_transition_campaigns']);
 
         $this->logger->debug('AJAX handlers registered', []);
     }
@@ -645,20 +659,16 @@ class Bema_Admin_Interface
                 throw new Exception(__('No valid campaigns with groups found', 'bema-crm'));
             }
 
-            // Schedule sync with validated campaigns
-            if (!$this->sync_scheduler) {
-                throw new Exception(__('Sync scheduler not initialized', 'bema-crm'));
+            // Use Sync_Manager instead of scheduler
+            if (!$this->sync_manager) {
+                throw new Exception(__('Sync manager not initialized', 'bema-crm'));
             }
 
-            $result = $this->sync_scheduler->schedule_sync('custom', $valid_campaigns);
+            $this->sync_manager->sync_all_mailerlite_data();
 
-            if ($result) {
-                wp_send_json_success([
-                    'message' => __('Sync started successfully', 'bema-crm')
-                ]);
-            } else {
-                throw new Exception(__('Failed to schedule sync', 'bema-crm'));
-            }
+            wp_send_json_success([
+                'message' => __('Sync started successfully', 'bema-crm')
+            ]);
         } catch (Exception $e) {
             $this->logger->debug('SYNC_HANDLER_ERROR', [
                 'error' => $e->getMessage(),
@@ -673,7 +683,66 @@ class Bema_Admin_Interface
 
     public function handle_get_sync_status(): void
     {
+    }
+
+    /**
+     * Handle sync using new Sync_Manager
+     */
+    public function handle_sync_with_manager(): void
+    {
         try {
+            check_ajax_referer('bema_admin_nonce', 'nonce');
+
+            if (!$this->sync_manager) {
+                throw new Exception(__('Sync manager not initialized', 'bema-crm'));
+            }
+
+            // Start full sync using Sync_Manager
+            $this->sync_manager->sync_all_mailerlite_data();
+
+            wp_send_json_success([
+                'message' => __('Sync completed successfully', 'bema-crm')
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Sync with manager failed', ['error' => $e->getMessage()]);
+            wp_send_json_error([
+                'message' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Handle campaign transitions using Transition_Manager
+     */
+    public function handle_transition_campaigns(): void
+    {
+        try {
+            check_ajax_referer('bema_admin_nonce', 'nonce');
+
+            if (!$this->transition_manager) {
+                throw new Exception(__('Transition manager not initialized', 'bema-crm'));
+            }
+
+            $source_campaign = sanitize_text_field($_POST['source_campaign'] ?? '');
+            $destination_campaign = sanitize_text_field($_POST['destination_campaign'] ?? '');
+
+            if (empty($source_campaign) || empty($destination_campaign)) {
+                throw new Exception(__('Source and destination campaigns are required', 'bema-crm'));
+            }
+
+            $this->transition_manager->transition_campaigns($source_campaign, $destination_campaign);
+
+            wp_send_json_success([
+                'message' => __('Campaign transition completed successfully', 'bema-crm')
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Campaign transition failed', ['error' => $e->getMessage()]);
+            wp_send_json_error([
+                'message' => $e->getMessage()
+            ]);
+        }        try {
             check_ajax_referer('bema_admin_nonce', 'nonce');
 
             if (!$this->sync_instance) {
@@ -1215,7 +1284,7 @@ class Bema_Admin_Interface
             $action = sanitize_text_field($_POST['sync_action'] ?? '');
             switch ($action) {
                 case 'start':
-                    $this->sync_scheduler->schedule_sync('manual', []);
+                    $this->sync_manager->sync_all_mailerlite_data();
                     $this->add_admin_notice(__('Sync started successfully', 'bema-crm'), self::STATUS_SUCCESS);
                     break;
                 case 'stop':

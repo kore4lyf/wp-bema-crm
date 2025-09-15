@@ -3,30 +3,34 @@
 use Bema\Database\Campaign_Database_Manager;
 use Bema\Database\Transition_Database_Manager;
 use Bema\Database\Transition_Subscribers_Database_Manager;
+use Bema\Transition_Manager;
 
 $campaign_database = new Campaign_Database_Manager();
 $transition_database = new Transition_Database_Manager();
 $transition_subscribers_database = new Transition_Subscribers_Database_Manager();
 
-$available_campaigns = $campaign_database->get_all_campaigns();
+$transition_manager = new Transition_Manager();
+$transition_manager->campaign_database = $campaign_database;
+$transition_manager->transition_database = $transition_database;
+$transition_manager->transition_subscribers_database = $transition_subscribers_database;
 
+$available_campaigns = $campaign_database->get_all_campaigns();
 $transition_history = $transition_database->get_all_records();
 
 /**
  * Handles the form submission for campaign transition.
  */
-function handle_campaign_transition($sync_instance)
+function handle_campaign_transition($transition_manager)
 {
-    // Retrieve the values from the select options
     $source_campaign = isset($_POST['source_campaign']) ? sanitize_text_field($_POST['source_campaign']) : '';
     $destination_campaign = isset($_POST['destination_campaign']) ? sanitize_text_field($_POST['destination_campaign']) : '';
 
-    $sync_instance->transition_campaigns($source_campaign, $destination_campaign);
+    $transition_manager->transition_campaigns($source_campaign, $destination_campaign);
 }
 
-// Check if the form has been submitted by checking for the submit button's name.
+// Check if the form has been submitted
 if (isset($_POST['submit_transition_button'])) {
-    handle_campaign_transition($admin->sync_instance);
+    handle_campaign_transition($transition_manager);
 }
 
 ?>
@@ -42,85 +46,89 @@ if (isset($_POST['submit_transition_button'])) {
         <table class="form-table">
             <tbody>
                 <tr>
-                    <th scope="row"><label for="source_campaign">Source</label></th>
+                    <th scope="row"><label for="source_campaign">Source Campaign</label></th>
                     <td>
-                        <select name="source_campaign" id="source_campaign" class="regular-text">
-                            <option value="">Campaign</option>
+                        <select name="source_campaign" id="source_campaign" class="regular-text" required>
+                            <option value="">Select Source Campaign</option>
                             <?php foreach ($available_campaigns as $campaign): ?>
-                                <option value="<?php echo esc_attr($campaign['campaign']); ?>">
-                                    <?php echo esc_html($campaign['campaign']); ?></option>
+                                <option value="<?php _e(esc_attr($campaign['campaign']), 'bema-crm'); ?>" 
+                                    <?php selected(isset($_POST['source_campaign']) ? $_POST['source_campaign'] : '', $campaign['campaign']); ?>>
+                                    <?php _e(esc_html($campaign['campaign']), 'bema-crm'); ?>
+                                </option>
                             <?php endforeach; ?>
                         </select>
+                        <p class="description">Select the campaign to transition subscribers from.</p>
                     </td>
                 </tr>
                 <tr>
-                    <th scope="row"><label for="destination_campaign">Destination</label></th>
+                    <th scope="row"><label for="destination_campaign">Destination Campaign</label></th>
                     <td>
-                        <select name="destination_campaign" id="destination_campaign" class="regular-text">
-                            <option value="">Campaign</option>
+                        <select name="destination_campaign" id="destination_campaign" class="regular-text" required>
+                            <option value="">Select Destination Campaign</option>
                             <?php foreach ($available_campaigns as $campaign): ?>
-                                <option value="<?php echo esc_attr($campaign['campaign']); ?>">
-                                    <?php echo esc_html($campaign['campaign']); ?></option>
+                                <option value="<?php _e(esc_attr($campaign['campaign']), 'bema-crm'); ?>"
+                                    <?php selected(isset($_POST['destination_campaign']) ? $_POST['destination_campaign'] : '', $campaign['campaign']); ?>>
+                                    <?php _e(esc_html($campaign['campaign']), 'bema-crm'); ?>
+                                </option>
                             <?php endforeach; ?>
                         </select>
+                        <p class="description">Select the campaign to transition subscribers to.</p>
                     </td>
                 </tr>
             </tbody>
         </table>
 
-        <?php submit_button('Start Transition', 'primary', 'submit_transition_button'); ?>
+        <p class="submit">
+            <input type="submit" name="submit_transition_button" class="button-primary" 
+                   value="<?php _e('Start Transition', 'bema-crm'); ?>" />
+        </p>
     </form>
-</div>
 
-<hr />
-
-<div>
-    <h2>Transition History</h2>
-    <p>A record of all past campaign transitions.</p>
-
-    <table class="wp-list-table widefat fixed striped">
-        <thead>
-            <tr>
-                <th scope="col" class="manage-column">Source</th>
-                <th scope="col" class="manage-column">Destination</th>
-                <th scope="col" class="manage-column">Subscribers</th>
-                <th scope="col" class="manage-column">Status</th>
-                <th scope="col" class="manage-column">Date</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php if (!empty($transition_history)): ?>
-                <?php foreach ($transition_history as $row): ?>
+    <?php if (!empty($transition_history)): ?>
+    <div class="transition-history" style="margin-top: 30px;">
+        <h3><?php _e('Recent Transitions', 'bema-crm'); ?></h3>
+        <table class="wp-list-table widefat fixed striped">
+            <thead>
+                <tr>
+                    <th><?php _e('Source Campaign', 'bema-crm'); ?></th>
+                    <th><?php _e('Destination Campaign', 'bema-crm'); ?></th>
+                    <th><?php _e('Status', 'bema-crm'); ?></th>
+                    <th><?php _e('Subscribers Moved', 'bema-crm'); ?></th>
+                    <th><?php _e('Date', 'bema-crm'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if ( ! empty( $transition_history ) ) : ?>
+                <?php foreach ( $transition_history as $row ) : ?>
                     <tr>
-                        <td><?php echo esc_html($row['source']); ?></td>
-                        <td><?php echo esc_html($row['destination']); ?></td>
-                        <td><?php echo esc_html($row['subscribers']); ?></td>
-                        <td><?php echo esc_html($row['status']); ?></td>
-                        <td><?php
-try {
-$dateString = esc_html($row['transition_date']);
-$dateTime = new DateTime($dateString);
-echo $dateTime->format('F j, Y g:i A');
-} catch (Exception $e) {
-$logger->error('ERROR converting date: ' . $e->getMessage(), $row['transition_date']);
-echo '—';
-}
-                        ?>
+                        <td><?php _e(esc_html( $row['source'] , 'bema-crm')); ?></td>
+                        <td><?php _e(esc_html( $row['destination'] ), 'bema-crm'); ?></td>
+                        <td><?php _e(esc_html( $row['status'] ), 'bema-crm'); ?></td>
+                        <td><?php _e(esc_html( $row['subscribers'] ), 'bema-crm'); ?></td>
+                        <td>
+                            <?php 
+                                try {
+                                    $dateString = '2025-09-10 09:50:31';
+                                    
+                                    $date_time_obj = new DateTime($dateString);
+                                    $readable_date_time = $date_time_obj->format('F j, Y, g:i a');
+                                    _e($readable_date_time, 'bema-crm');
+
+                                } catch (Exception $e) {
+                                    _e('—', 'bema-crm');
+                                    $admin->$logger('Error: ' . esc_html($e->getMessage()));
+                                }
+                            ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
-            <?php else: ?>
-                <tr>
-                    <td class="text-center" colspan="5">No transition history found.</td>
-                </tr>
-            <?php endif; ?>
-        </tbody>
-    </table>
+                <?php else : ?>
+                    <tr>
+                        <td class="text-center" colspan="5">No transition history found.</td>
+                    </tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
 </div>
-
-
-<style>
-    .text-center {
-        text-align: center;
-    }
-</style>

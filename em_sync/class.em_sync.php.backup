@@ -2921,6 +2921,942 @@ class EM_Sync
             ];
         }
     }
+
+
+
+
+
+
+    /**
+     * Fetches campaign names from a utility class.
+     *
+     * @return array A list of campaign names.
+     */
+    private function fetch_campaign_names(): array
+    {
+        $this->logger->debug('Fetching campaign names from utils');
+        $campaign_name_list = $this->campaign_database->get_all_campaign_names();
+        $this->logger->info('Campaign names fetched', [
+            'campaign_count' => count($campaign_name_list),
+            'campaigns' => $campaign_name_list
+        ]);
+        return $campaign_name_list;
+    }
+
+    /**
+     * Generates a list of all possible group names for all campaigns.
+     *
+     * @param array $campaign_name_list An array of campaign names.
+     * @return array A consolidated list of all campaign group names.
+     */
+    private function generate_all_campaign_group_names(array $campaign_name_list): array
+    {
+        $this->logger->debug('Generating all campaign group names');
+        $all_campaign_group_names = [];
+        foreach ($campaign_name_list as $campaign_name) {
+            // Get the specific groups for each campaign.
+            $campaign_groups = $this->utils->get_campaign_group_names($campaign_name);
+            // Merge them into a single list.
+            $all_campaign_group_names = array_merge($all_campaign_group_names, $campaign_groups);
+            $this->logger->debug('Generated groups for campaign', [
+                'campaign' => $campaign_name,
+                'groups' => $campaign_groups
+            ]);
+        }
+        $this->logger->info('All campaign group names generated', [
+            'total_group_names' => count($all_campaign_group_names),
+            'group_names' => $all_campaign_group_names
+        ]);
+        return $all_campaign_group_names;
+    }
+
+    /**
+     * Fetches all groups from the MailerLite API.
+     *
+     * @return array An array of group data from MailerLite.
+     */
+    private function fetch_mailerlite_groups(): array
+    {
+        $this->logger->debug('Fetching groups from MailerLite API');
+        return $this->mailerLiteInstance->getGroups();
+    }
+
+    /**
+     * Processes the groups fetched from MailerLite, identifying groups to upsert and those found.
+     *
+     * @param array $mailerlite_group_data The raw group data from the MailerLite API.
+     * @param array $all_campaign_group_names A list of all expected group names.
+     * @return array An associative array containing 'found_names' and 'groups_to_upsert'.
+     */
+    private function process_mailerlite_groups(array $mailerlite_group_data, array $all_campaign_group_names): array
+    {
+        $this->logger->debug('Processing existing MailerLite groups');
+        // Convert all campaign group names to uppercase for case-insensitive matching.
+        $all_upper = array_map('strtoupper', $all_campaign_group_names);
+        $group_names_found_on_mailerlite = [];
+        $groups_to_upsert = [];
+
+        foreach ($mailerlite_group_data as $group) {
+            $group_name_upper = strtoupper($group['name']);
+            // Check if the group name matches one of the expected campaign group names.
+            if (in_array($group_name_upper, $all_upper, true)) {
+                // Extract the campaign name from the group name.
+                $campaign_name = $this->utils->get_campaign_name_from_text($group['name']);
+                // Get the campaign data from the local database.
+                $campaign_data = $this->campaign_database->get_campaign_by_name($campaign_name);
+
+                if (!$campaign_data || !isset($campaign_data['id'])) {
+                    $this->logger->warning('Campaign not found for group', [
+                        'group_name' => $group['name'],
+                        'extracted_campaign_name' => $campaign_name
+                    ]);
+                    continue;
+                }
+
+                $campaign_id = $campaign_data['id'];
+
+                // Record the found group's uppercase name and prepare it for upsert.
+                $group_names_found_on_mailerlite[] = $group_name_upper;
+                $groups_to_upsert[] = [
+                    'id' => $group['id'],
+                    'group_name' => $group['name'],
+                    'campaign_id' => $campaign_id
+                ];
+
+                $this->logger->debug('Found matching group', [
+                    'group_name' => $group['name'],
+                    'group_id' => $group['id'],
+                    'campaign_id' => $campaign_id
+                ]);
+            }
+        }
+
+        return [
+            'found_names' => $group_names_found_on_mailerlite,
+            'groups_to_upsert' => $groups_to_upsert
+        ];
+    }
+
+    /**
+     * Creates new groups in MailerLite for the provided list of missing group names.
+     *
+     * This method iterates through an array of group names, extracts campaign data,
+     * and uses the MailerLite API to create each group. It logs the process and
+     * handles cases where campaign data is not found or group creation fails.
+     * The method returns an array of successfully created groups, formatted for local database upsert.
+     *
+     * @param array $missing_groups An array of group names that need to be created.
+     * @return array An array of newly created group data, formatted for upserting.
+     */
+    private function create_missing_groups(array $missing_groups): array
+    {
+        $created_groups_to_upsert = [];
+
+        // Loop through each group name that is missing from MailerLite.
+        foreach ($missing_groups as $group_name) {
+            $this->logger->debug('Attempting to create group in MailerLite', ['group_name' => $group_name]);
+
+            // Extract the campaign name from the group name and retrieve its data from the database.
+            $campaign_name = $this->utils->get_campaign_name_from_text($group_name);
+            $campaign_data = $this->campaign_database->get_campaign_by_name($campaign_name);
+
+            // Check if the campaign data was found.
+            if (!isset($campaign_data['id'])) {
+                // If the campaign isn't found, log a warning and skip to the next group.
+                $this->logger->warning('Campaign details not found for group creation', [
+                    'group_name' => $group_name,
+                    'campaign_name' => $campaign_name
+                ]);
+                continue;
+            }
+
+            // Call the MailerLite API to create the new group.
+            $new_group = $this->mailerLiteInstance->createGroup($group_name);
+            $this->logger->debug('MailerLite API response for new group creation', ['response' => $new_group]);
+
+            // Check if the API call was successful and returned a valid group ID.
+            if ($new_group && isset($new_group['id'])) {
+                $campaign_id = $campaign_data['id'];
+
+                // Format the data for upserting into the local database.
+                $created_groups_to_upsert[] = [
+                    'id' => $new_group['id'],
+                    'group_name' => $new_group['name'],
+                    'campaign_id' => $campaign_id
+                ];
+
+                // Log a success message with details of the created group.
+                $this->logger->info('Successfully created group', [
+                    'group_name' => $new_group['name'],
+                    'group_id' => $new_group['id'],
+                    'campaign_id' => $campaign_id
+                ]);
+            } else {
+                // If group creation failed, log an error.
+                $this->logger->error('Failed to create group in MailerLite', [
+                    'group_name' => $group_name,
+                    'response' => $new_group
+                ]);
+            }
+        }
+
+        $this->logger->info('Finished processing all missing groups.');
+        return $created_groups_to_upsert;
+    }
+
+    public function sync_subscribers(): int
+    {
+        $this->logger->info('Starting subscriber sync');
+
+        try {
+            $this->logger->debug('Fetching all subscribers from MailerLite API');
+            $all_subscribers = $this->mailerLiteInstance->getSubscribers();
+            $subscribers_count = count($all_subscribers);
+
+            $this->logger->info('Subscribers fetched from MailerLite', [
+                'subscriber_count' => $subscribers_count
+            ]);
+
+            if (empty($all_subscribers)) {
+                $this->logger->warning('No subscribers found in MailerLite');
+                return 0;
+            }
+
+            // Store all subscribers in the main table in a batch operation if possible
+            $this->logger->debug('Syncing subscribers to local database');
+
+            try {
+                $sync_result = $this->subscribers_database->sync_subscribers($all_subscribers);
+            } catch (Exception $db_e) {
+                throw $db_e;
+            }
+
+            $this->logger->info('Subscriber sync to database completed', [
+                'sync_result' => $sync_result,
+                'subscribers_synced' => $subscribers_count
+            ]);
+
+            $this->logger->info('Subscriber sync completed successfully', [
+                'total_subscribers' => $subscribers_count
+            ]);
+
+            return $subscribers_count;
+
+        } catch (Exception $e) {
+            $this->logger->error('Subscriber sync failed', [
+                'error_message' => $e->getMessage(),
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+                'stack_trace' => $e->getTraceAsString()
+            ]);
+            return 0;
+        }
+    }
+
+    public function sync_mailerlite_campaign_group_subscribers()
+    {
+        $this->logger->info('Starting campaign group subscriber sync');
+
+        try {
+            // Prepare data for batch upsert into the campaign_group_subscribers_database
+            $campaign_subscribers_data = [];
+
+            $this->logger->debug('Fetching all groups from local database');
+            $campaign_group_list = $this->group_database->get_all_groups();
+            $this->logger->info('Local groups fetched', [
+                'group_count' => count($campaign_group_list),
+                'groups' => array_column($campaign_group_list, 'group_name')
+            ]);
+
+            $this->logger->debug('Fetching MailerLite groups map');
+            $mailerlite_groups_map = $this->mailerLiteInstance->getAllGroupsNameMap();
+            $this->logger->info('MailerLite groups map fetched', [
+                'mailerlite_groups_count' => count($mailerlite_groups_map)
+            ]);
+
+            foreach ($campaign_group_list as $group) {
+                $this->logger->debug('Processing group', [
+                    'group_name' => $group['group_name'],
+                    'group_id' => $group['id']
+                ]);
+
+                // Get group details from the MailerLite list. The key for lookup is the group id.
+                $group_details = $mailerlite_groups_map[strtoupper($group['group_name'])] ?? null;
+
+                // Check if group details were successfully retrieved from MailerLite.
+                if (!$group_details) {
+                    $this->logger->warning('Group not found in MailerLite', [
+                        'group_name' => $group['group_name']
+                    ]);
+                    continue;
+                }
+
+                // Fetch the subscribers for the MailerLite group.
+                $this->logger->debug('Fetching subscribers for group', [
+                    'group_name' => $group['group_name'],
+                    'group_id' => $group['id']
+                ]);
+                $group_subscribers = $this->mailerLiteInstance->getGroupSubscribers($group['id']);
+
+                // Check if there are any subscribers in the group. If not, log it and move on.
+                if (empty($group_subscribers)) {
+                    $this->logger->debug('No subscribers found in group', [
+                        'group_name' => $group['group_name']
+                    ]);
+                    continue;
+                }
+
+                $this->logger->info('Subscribers found in group', [
+                    'group_name' => $group['group_name'],
+                    'subscriber_count' => count($group_subscribers)
+                ]);
+
+                // Extract the campaign name from the group name.
+                $campaign_name = $this->utils->get_campaign_name_from_text($group['group_name']);
+
+                // Check if the campaign name was successfully extracted.
+                if (empty($campaign_name)) {
+                    $this->logger->warning('Could not extract campaign name from group', [
+                        'group_name' => $group['group_name']
+                    ]);
+                    continue;
+                }
+
+                // Get the campaign ID from the database using the extracted name.
+                $campaign_data = $this->campaign_database->get_campaign_by_name($campaign_name);
+
+                // Check if the campaign ID was successfully retrieved from the database.
+                if (empty($campaign_data) || empty($campaign_data['id'])) {
+                    $this->logger->warning('Campaign not found in database', [
+                        'campaign_name' => $campaign_name,
+                        'group_name' => $group['group_name']
+                    ]);
+                    continue;
+                }
+
+                $campaign_id = $campaign_data['id'];
+                $this->logger->debug('Processing subscribers for campaign group', [
+                    'campaign_name' => $campaign_name,
+                    'campaign_id' => $campaign_id,
+                    'group_name' => $group['group_name'],
+                    'subscriber_count' => count($group_subscribers)
+                ]);
+
+                foreach ($group_subscribers as $subscriber) {
+                    $tier = $this->utils->get_tier_from_group_name($group['group_name']);
+                    $purchase_id = $this->get_purchase_id_from_subscriber($subscriber, $campaign_name);
+
+                    $campaign_subscriber = [
+                        'campaign_id' => $campaign_id,
+                        'subscriber_id' => $subscriber['id'],
+                        'group_id' => $group['id'],
+                        'subscriber_tier' => ucwords(strtolower($tier)),
+                        'purchase_id' => $purchase_id,
+                    ];
+
+                    $campaign_subscribers_data[] = $campaign_subscriber;
+                }
+
+                $this->logger->debug('Processed subscribers for group', [
+                    'group_name' => $group['group_name'],
+                    'processed_count' => count($group_subscribers)
+                ]);
+            }
+
+            // Final batch upsert
+            if (!empty($campaign_subscribers_data)) {
+                $this->logger->info('Performing bulk upsert of campaign subscribers', [
+                    'total_campaign_subscribers' => count($campaign_subscribers_data)
+                ]);
+
+                $upsert_result = $this->campaign_group_subscribers_database->upsert_campaign_subscribers_bulk($campaign_subscribers_data);
+                $this->logger->info('Campaign subscriber bulk upsert completed', [
+                    'upsert_result' => $upsert_result,
+                    'subscribers_upserted' => count($campaign_subscribers_data)
+                ]);
+
+                $this->logger->info('Campaign group subscriber sync completed successfully');
+                return true;
+            } else {
+                $this->logger->warning('No campaign subscribers to upsert');
+                return false;
+            }
+
+        } catch (Exception $e) {
+            $this->logger->error('Campaign group subscriber sync failed', [
+                'error_message' => $e->getMessage(),
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+                'stack_trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Extracts the purchase ID from a subscriber's fields based on the campaign name.
+     *
+     * @param array $subscriber The subscriber data array from the MailerLite API.
+     * @param string $campaign_name The name of the campaign.
+     * @return string|null The purchase ID string or null if not found.
+     */
+    private function get_purchase_id_from_subscriber(array $subscriber, string $campaign_name): ?string
+    {
+        $purchase_field = strtolower($campaign_name . '_PURCHASE');
+        return $subscriber['fields'][$purchase_field] ?? null;
+    }
+
+    /**
+     * Synchronizes all MailerLite data, including campaigns, fields, groups, and subscribers.
+     *
+     * This method orchestrates the entire synchronization process to ensure the local database
+     * is up-to-date with MailerLite's data. It provides granular status updates for user feedback
+     * and optimizes data processing for efficiency.
+     *
+     * @return void
+     * @throws Exception If any of the MailerLite API calls or database operations fail.
+     */
+    public function sync_all_mailerlite_data(): void
+    {
+        // Capability check
+        if (!current_user_can('manage_options')) {
+            wp_die('You do not have permission to perform this action.');
+        }
+
+        $start_time = microtime(true);
+        $sync_option_key = 'bema_crm_sync_status';
+
+        $this->logger->info('=== STARTING FULL MAILERLITE SYNC ===', [
+            'timestamp' => date('Y-m-d H:i:s'),
+            'memory_usage' => $this->formatBytes(memory_get_usage(true)),
+            'peak_memory' => $this->formatBytes(memory_get_peak_usage(true))
+        ]);
+
+        try {
+            // 1. Sync Album Campaigns
+            $this->logger->info('STEP 1/5: Starting album campaign sync');
+
+            $this->update_sync_status('Running', 'Updating campaigns', 0, 5, $sync_option_key);
+
+            $step_start = microtime(true);
+            $campaign_result = $this->sync_album_campaign_data();
+            $step_duration = round(microtime(true) - $step_start, 2);
+
+            $this->logger->info('STEP 1/5: Album campaign sync completed', [
+                'duration_seconds' => $step_duration,
+                'result' => $campaign_result,
+                'memory_usage' => $this->formatBytes(memory_get_usage(true))
+            ]);
+
+            // 2. Sync Fields
+            $this->logger->info('STEP 2/5: Starting field sync');
+
+            $this->update_sync_status('Running', 'Updating field database', 1, 5, $sync_option_key);
+
+            $step_start = microtime(true);
+            $field_result = $this->sync_mailerlite_field_data();
+            $step_duration = round(microtime(true) - $step_start, 2);
+
+            $this->logger->info('STEP 2/5: Field sync completed', [
+                'duration_seconds' => $step_duration,
+                'result' => $field_result,
+                'memory_usage' => $this->formatBytes(memory_get_usage(true))
+            ]);
+
+            // 3. Sync Groups
+            $this->logger->info('STEP 3/5: Starting group sync');
+
+            $this->update_sync_status('Running', 'Updating group database', 2, 5, $sync_option_key);
+
+            $step_start = microtime(true);
+            $group_result = $this->sync_mailerlite_group_data();
+            $step_duration = round(microtime(true) - $step_start, 2);
+
+            $this->logger->info('STEP 3/5: Group sync completed', [
+                'duration_seconds' => $step_duration,
+                'result' => $group_result,
+                'memory_usage' => $this->formatBytes(memory_get_usage(true))
+            ]);
+
+            // 4a. Sync Subscribers
+            $this->logger->info('STEP 4/5: Starting subscriber sync');
+
+            $this->update_sync_status('Running', 'Fetching subscribers data', 3, 5, $sync_option_key);
+
+            $step_start = microtime(true);
+            $subscribers_count = $this->sync_subscribers();
+            $step_duration = round(microtime(true) - $step_start, 2);
+
+            $this->logger->info('STEP 4/5: Subscriber sync completed', [
+                'duration_seconds' => $step_duration,
+                'subscribers_count' => $subscribers_count,
+                'memory_usage' => $this->formatBytes(memory_get_usage(true))
+            ]);
+
+            // 4b. Sync Campaign Group subscribers
+            $this->logger->info('STEP 5/5: Starting campaign group subscriber sync');
+
+            $this->update_sync_status('Running', 'Syncing campaign group subscribers', 4, 5, $sync_option_key);
+
+            $step_start = microtime(true);
+            $campaign_subscriber_result = $this->sync_mailerlite_campaign_group_subscribers();
+            $step_duration = round(microtime(true) - $step_start, 2);
+
+            $this->logger->info('STEP 5/5: Campaign group subscriber sync completed', [
+                'duration_seconds' => $step_duration,
+                'result' => $campaign_subscriber_result,
+                'memory_usage' => $this->formatBytes(memory_get_usage(true))
+            ]);
+
+            // 5. Final Status Update and History
+            $total_duration = round(microtime(true) - $start_time, 2);
+
+            $this->update_sync_status('Completed', 'Sync completed', 5, 5, $sync_option_key, $subscribers_count);
+
+            $this->sync_database->upsert_sync_record('Completed', $subscribers_count, "Successfully synced {$subscribers_count} subscribers.", null);
+
+            $this->logger->info('=== FULL MAILERLITE SYNC COMPLETED SUCCESSFULLY ===', [
+                'total_duration_seconds' => $total_duration,
+                'subscribers_synced' => $subscribers_count,
+                'final_memory_usage' => $this->formatBytes(memory_get_usage(true)),
+                'peak_memory_usage' => $this->formatBytes(memory_get_peak_usage(true)),
+                'timestamp' => date('Y-m-d H:i:s')
+            ]);
+
+        } catch (Exception $e) {
+            $total_duration = round(microtime(true) - $start_time, 2);
+
+            $this->logger->error('=== FULL MAILERLITE SYNC FAILED ===', [
+                'error_message' => $e->getMessage(),
+                'error_code' => $e->getCode(),
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+                'duration_before_failure' => $total_duration,
+                'memory_usage' => $this->formatBytes(memory_get_usage(true)),
+                'peak_memory' => $this->formatBytes(memory_get_peak_usage(true)),
+                'timestamp' => date('Y-m-d H:i:s'),
+                'stack_trace' => $e->getTraceAsString()
+            ]);
+
+            $this->update_sync_status('Idle', 'Sync failed: ' . $e->getMessage(), 0, 5, $sync_option_key);
+
+            $this->sync_database->upsert_sync_record('Failed', 0, $e->getMessage(), null);
+        }
+    }
+
+    /**
+     * Validate an EDD customer order by ID and email.
+     *
+     * Maintain the original logic: sanitize inputs, detect EDD version,
+     * fetch order/payment, and compare emails case-insensitively.
+     *
+     * @param int    $order_id The EDD order ID (required).
+     * @param string $email    The customer's email address (required).
+     * @return bool True if valid match, false otherwise.
+     */
+    public function validate_edd_order_and_customer(int $order_id, string $email): bool
+    {
+        // Sanitize inputs
+        $this->logger->debug('Starting EDD order/customer validation', [
+            'order_id_raw' => $order_id,
+            'email_raw' => $email,
+        ]);
+
+        $order_id = absint($order_id);
+        $email = sanitize_email($email);
+
+        $this->logger->debug('Sanitized inputs', [
+            'order_id' => $order_id,
+            'email' => $email,
+        ]);
+
+        if ($order_id <= 0 || empty($email)) {
+            $this->logger->warning('Invalid input for EDD validation: non-positive order_id or empty email', [
+                'order_id' => $order_id,
+                'email' => $email,
+            ]);
+            return false;
+        }
+
+        $order_email = '';
+
+        // EDD 3.x and newer
+        if (function_exists('edd_get_order')) {
+            $this->logger->debug('EDD 3.x detected, attempting to fetch order', [
+                'order_id' => $order_id,
+            ]);
+
+            $order = edd_get_order($order_id);
+            if (!$order) {
+                $this->logger->warning('EDD 3.x: Order not found', [
+                    'order_id' => (int) $order_id,
+                ]);
+                return false;
+            }
+
+            $order_email = !empty($order->email) ? sanitize_email($order->email) : '';
+            $this->logger->debug('EDD 3.x: Retrieved order email', [
+                'order_email' => $order_email,
+            ]);
+        }
+        // EDD 2.x (legacy)
+        elseif (function_exists('edd_get_payment')) {
+            $this->logger->debug('EDD 2.x detected, attempting to fetch payment', [
+                'order_id' => $order_id,
+            ]);
+
+            $payment = edd_get_payment($order_id);
+            if (!$payment) {
+                $this->logger->warning('EDD 2.x: Payment not found', [
+                    'order_id' => (int) $order_id,
+                ]);
+                return false;
+            }
+
+            $order_email = !empty($payment->email) ? sanitize_email($payment->email) : '';
+            $this->logger->debug('EDD 2.x: Retrieved order email', [
+                'order_email' => $order_email,
+            ]);
+        } else {
+            // EDD not available
+            $this->logger->error('EDD core functions not found: neither edd_get_order nor edd_get_payment exists');
+            return false;
+        }
+
+        // Compare email case-insensitively
+        $comparison_result = strcasecmp($order_email, $email) === 0;
+        $this->logger->debug('Compared emails for match', [
+            'order_email' => $order_email,
+            'provided_email' => $email,
+            'comparison_result' => $comparison_result ? 'match' : 'no_match',
+        ]);
+
+        return $comparison_result;
+    }
+
+    /**
+     * Transitions subscribers between campaigns based on defined rules.
+     *
+     * This function handles the logic for moving subscribers from a source campaign to a destination campaign.
+     * It iterates through a set of predefined transition rules, identifies subscribers that meet the criteria
+     * (e.g., a purchase has been made), and moves them to the appropriate group in the destination campaign.
+     * The process includes validating campaign and group existence, retrieving subscribers, filtering them based on rules,
+     * performing a bulk import to the new group, and logging the transition for tracking purposes.
+     *
+     * @param string $source_campaign_name The name of the source campaign to transition subscribers from.
+     * @param string $destination_campaign_name The name of the destination campaign to transition subscribers to.
+     *
+     * @return void
+     */
+    public function transition_campaigns(string $source_campaign_name, string $destination_campaign_name)
+    {
+        try {
+            // Use capability check
+            if (!current_user_can('manage_options')) {
+                wp_die('You do not have permission to perform this action.');
+            }
+
+            // Retrieve transition rules from the options table.
+            $transition_rules = $this->getTransitionRules();
+            if (empty($transition_rules)) {
+                $this->logger->info('Transition rules are not defined.', 'info');
+                return;
+            }
+
+            // Get the source campaign details by name.
+            $source_campaign_id = $this->getCampaignIdByNameOrFail($source_campaign_name, true);
+
+            // Get the destination campaign details by name.
+            $destination_campaign_id = $this->getCampaignIdByNameOrFail($destination_campaign_name, false);
+
+            // Record the transition in the database for historical tracking.
+            $transition_id = $this->transition_database->insert_record($source_campaign_id, $destination_campaign_id, "Complete", 0);
+
+            // Total count of subscribers transferred.
+            $transfer_count = 0;
+
+            // Iterate through each defined transition rule.
+            foreach ($transition_rules as $index => $rule) {
+                // Normalize the current tier name for consistent group naming.
+                $normalize_current_tier = $this->normalizeTierName($rule['current_tier']);
+                $normalize_next_tier = $this->normalizeTierName($rule['next_tier']);
+
+                // Construct the name of the custom field used to track purchases.
+                $source_purchase_field = $this->buildSourcePurchaseFieldName($source_campaign_name);
+
+                // Find the source group based on the campaign name and tier.
+                $source_group_name = $this->buildGroupName($source_campaign_name, $normalize_current_tier);
+                $source_campaign_group = $this->group_database->get_group_by_name($source_group_name);
+
+                if (!$source_campaign_group) {
+                    $this->logger->log("Source group '{$source_group_name}' not found. Skipping.", 'warning');
+                    continue; // Skip this rule if the source group doesn't exist.
+                }
+                $source_campaign_group_id = $source_campaign_group['id'];
+
+                // Find the corresponding destination group.
+                $destination_group_name = $this->buildGroupName($destination_campaign_name, $normalize_next_tier);
+                $destination_campaign_group = $this->group_database->get_group_by_name($destination_group_name);
+
+                if (!$destination_campaign_group) {
+                    $this->logger->log("Destination group '{$destination_group_name}' not found. Skipping.", 'warning');
+                    continue; // Skip this rule if the destination group doesn't exist.
+                }
+
+                $destination_campaign_group_id = $destination_campaign_group['id'];
+
+                // Retrieve all subscribers from the source group.
+                $source_campaign_subscribers = $this->mailerLiteInstance->getGroupSubscribers($source_campaign_group_id);
+
+                if (empty($source_campaign_subscribers)) {
+                    $this->logger->log("No subscribers found in group '{$source_group_name}'. Skipping.", 'info');
+                    continue; // Skip if there are no subscribers to process.
+                }
+
+                // Determine eligible subscribers using the exact original logic.
+                $subscribers_to_transfer = $this->determineEligibleSubscribers($source_campaign_subscribers, $rule, $source_purchase_field);
+
+                // Keep exact logic: increment transfer count before emptiness check
+                $transfer_count += count($subscribers_to_transfer);
+
+                if (empty($subscribers_to_transfer)) {
+                    $this->logger->log("No subscribers to transfer for group '{$source_group_name}' based on rules.", 'info');
+                    continue; // Skip if no subscribers meet the transfer criteria.
+                }
+
+                try {
+                    // Perform a bulk import of eligible subscribers to the destination group.
+                    $this->mailerLiteInstance->importBulkSubscribersToGroup($subscribers_to_transfer, $destination_campaign_group_id);
+                } catch (Exception $e) {
+                    // Log any errors that occur during the bulk import.
+                    $this->logger->info('Bulk import error', 'error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+                }
+
+                // Store the transferred subscribers for the transition record.
+                $this->transition_subscribers_database->bulk_upsert($subscribers_to_transfer, $transition_id);
+            }
+
+            // Record the transition in the database for historical tracking.
+            $this->transition_database->upsert_record($transition_id, "Complete", $transfer_count);
+
+        } catch (Exception $e) {
+            // Catch and log any global exceptions that occur during the function execution.
+            $this->logger->info('Error transitioning campaigns', 'error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+        }
+    }
+
+    // ===============  Helper methods (logic-preserving modularization) ===============
+
+    private function getTransitionRules(): array
+    {
+        return get_option('bema_crm_transition_matrix', []);
+    }
+
+    private function getCampaignIdByNameOrFail(string $campaign_name, bool $isSource): int
+    {
+        $campaign = $this->campaign_database->get_campaign_by_name($campaign_name);
+        if (!$campaign) {
+            if ($isSource) {
+                throw new Exception("Source campaign '{$campaign_name}' not found.");
+            }
+            throw new Exception("Destination campaign '{$campaign_name}' not found.");
+        }
+        return $campaign['id'];
+    }
+
+    private function normalizeTierName(string $tier): string
+    {
+        return strtoupper(str_replace(' ', '_', $tier));
+    }
+
+    private function buildSourcePurchaseFieldName(string $source_campaign_name): string
+    {
+        return strtolower($source_campaign_name . '_' . 'PURCHASE');
+    }
+
+    private function buildGroupName(string $campaign_name, string $normalized_tier): string
+    {
+        return $campaign_name . '_' . $normalized_tier;
+    }
+
+    private function determineEligibleSubscribers(array $source_campaign_subscribers, array $rule, string $source_purchase_field): array
+    {
+        $subscribers_to_transfer = [];
+        // Check if the rule requires a purchase for transition.
+        if (!empty($rule['requires_purchase'])) {
+            // Filter subscribers based on the purchase field.
+            foreach ($source_campaign_subscribers as $subscriber) {
+                $field_value = $subscriber['fields'][$source_purchase_field] ?? null;
+                if ($field_value) {
+                    $is_valid_purchase = false;
+                    try {
+                        // Validate the purchase using an external system (e.g., EDD).
+                        $is_valid_purchase = $this->validate_edd_order_and_customer($field_value, $subscriber['email']);
+                    } catch (Exception $ve) {
+                        // Suppress validation errors to continue processing.
+                        $this->logger->log("Validation error for subscriber '{$subscriber['email']}'", 'warning', ['error' => $ve->getMessage()]);
+                    }
+                    if ($is_valid_purchase) {
+                        $subscribers_to_transfer[] = $subscriber; // Add subscriber to the transfer list.
+                    }
+                }
+            }
+        } else {
+            // If no purchase is required, all subscribers are eligible for transfer.
+            $subscribers_to_transfer = $source_campaign_subscribers;
+        }
+        return $subscribers_to_transfer;
+    }
+
+
+    /**
+     * Validates group data in the database against MailerLite groups.
+     * 
+     * This function fetches all groups from MailerLite and compares them with
+     * groups stored in the local database. Any groups that exist in the database
+     * but no longer exist in MailerLite will be deleted from the database.
+     *
+     * @return array Returns an array with validation results including counts of validated and deleted groups
+     * @throws Exception If there are issues with API calls or database operations
+     */
+    public function validate_group_data_in_database(): array
+    {
+        $this->logger->info('Starting group data validation against MailerLite');
+
+        $validation_results = [
+            'status' => 'success',
+            'total_db_groups' => 0,
+            'validated_groups' => 0,
+            'deleted_groups' => 0,
+            'deleted_group_ids' => [],
+            'errors' => []
+        ];
+
+        try {
+            // Fetch all groups from MailerLite with ID as key
+            $this->logger->debug('Fetching groups from MailerLite API');
+            $mailerlite_groups_map = $this->mailerLiteInstance->getAllGroupsIdMap();
+
+            if (!is_array($mailerlite_groups_map)) {
+                throw new Exception('Failed to fetch groups from MailerLite or invalid response format');
+            }
+
+            $this->logger->info('MailerLite groups fetched', [
+                'mailerlite_groups_count' => count($mailerlite_groups_map),
+                'group_ids' => array_keys($mailerlite_groups_map)
+            ]);
+
+            // Fetch all groups from local database
+            $this->logger->debug('Fetching groups from local database');
+            $database_groups = $this->group_database->get_all_groups();
+
+            if (!is_array($database_groups)) {
+                throw new Exception('Failed to fetch groups from local database');
+            }
+
+            $validation_results['total_db_groups'] = count($database_groups);
+
+            $this->logger->info('Database groups fetched', [
+                'database_groups_count' => count($database_groups),
+                'group_ids' => array_column($database_groups, 'id')
+            ]);
+
+            // Start database transaction for consistency
+            $this->dbManager->beginTransactionWithRetry(self::TRANSACTION_TIMEOUT);
+
+            // Validate each group in the database
+            foreach ($database_groups as $db_group) {
+                $group_id = $db_group['id'];
+                $group_name = $db_group['group_name'];
+
+                // Convert group ID to uppercase string for comparison (as getAllGroupsIdMap uses uppercase keys)
+                $group_id_key = strtoupper((string) $group_id);
+
+                $this->logger->debug('Validating group', [
+                    'group_id' => $group_id,
+                    'group_name' => $group_name,
+                    'lookup_key' => $group_id_key
+                ]);
+
+                // Check if the group still exists in MailerLite
+                if (isset($mailerlite_groups_map[$group_id_key])) {
+                    // Group exists in MailerLite, mark as validated
+                    $validation_results['validated_groups']++;
+
+                    $this->logger->debug('Group validated - exists in MailerLite', [
+                        'group_id' => $group_id,
+                        'group_name' => $group_name
+                    ]);
+                } else {
+                    // Group no longer exists in MailerLite, delete from database
+                    $this->logger->warning('Group not found in MailerLite, deleting from database', [
+                        'group_id' => $group_id,
+                        'group_name' => $group_name
+                    ]);
+
+                    try {
+                        $deleted_rows = $this->group_database->delete_group_by_id($group_id);
+
+                        if ($deleted_rows !== false && $deleted_rows > 0) {
+                            $validation_results['deleted_groups']++;
+                            $validation_results['deleted_group_ids'][] = $group_id;
+
+                            $this->logger->info('Group successfully deleted from database', [
+                                'group_id' => $group_id,
+                                'group_name' => $group_name,
+                                'deleted_rows' => $deleted_rows
+                            ]);
+                        } else {
+                            $error_msg = "Failed to delete group from database: {$group_name} (ID: {$group_id})";
+                            $validation_results['errors'][] = $error_msg;
+                            $this->logger->error($error_msg);
+                        }
+                    } catch (Exception $delete_error) {
+                        $error_msg = "Error deleting group {$group_name} (ID: {$group_id}): " . $delete_error->getMessage();
+                        $validation_results['errors'][] = $error_msg;
+                        $this->logger->error($error_msg, [
+                            'exception' => $delete_error->getMessage(),
+                            'trace' => $delete_error->getTraceAsString()
+                        ]);
+                    }
+                }
+            }
+
+            // Commit the transaction
+            $this->dbManager->commit();
+
+            // Set status based on whether there were any errors
+            if (!empty($validation_results['errors'])) {
+                $validation_results['status'] = 'completed_with_errors';
+            }
+
+            $this->logger->info('Group data validation completed', [
+                'status' => $validation_results['status'],
+                'total_db_groups' => $validation_results['total_db_groups'],
+                'validated_groups' => $validation_results['validated_groups'],
+                'deleted_groups' => $validation_results['deleted_groups'],
+                'errors_count' => count($validation_results['errors'])
+            ]);
+
+            return $validation_results;
+
+        } catch (Exception $e) {
+            // Rollback transaction on error
+            if (isset($this->dbManager)) {
+                $this->dbManager->rollback();
+            }
+
+            $validation_results['status'] = 'failed';
+            $validation_results['errors'][] = $e->getMessage();
+
+            $this->logger->error('Group data validation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            throw $e;
+        }
+    }
 }
 
 // Queue Manager Class with Priority Support
