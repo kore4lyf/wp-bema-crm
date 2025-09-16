@@ -109,6 +109,7 @@ class Bema_CRM
     private static $static_logger = null;
     private $logger;
     private $sync_instance;
+    private $transition_instance;
     private $utils;
     private $system_logger;
     private $transition_db_manager;
@@ -606,6 +607,15 @@ class Bema_CRM
                 $this->settings
             );
 
+            // Create Transition_Manager instance
+            $this->transition_instance = new \Bema\Transition_Manager();
+            $this->transition_instance->mailerLiteInstance = $mailerlite;
+            $this->transition_instance->logger = Bema_CRM::get_logger();
+            $this->transition_instance->campaign_database = $this->campaign_db_manager;
+            $this->transition_instance->group_database = $this->group_db_manager;
+            $this->transition_instance->transition_database = $this->transition_db_manager;
+            $this->transition_instance->transition_subscribers_database = $this->transition_subscribers_db_manager;
+
             // Initialize handlers
             $lock_handler = new \Bema\Handlers\Default_Lock_Handler();
             $health_monitor = new \Bema\Handlers\Default_Health_Monitor();
@@ -764,8 +774,16 @@ class Bema_CRM
 
             // Register sync cron Hook
             add_action('bema_crm_sync_cron_job', function () {
-                // Perform the sync
-                $this->sync_instance->sync_all_mailerlite_data();
+                // Perform the sync using manager factory pattern
+                $sync_manager = $this->get_manager('sync');
+                $sync_manager->sync_all_mailerlite_data();
+            });
+
+            // Register transition cron Hook
+            add_action('bema_crm_transition_cron_job', function () {
+                // Perform transitions using manager factory pattern
+                $transition_manager = $this->get_manager('transition');
+                $transition_manager->process_all_transitions();
             });
 
             Bema_CRM::get_logger()->debug('Hooks added successfully');
@@ -1262,6 +1280,20 @@ class Bema_CRM
         Bema_CRM::get_logger()->debug('Default transition matrix settings initialized');
     }
 
+    /**
+     * Manager factory pattern to get manager instances
+     */
+    private function get_manager(string $type)
+    {
+        switch ($type) {
+            case 'sync':
+                return $this->sync_instance;
+            case 'transition':
+                return $this->transition_instance;
+            default:
+                throw new Exception("Unknown manager type: {$type}");
+        }
+    }
 
     private static function create_directories(): void
     {

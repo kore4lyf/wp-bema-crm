@@ -317,24 +317,71 @@ class Sync_Manager
 
     function resync_subscribers(array $ids)
     {
-        // Iterate the IDs
         $processed = 0;
+        $subscribers_data = [];
+        
         foreach ($ids as $id) {
-            // Placeholder: call your actual resync function/hook here
+            try {
+                // 1. Fetch each subscriber details from MailerLite class
+                $subscriber = $this->mailerLiteInstance->getSubscriber($id);
+                
+                if (!empty($subscriber)) {
+                    $subscribers_data[] = $subscriber;
+                    $processed++;
+                }
+            } catch (Exception $e) {
+                $this->logger->error("Failed to fetch subscriber {$id}: " . $e->getMessage());
+            }
+        }
+
+        if (!empty($subscribers_data)) {
+            // 2. Upsert subscriber data
+            $this->subscribers_database->sync_subscribers($subscribers_data);
             
-            // 1. Fetch each subscriber details
-
-
-            // 2. Upsert subscriber group data
-
-
-            // 3. Upsert subscriber field data
-
-            
-            $processed++;
+            // 3. Sync campaign group subscriber relationships
+            $this->sync_individual_campaign_group_subscribers($subscribers_data);
         }
 
         \Bema\bema_notice("Resync complete: processed $processed subscriber(s).", 'success', 'Resync Completed');
+    }
+
+    private function sync_individual_campaign_group_subscribers(array $subscribers_data)
+    {
+        $campaign_subscribers_data = [];
+        $campaign_group_list = $this->group_database->get_all_groups();
+        $mailerlite_groups_map = $this->mailerLiteInstance->getAllGroupsNameMap();
+
+        foreach ($subscribers_data as $subscriber) {
+            $subscriber_groups = $this->mailerLiteInstance->getSubscriberGroups($subscriber['id']);
+            
+            foreach ($subscriber_groups as $group_data) {
+                $group_name = $group_data['name'];
+                $group = array_filter($campaign_group_list, fn($g) => strtoupper($g['group_name']) === strtoupper($group_name));
+                
+                if (empty($group)) continue;
+                
+                $group = reset($group);
+                $campaign_name = $this->utils->get_campaign_name_from_text($group['group_name']);
+                $campaign_data = $this->campaign_database->get_campaign_by_name($campaign_name);
+                
+                if (empty($campaign_data['id'])) continue;
+                
+                $tier = $this->utils->get_tier_from_group_name($group['group_name']);
+                $purchase_id = $this->get_purchase_id_from_subscriber($subscriber, $campaign_name);
+
+                $campaign_subscribers_data[] = [
+                    'campaign_id' => $campaign_data['id'],
+                    'subscriber_id' => $subscriber['id'],
+                    'group_id' => $group['id'],
+                    'subscriber_tier' => ucwords(strtolower($tier)),
+                    'purchase_id' => $purchase_id,
+                ];
+            }
+        }
+
+        if (!empty($campaign_subscribers_data)) {
+            $this->campaign_group_subscribers_database->upsert_campaign_subscribers_bulk($campaign_subscribers_data);
+        }
     }
 
     // ========================================

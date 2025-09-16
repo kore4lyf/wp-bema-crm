@@ -239,4 +239,30 @@ class Transition_Manager
             ? $tierProgression[$currentTier]['purchased']
             : $tierProgression[$currentTier]['default'];
     }
+
+    /**
+     * Process all configured transitions
+     */
+    public function process_all_transitions(): void
+    {
+        try {
+            $transition_rules = get_option('bema_crm_transition_matrix', []);
+            
+            if (empty($transition_rules)) {
+                $this->logger->info('No transition rules configured for cron job');
+                return;
+            }
+
+            foreach ($transition_rules as $rule) {
+                if (isset($rule['source_campaign']) && isset($rule['destination_campaign'])) {
+                    $this->transition_campaigns(
+                        $rule['source_campaign'],
+                        $rule['destination_campaign']
+                    );
+                }
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Error processing transitions in cron: ' . $e->getMessage());
+        }
+    }
 }
