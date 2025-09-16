@@ -448,12 +448,13 @@ VALUES " . implode(', ', $placeholders);
         $tier = trim($tier);
         $campaign_name = trim($campaign_name);
         // Start with the base SELECT and FROM clauses.
-        $sql_select = "SELECT " . (empty($campaign_name) ? "*" : "s.*, c.tier, c.purchase_id, t.campaign");
+        $sql_select = "SELECT " . (empty($campaign_name) ? "s.*" : "s.*, MAX(c.tier) as tier, MAX(c.purchase_id) as purchase_id, MAX(t.campaign) as campaign, MAX(tm.transition_date) as transition_date");
         $sql_from = "FROM {$this->table_name} AS s";
 
         // Initialize WHERE clause conditions and parameters for prepared statements.
         $where = [];
         $params = [];
+
 
         // Conditionally add INNER JOINs to access campaign and tier data.
         // Joins are only added if a campaign or tier filter is present,
@@ -461,7 +462,11 @@ VALUES " . implode(', ', $placeholders);
         if ($campaign_name || $tier) {
             $sql_from .= " INNER JOIN {$this->wpdb->prefix}bemacrm_campaign_subscribersmeta AS c ON s.id = c.subscriber_id";
             $sql_from .= " INNER JOIN {$this->wpdb->prefix}bemacrm_campaignsmeta AS t ON c.campaign_id = t.id";
-        }
+            
+            // Add LEFT JOIN with transition_subscribersmeta table
+            $sql_from .= " LEFT JOIN {$this->wpdb->prefix}bemacrm_transition_subscribersmeta AS ts ON s.id = ts.subscriber_id";
+            $sql_from .= " LEFT JOIN {$this->wpdb->prefix}bemacrm_transitionsmeta AS tm ON ts.transition_id = tm.id AND tm.destination = c.campaign_id";
+        } 
 
         // Build the WHERE clause based on the provided filters.
         if ($campaign_name) {
@@ -485,6 +490,9 @@ VALUES " . implode(', ', $placeholders);
         // Construct the full WHERE clause string.
         $where_sql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
+        
+        $group_by_sql = ($campaign_name || $tier) ? "GROUP BY s.id" : "";
+
         // Combine all parameters for the prepared statement.
         $final_params = array_merge($params, [$per_page, $offset]);
 
@@ -493,6 +501,7 @@ VALUES " . implode(', ', $placeholders);
             "{$sql_select}
          {$sql_from}
          {$where_sql}
+         {$group_by_sql}
          ORDER BY s.id DESC
          LIMIT %d OFFSET %d",
             ...$final_params

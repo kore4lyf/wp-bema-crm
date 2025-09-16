@@ -245,6 +245,43 @@ class Transition_Database_Manager
     }
 
     /**
+     * Returns a map of transition records indexed by their ID.
+     *
+     * @return array Associative array with transition IDs as keys and full records as values.
+     */
+    public function transition_data_map(): array {
+        // Get all transition records
+        $transition_data = $this->get_all_records();
+
+        $data = [];
+
+        foreach ($transition_data as $item) {
+            $data[$item['id']] = $item;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Returns a map of transition dates indexed by transition ID.
+     *
+     * @return array Associative array with transition IDs as keys and dates as values.
+     */
+    public function get_transition_date_from_id_map(): array {
+        // Get all transition records
+        $sql = "SELECT * FROM {$this->table_name}";
+        $transition_data = $this->wpdb->get_results($sql, ARRAY_A);
+
+        $data = [];
+
+        foreach ($transition_data as $item) {
+            $data[$item['id']] = $item['transition_date'];
+        }
+
+        return $data;
+    }
+
+    /**
      * Deletes the transition database table.
      *
      * @return bool True on success, false on failure.

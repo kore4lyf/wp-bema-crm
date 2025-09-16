@@ -1,6 +1,6 @@
 <?php
 use Bema\Database\Subscribers_Database_Manager;
-use Bema\Database\Transition_Subscribers_Database_Manager;
+use Bema\Database\Transition_Database_Manager;
 use Bema\Manager_Factory;
 
 if (!defined('ABSPATH')) {
@@ -8,6 +8,9 @@ if (!defined('ABSPATH')) {
 }
 
 $sync_manager = Manager_Factory::get_sync_manager();
+$transition_database = new Transition_Database_Manager();
+
+$transition_date_from_id_map = $transition_database->get_transition_date_from_id_map();
 
 // Handle filter inputs.
 $selected_tier = isset($_GET['tier']) ? sanitize_text_field(wp_unslash($_GET['tier'])) : '';
@@ -73,12 +76,13 @@ if (isset($_POST['bulk-action'])) {
 				\Bema\bema_notice('No subscribers selected. Please select subscribers to resync.', 'warning', 'Selection Required');
 				break;
 			}
+
 			try {
 				$processed = $sync_manager->resync_subscribers( $ids);
-				echo var_dump($ids);
 			} catch (Exception $e) {
 				\Bema\bema_notice('Resync failed: ' . $e->getMessage(), 'error', 'Resync Error');
 			}
+
 			break;
 	}
 }
@@ -176,7 +180,6 @@ if (isset($_POST['bulk-action'])) {
 					<?php foreach ($subscribers as $subscriber): ?>
 						<tr>
 							<th scope="row" class="check-column">
-
 								<input type="checkbox" name="subscriber_ids[]"
 									value="<?php echo esc_attr($subscriber['id']); ?>" />
 							</th>
@@ -188,13 +191,30 @@ if (isset($_POST['bulk-action'])) {
 								<td><?php echo esc_html($selected_campaign); ?> </td>
 								<td><?php echo esc_html($subscriber['tier'] ?? '—'); ?></td>
 								<td><?php echo esc_html($subscriber['purchase_id'] ?? '—'); ?></td>
-								<td><?php echo esc_html($subscriber['purchase_id'] ?? '—'); ?></td>
+								<td>
+									<?php
+									    if (isset($subscriber['transition_date'])) {
+
+											try {
+												$date_time_obj = new DateTime($subscriber['transition_date']);
+												$readable_date_time = $date_time_obj->format('F j, Y, g:i a');
+												echo $readable_date_time;
+												
+											} catch (Exception $e) {
+												echo '—';
+												$admin->$logger('Error: ' . esc_html($e->getMessage()));
+											}
+										} else {
+											echo '—';
+										}
+									?>
+							</td>
 							<?php endif; ?>
 						</tr>
 					<?php endforeach; ?>
 				<?php else: ?>
 					<tr>
-						<td class="text-center" colspan="<?php echo $selected_campaign ? 8 : 5; ?>">
+						<td class="text-center" colspan="<?php echo $selected_campaign ? 9 : 5; ?>">
 							No subscribers found.
 						</td>
 					</tr>
