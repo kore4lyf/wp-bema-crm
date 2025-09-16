@@ -59,7 +59,6 @@ spl_autoload_register(function ($class) {
             'EDD' => 'em_sync/class.edd.php',
             'Triggers' => 'em_sync/triggers/class-triggers.php',
             'Utils' => 'em_sync/utils/class-utils.php',
-            'Bema_CRM_Notifier' => 'includes/notification/class-bema-crm-notifier.php',
             'Sync_Manager' => 'em_sync/sync/class-sync-manager.php',
             'Transition_Manager' => 'em_sync/transition/class-transition-manager.php',
         ];
@@ -756,7 +755,7 @@ class Bema_CRM
             }
 
             // Add notification handler
-            \Bema\Bema_CRM_Notifier::init();
+            require_once BEMA_PATH . 'includes/notification/class-bema-crm-notifier.php';
 
             // Add CRM Trigger
             $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '');

@@ -22,6 +22,8 @@ use Bema\Database\Group_Database_Manager;
 use Bema\Database\Campaign_Database_Manager;
 use Bema\Database\Transition_Database_Manager;
 use Bema\Database\Transition_Subscribers_Database_Manager;
+use Bema\Sync_Manager;
+use Bema\Transition_Manager;
 use Bema\Utils;
 
 if (!defined('ABSPATH')) {
@@ -65,6 +67,8 @@ class EM_Sync
     private $campaign_group_subscribers_database;
     private $transition_database;
     private $transition_subscribers_database;
+    private $sync_manager;
+    private $transition_manager;
 
     // Performance settings
     private $batchSize = 1000;
@@ -150,6 +154,14 @@ class EM_Sync
 
             $this->transition_subscribers_database = new Transition_Subscribers_Database_Manager();
             $this->logger->debug('Transition Subscribers Database instance stored');
+            
+            // Initialize sync and transition managers
+            $this->sync_manager = new \Bema\Sync_Manager($this->logger);
+            $this->logger->debug('Sync Manager instance stored');
+            
+            $this->transition_manager = new \Bema\Transition_Manager($this->logger);
+            $this->logger->debug('Transition Manager instance stored');
+            
             // Initialize campaign manager
             $this->campaign_manager = new Campaign_Manager($mailerLiteInstance);
 
@@ -989,38 +1001,6 @@ class EM_Sync
         }
     }
 
-    private function determineNextTier(string $currentTier, bool $hasPurchased): string
-    {
-        // Tier progression map
-        $tierProgression = [
-            'opt-in' => [
-                'purchased' => 'gold',
-                'default' => 'bronze'
-            ],
-            'bronze' => [
-                'purchased' => 'silver',
-                'default' => 'bronze'
-            ],
-            'silver' => [
-                'purchased' => 'gold',
-                'default' => 'silver'
-            ],
-            'gold' => [
-                'purchased' => 'gold',
-                'default' => 'gold'
-            ]
-        ];
-
-        $currentTier = strtolower($currentTier);
-        if (!isset($tierProgression[$currentTier])) {
-            return $currentTier;
-        }
-
-        return $hasPurchased
-            ? $tierProgression[$currentTier]['purchased']
-            : $tierProgression[$currentTier]['default'];
-    }
-
     /**
      * Handle retryable sync errors
      */
@@ -1325,7 +1305,7 @@ class EM_Sync
             }
 
             // Get next tier based on current group and purchase status
-            $nextTier = $this->determineNextTier($currentGroup, $hasPurchased);
+            $nextTier = $this->transition_manager->determineNextTier($currentGroup, $hasPurchased);
 
             // If tier change is needed
             if ($nextTier !== $currentGroup) {

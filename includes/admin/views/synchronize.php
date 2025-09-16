@@ -58,7 +58,7 @@ if (isset($_POST['start_sync'])) {
     if (!empty($missing)) {
         $link = esc_url(admin_url('admin.php?page=bema-settings')); // safe URL
         $labels = implode(', ', array_map('esc_html', $missing));   // escape labels
-        echo '<div class="notice notice-error"><p><strong>Error:</strong> ' . $labels . ' missing. Visit <a href="' . $link . '">settings page »</a>.</p></div>';
+        \Bema\bema_notice("$labels missing. Visit settings page to configure.", 'error', 'Configuration Error');
         return; // abort starting sync
     }
 
@@ -80,9 +80,10 @@ if (isset($_POST['start_sync'])) {
 
         // Trigger the actual immediate sync process
         trigger_immediate_sync();
+        \Bema\bema_notice('Sync process started successfully!', 'success', 'Sync Started');
     } else {
         // Inform the user that a sync is already in progress
-        echo '<div class="notice notice-info"><p>Sync is already running.</p></div>';
+        \Bema\bema_notice('Sync is already running. Please wait for it to complete.', 'info', 'Sync In Progress');
     }
 }
 

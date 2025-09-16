@@ -1,9 +1,12 @@
 <?php
 use Bema\Database\Subscribers_Database_Manager;
+use Bema\Manager_Factory;
 
 if (!defined('ABSPATH')) {
 	exit;
 }
+
+$sync_manager = Manager_Factory::get_sync_manager();
 
 // Handle filter inputs.
 $selected_tier = isset($_GET['tier']) ? sanitize_text_field(wp_unslash($_GET['tier'])) : '';
@@ -47,21 +50,6 @@ function bema_crm_print_notice($message, $type = 'success')
 	printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($type), esc_html($message));
 }
 
-function resync_subscribers(array $ids)
-{
-
-
-	// Iterate the IDs
-	$processed = 0;
-	foreach ($ids as $id) {
-		// Placeholder: call your actual resync function/hook here
-		// do_action('bema_crm_resync_subscriber', $id);
-		$processed++;
-	}
-
-	\Bema\Bema_CRM_Notifier::add("Resync complete: processed $processed subscriber(s).", 'success', 'Resync Completed');
-}
-
 // Bulk actions
 if (isset($_POST['bulk-action'])) {
 	switch (sanitize_text_field(wp_unslash($_POST['bulk-action']))) {
@@ -81,13 +69,20 @@ if (isset($_POST['bulk-action'])) {
 			$ids = array_filter(array_map('absint', $ids));
 
 			if (empty($ids)) {
-				\Bema\Bema_CRM_Notifier::add('Please check your settings', 'warning', 'Configuration Issue');
-				return;
+				\Bema\bema_notice('No subscribers selected. Please select subscribers to resync.', 'warning', 'Selection Required');
+				break;
 			}
-			resync_subscribers();
+			try {
+				$processed = $sync_manager->resync_subscribers( $ids);
+				echo var_dump($ids);
+			} catch (Exception $e) {
+				\Bema\bema_notice('Resync failed: ' . $e->getMessage(), 'error', 'Resync Error');
+			}
 			break;
 	}
 }
+
+
 
 ?>
 

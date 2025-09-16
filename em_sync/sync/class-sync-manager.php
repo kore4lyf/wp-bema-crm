@@ -73,7 +73,7 @@ class Sync_Manager
 
         try {
             $required_fields = $this->get_required_fields();
-            
+
             if (empty($required_fields)) {
                 $this->logger->warning('No required fields found');
                 return true;
@@ -173,13 +173,13 @@ class Sync_Manager
 
             foreach ($campaign_group_list as $group) {
                 $group_details = $mailerlite_groups_map[strtoupper($group['group_name'])] ?? null;
-                
+
                 if (!$group_details) {
                     continue;
                 }
 
                 $group_subscribers = $this->mailerLiteInstance->getGroupSubscribers($group['id']);
-                
+
                 if (empty($group_subscribers)) {
                     continue;
                 }
@@ -315,6 +315,28 @@ class Sync_Manager
         }
     }
 
+    function resync_subscribers(array $ids)
+    {
+        // Iterate the IDs
+        $processed = 0;
+        foreach ($ids as $id) {
+            // Placeholder: call your actual resync function/hook here
+            
+            // 1. Fetch each subscriber details
+
+
+            // 2. Upsert subscriber group data
+
+
+            // 3. Upsert subscriber field data
+
+            
+            $processed++;
+        }
+
+        \Bema\bema_notice("Resync complete: processed $processed subscriber(s).", 'success', 'Resync Completed');
+    }
+
     // ========================================
     // PRIVATE SYNC METHODS
     // ========================================
@@ -402,7 +424,7 @@ class Sync_Manager
         $custom_campaigns = $this->campaign_database->get_all_campaign_names();
         $all_campaign_names = array_unique(array_merge($campaign_names, $custom_campaigns));
 
-        return array_map(function($name) {
+        return array_map(function ($name) {
             return strtoupper($name . '_purchase');
         }, $all_campaign_names);
     }
@@ -414,7 +436,7 @@ class Sync_Manager
 
         foreach ($required_fields as $field_name) {
             $field_id = $this->get_or_create_field($field_name, $mailerlite_fields_map);
-            
+
             if ($field_id) {
                 $campaign_id = $this->get_campaign_id_for_field($field_name);
                 if ($campaign_id) {
@@ -472,7 +494,7 @@ class Sync_Manager
     private function generate_all_campaign_group_names(array $campaign_name_list): array
     {
         $all_campaign_group_names = [];
-        
+
         foreach ($campaign_name_list as $campaign_name) {
             $campaign_groups = $this->utils->get_campaign_group_names($campaign_name);
             $all_campaign_group_names = array_merge($all_campaign_group_names, $campaign_groups);
@@ -494,7 +516,7 @@ class Sync_Manager
 
         foreach ($mailerlite_group_data as $group) {
             $group_name_upper = strtoupper($group['name']);
-            
+
             if (in_array($group_name_upper, $all_upper, true)) {
                 $campaign_name = $this->utils->get_campaign_name_from_text($group['name']);
                 $campaign_data = $this->campaign_database->get_campaign_by_name($campaign_name);

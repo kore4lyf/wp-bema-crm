@@ -21,29 +21,22 @@ $has_sync = $admin->has_sync_capability();
 $sync_disabled = !$has_sync;
 
 // Debug logging to verify values
-$logger->logger()->debug([
+$logger->debug('SETTINGS_PAGE_LOAD', [
    'sync_disabled' => $sync_disabled ? 'yes' : 'no',
     'current_settings' => !empty($current_settings) ? 'present' : 'empty'
-], 'SETTINGS_PAGE_LOAD');
+]);
 
 // Display warning only if EDD is not active
 if ($sync_disabled) {
-    printf(
-        '<div class="notice notice-info is-dismissible"><p>%s</p></div>',
-        esc_html__('To use all features, please ensure Easy Digital Downloads Pro is properly configured.', 'bema-crm')
-    );
+    \Bema\bema_notice('To use all features, please ensure Easy Digital Downloads Pro is properly configured.', 'info');
 }
 
 // Display API test results if they exist
 $test_results = get_transient('bema_api_test_results');
 if ($test_results && is_array($test_results['messages'])) {
     foreach ($test_results['messages'] as $message) {
-        $notice_class = (strpos($message, 'successful') !== false) ? 'notice-success' : 'notice-error';
-?>
-        <div class="notice <?php echo esc_attr($notice_class); ?> is-dismissible">
-            <p><?php echo esc_html($message); ?></p>
-        </div>
-<?php
+        $type = (strpos($message, 'successful') !== false) ? 'success' : 'error';
+        \Bema\bema_notice($message, $type, 'API Test Result');
     }
     delete_transient('bema_api_test_results');
 }

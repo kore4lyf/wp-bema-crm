@@ -16,7 +16,7 @@ try {
     $sync_manager = Manager_Factory::get_sync_manager();
     $transition_manager = Manager_Factory::get_transition_manager();
 } catch (Exception $e) {
-    echo '<div class="notice notice-error"><p>Failed to initialize managers: ' . esc_html($e->getMessage()) . '</p></div>';
+    \Bema\bema_notice('Failed to initialize managers: ' . $e->getMessage(), 'error', 'Initialization Error');
     return;
 }
 

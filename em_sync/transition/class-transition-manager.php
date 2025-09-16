@@ -204,4 +204,39 @@ class Transition_Manager
 
         return $subscribers_to_transfer;
     }
+
+    /**
+     * Determine the next tier based on current tier and purchase status
+     */
+    public function determineNextTier(string $currentTier, bool $hasPurchased): string
+    {
+        // Tier progression map
+        $tierProgression = [
+            'opt-in' => [
+                'purchased' => 'gold',
+                'default' => 'bronze'
+            ],
+            'bronze' => [
+                'purchased' => 'silver',
+                'default' => 'bronze'
+            ],
+            'silver' => [
+                'purchased' => 'gold',
+                'default' => 'silver'
+            ],
+            'gold' => [
+                'purchased' => 'gold',
+                'default' => 'gold'
+            ]
+        ];
+
+        $currentTier = strtolower($currentTier);
+        if (!isset($tierProgression[$currentTier])) {
+            return $currentTier;
+        }
+
+        return $hasPurchased
+            ? $tierProgression[$currentTier]['purchased']
+            : $tierProgression[$currentTier]['default'];
+    }
 }
