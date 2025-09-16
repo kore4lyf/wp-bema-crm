@@ -1,17 +1,6 @@
 <?php
 namespace Bema;
 
-use Bema\Providers\MailerLite;
-use Bema\Database\Campaign_Database_Manager;
-use Bema\Database\Field_Database_Manager;
-use Bema\Database\Group_Database_Manager;
-use Bema\Database\Subscribers_Database_Manager;
-use Bema\Database\Campaign_group_Subscribers_Database_Manager;
-use Bema\Database\Sync_Database_Manager;
-use Bema\Bema_CRM_Logger;
-use Bema\Utils;
-use Bema\Database_Manager;
-
 class Sync_Manager
 {
     public $mailerLiteInstance;
@@ -194,11 +183,13 @@ class Sync_Manager
                 foreach ($group_subscribers as $subscriber) {
                     $tier = $this->utils->get_tier_from_group_name($group['group_name']);
                     $purchase_id = $this->get_purchase_id_from_subscriber($subscriber, $campaign_name);
+                    $field_id = $this->get_field_id_by_campaign($campaign_data['id']);
 
                     $campaign_subscribers_data[] = [
                         'campaign_id' => $campaign_data['id'],
                         'subscriber_id' => $subscriber['id'],
                         'group_id' => $group['id'],
+                        'field_id' => $field_id,
                         'subscriber_tier' => ucwords(strtolower($tier)),
                         'purchase_id' => $purchase_id,
                     ];
@@ -349,7 +340,6 @@ class Sync_Manager
     {
         $campaign_subscribers_data = [];
         $campaign_group_list = $this->group_database->get_all_groups();
-        $mailerlite_groups_map = $this->mailerLiteInstance->getAllGroupsNameMap();
 
         foreach ($subscribers_data as $subscriber) {
             $subscriber_groups = $this->mailerLiteInstance->getSubscriberGroups($subscriber['id']);
@@ -368,11 +358,13 @@ class Sync_Manager
                 
                 $tier = $this->utils->get_tier_from_group_name($group['group_name']);
                 $purchase_id = $this->get_purchase_id_from_subscriber($subscriber, $campaign_name);
+                $field_id = $this->get_field_id_by_campaign($campaign_data['id']);
 
                 $campaign_subscribers_data[] = [
                     'campaign_id' => $campaign_data['id'],
                     'subscriber_id' => $subscriber['id'],
                     'group_id' => $group['id'],
+                    'field_id' => $field_id,
                     'subscriber_tier' => ucwords(strtolower($tier)),
                     'purchase_id' => $purchase_id,
                 ];
@@ -617,6 +609,12 @@ class Sync_Manager
     {
         $purchase_field = strtolower($campaign_name . '_PURCHASE');
         return $subscriber['fields'][$purchase_field] ?? null;
+    }
+
+    private function get_field_id_by_campaign(string $campaign_id): ?string
+    {
+        $fields = $this->field_database->get_field_by_campaign_id($campaign_id);
+        return !empty($fields) ? $fields[0]['id'] : null;
     }
 
     private function update_sync_status(string $status, string $message, int $current, int $total, string $optionKey, int $subscribersCount = 0): void

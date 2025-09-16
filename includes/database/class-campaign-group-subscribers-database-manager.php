@@ -51,6 +51,13 @@ class Campaign_Group_Subscribers_Database_Manager
     private $groups_table_name;
 
     /**
+     * The table name for field data.
+     *
+     * @var string
+     */
+    private $fields_table_name;
+
+    /**
      * The WordPress database object.
      *
      * @var \wpdb
@@ -79,6 +86,7 @@ class Campaign_Group_Subscribers_Database_Manager
         $this->campaigns_table_name = $wpdb->prefix . 'bemacrm_campaignsmeta';
         $this->subscribers_table_name = $wpdb->prefix . 'bemacrm_subscribersmeta';
         $this->groups_table_name = $wpdb->prefix . 'bemacrm_groupmeta';
+        $this->fields_table_name = $wpdb->prefix . 'bemacrm_fieldmeta';
         $this->logger = $logger ?? Bema_CRM_Logger::create('campaign-group-subscribers-database');
     }
 
@@ -104,6 +112,7 @@ class Campaign_Group_Subscribers_Database_Manager
             subscriber_id BIGINT UNSIGNED NOT NULL,
             group_id BIGINT UNSIGNED NOT NULL,
             campaign_id BIGINT UNSIGNED NOT NULL,
+            field_id BIGINT UNSIGNED NULL,
             tier VARCHAR(255) NOT NULL,
             purchase_id BIGINT UNSIGNED NULL,
 
@@ -111,7 +120,8 @@ class Campaign_Group_Subscribers_Database_Manager
             UNIQUE KEY sub_campaign (subscriber_id, campaign_id),
             FOREIGN KEY (subscriber_id) REFERENCES {$this->subscribers_table_name}(id) ON DELETE CASCADE,
             FOREIGN KEY (group_id) REFERENCES {$this->groups_table_name}(id) ON DELETE CASCADE,
-            FOREIGN KEY (campaign_id) REFERENCES {$this->campaigns_table_name}(id) ON DELETE CASCADE
+            FOREIGN KEY (campaign_id) REFERENCES {$this->campaigns_table_name}(id) ON DELETE CASCADE,
+            FOREIGN KEY (field_id) REFERENCES {$this->fields_table_name}(id) ON DELETE SET NULL
             ) $charset_collate;";
 
             dbDelta($sql);
@@ -130,11 +140,12 @@ class Campaign_Group_Subscribers_Database_Manager
      * @param int      $group_id      The ID of the group the subscriber belongs to.
      * @param int      $campaign_id   The ID of the campaign.
      * @param string   $tier          The tier of the subscriber within the campaign.
+     * @param int|null $field_id      Optional ID of the related field.
      * @param int|null $purchase_id   Optional ID of a related purchase.
      *
      * @return int|false The ID of the inserted row on success, or false on failure.
      */
-    public function insert_campaign_subscriber(int $subscriber_id, int $group_id, int $campaign_id, string $tier, ?int $purchase_id = null): int|false
+    public function insert_campaign_subscriber(int $subscriber_id, int $group_id, int $campaign_id, string $tier, ?int $field_id = null, ?int $purchase_id = null): int|false
     {
         try {
             $data = [
@@ -144,6 +155,11 @@ class Campaign_Group_Subscribers_Database_Manager
                 'tier' => sanitize_text_field($tier),
             ];
             $format = ['%d', '%d', '%d', '%s'];
+
+            if (!is_null($field_id)) {
+                $data['field_id'] = absint($field_id);
+                $format[] = '%d';
+            }
 
             if (!is_null($purchase_id)) {
                 $data['purchase_id'] = absint($purchase_id);
@@ -234,7 +250,10 @@ class Campaign_Group_Subscribers_Database_Manager
                         $update_data['tier'] = sanitize_text_field($value);
                         $format[] = '%s';
                         break;
-                    case 'purchase_id':
+                    case 'field_id':
+                        $update_data['field_id'] = is_null($value) ? null : absint($value);
+                        $format[] = '%d';
+                        break;                    case 'purchase_id':
                         $update_data['purchase_id'] = is_null($value) ? null : absint($value);
                         $format[] = '%d';
                         break;
@@ -282,6 +301,7 @@ class Campaign_Group_Subscribers_Database_Manager
             $campaign_id = (int) $data['campaign_id'];
             $group_id = (int) $data['group_id'];
             $tier = sanitize_text_field($data['tier'] ?? '');
+            $field_id = isset($data['field_id']) ? (int) $data['field_id'] : null;
             $purchase_id = isset($data['purchase_id']) ? (int) $data['purchase_id'] : null;
 
             $existing = $this->get_campaign_subscriber($subscriber_id, $campaign_id);
@@ -290,10 +310,11 @@ class Campaign_Group_Subscribers_Database_Manager
                 return $this->update_campaign_subscriber($subscriber_id, $campaign_id, [
                     'group_id' => $group_id,
                     'tier' => $tier,
+                    'field_id' => $field_id,
                     'purchase_id' => $purchase_id
                 ]);
             } else {
-                return $this->insert_campaign_subscriber($subscriber_id, $group_id, $campaign_id, $tier, $purchase_id);
+                return $this->insert_campaign_subscriber($subscriber_id, $group_id, $campaign_id, $tier, $field_id, $purchase_id);
             }
         } catch (Exception $e) {
             $this->logger->log('upsert_campaign_subscriber Error: ' . $e->getMessage(), 'error');
@@ -326,10 +347,11 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
                 continue;
             }
 
-            $values_placeholders[] = '(%d, %d, %d, %s, %d)';
+            $values_placeholders[] = '(%d, %d, %d, %d, %s, %d)';
             $query_values[] = absint($record['subscriber_id']);
             $query_values[] = absint($record['group_id']);
             $query_values[] = absint($record['campaign_id']);
+            $query_values[] = isset($record['field_id']) ? absint($record['field_id']) : 0;
             $query_values[] = sanitize_text_field($record['subscriber_tier'] ?? '');
             $query_values[] = isset($record['purchase_id']) ? absint($record['purchase_id']) : 0;
             $valid_records_count++;
@@ -339,7 +361,7 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
             return false;
         }
 
-        $sql = "INSERT INTO {$this->table_name} (subscriber_id, group_id, campaign_id, tier, purchase_id) VALUES " . implode(', ', $values_placeholders) . " ON DUPLICATE KEY UPDATE group_id = VALUES(group_id), tier = VALUES(tier), purchase_id = VALUES(purchase_id)";
+        $sql = "INSERT INTO {$this->table_name} (subscriber_id, group_id, campaign_id, field_id, tier, purchase_id) VALUES " . implode(', ', $values_placeholders) . " ON DUPLICATE KEY UPDATE group_id = VALUES(group_id), field_id = VALUES(field_id), tier = VALUES(tier), purchase_id = VALUES(purchase_id)";
 
         $prepared_query = $this->wpdb->prepare($sql, $query_values);
         $result = $this->wpdb->query($prepared_query);

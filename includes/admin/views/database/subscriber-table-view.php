@@ -1,5 +1,6 @@
 <?php
 use Bema\Database\Subscribers_Database_Manager;
+use Bema\Database\Transition_Subscribers_Database_Manager;
 use Bema\Manager_Factory;
 
 if (!defined('ABSPATH')) {
@@ -158,12 +159,15 @@ if (isset($_POST['bulk-action'])) {
 					<td id="cb" class="manage-column column-cb check-column">
 						<input type="checkbox" />
 					</td>
+					<th scope="col" class="manage-column">ID</th>
 					<th scope="col" class="manage-column">Email</th>
 					<th scope="col" class="manage-column">Name</th>
 					<th scope="col" class="manage-column">Status</th>
 					<?php if ($selected_campaign): ?>
+						<th scope="col" class="manage-column">Campaign</th>
 						<th scope="col" class="manage-column">Tier</th>
 						<th scope="col" class="manage-column">Purchase ID</th>
+						<th scope="col" class="manage-column">Transition Date</th>
 					<?php endif; ?>
 				</tr>
 			</thead>
@@ -176,18 +180,21 @@ if (isset($_POST['bulk-action'])) {
 								<input type="checkbox" name="subscriber_ids[]"
 									value="<?php echo esc_attr($subscriber['id']); ?>" />
 							</th>
+							<td><?php echo esc_html($subscriber['id']); ?></td>
 							<td><?php echo esc_html($subscriber['email'] ?? '—'); ?></td>
 							<td><?php echo esc_html(strlen(trim($subscriber['name'])) ? $subscriber['name'] : '—'); ?></td>
 							<td><?php echo esc_html(ucfirst($subscriber['status'] ?? '—')); ?></td>
 							<?php if ($selected_campaign): ?>
+								<td><?php echo esc_html($selected_campaign); ?> </td>
 								<td><?php echo esc_html($subscriber['tier'] ?? '—'); ?></td>
+								<td><?php echo esc_html($subscriber['purchase_id'] ?? '—'); ?></td>
 								<td><?php echo esc_html($subscriber['purchase_id'] ?? '—'); ?></td>
 							<?php endif; ?>
 						</tr>
 					<?php endforeach; ?>
 				<?php else: ?>
 					<tr>
-						<td class="text-center" colspan="<?php echo $selected_campaign ? 6 : 4; ?>">
+						<td class="text-center" colspan="<?php echo $selected_campaign ? 8 : 5; ?>">
 							No subscribers found.
 						</td>
 					</tr>

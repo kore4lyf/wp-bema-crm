@@ -1,13 +1,6 @@
 <?php
 namespace Bema;
 
-use Bema\Providers\MailerLite;
-use Bema\Database\Campaign_Database_Manager;
-use Bema\Database\Group_Database_Manager;
-use Bema\Database\Transition_Database_Manager;
-use Bema\Database\Transition_Subscribers_Database_Manager;
-use Bema\Bema_CRM_Logger;
-
 class Transition_Manager
 {
     public $mailerLiteInstance;
