@@ -196,45 +196,140 @@ class Bema_CRM
     private function __construct()
     {
         try {
-            Bema_CRM::get_logger()->debug("Starting constructor");
+            Bema_CRM::get_logger()->info('=== STARTING PLUGIN CONSTRUCTOR ===');
 
             // Verify critical paths exist
+            Bema_CRM::get_logger()->debug('Verifying critical paths');
             $this->verify_critical_paths();
+            Bema_CRM::get_logger()->debug('Critical paths verified successfully');
 
+            // Initialize error handling
+            Bema_CRM::get_logger()->debug('Initializing error handling');
             $this->init_error_handling();
-            Bema_CRM::get_logger()->debug("Error handling initialized");
+            Bema_CRM::get_logger()->debug('Error handling initialized successfully');
 
+            // Load dependencies
+            Bema_CRM::get_logger()->debug('Loading dependencies');
             $this->load_dependencies();
-            Bema_CRM::get_logger()->debug("Dependencies loaded");
+            Bema_CRM::get_logger()->debug('Dependencies loaded successfully');
 
+            // Initialize components
+            Bema_CRM::get_logger()->debug('Initializing components');
             $this->init_components();
-            Bema_CRM::get_logger()->debug("Components initialized");
+            Bema_CRM::get_logger()->debug('Components initialized successfully');
 
+            // Add hooks
+            Bema_CRM::get_logger()->debug('Adding WordPress hooks');
             $this->add_hooks();
-            Bema_CRM::get_logger()->debug("Hooks added");
+            Bema_CRM::get_logger()->debug('WordPress hooks added successfully');
+
+            // Initialize default tiers
+            Bema_CRM::get_logger()->debug('Setting up default tiers');
+            $this->setup_default_tiers();
+            Bema_CRM::get_logger()->debug('Default tiers setup completed');
 
             $this->initialized = true;
 
-            Bema_CRM::get_logger()->debug("Database instance");
-
-            $default_tiers = array(
-            'Opt-In',
-            'Wood',
-            'Gold',
-            'Silver',
-            'Bronze',
-            'Bronze Purchase',
-            'Silver Purchase',
-            'Gold Purchase',
-        );
-
-        update_option('bema_crm_tiers', $default_tiers);
-
-            Bema_CRM::get_logger()->info("Initialization complete");
+            Bema_CRM::get_logger()->info('=== PLUGIN CONSTRUCTOR COMPLETED SUCCESSFULLY ===', [
+                'components_initialized' => count($this->component_registry),
+                'component_list' => array_keys($this->component_registry)
+            ]);
         } catch (Exception $e) {
-            Bema_CRM::get_logger()->error("Initialization error: " . $e->getMessage());
+            Bema_CRM::get_logger()->error('=== PLUGIN CONSTRUCTOR FAILED ===', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             $this->handle_initialization_error($e);
         }
+    }
+
+    private function setup_default_tiers(): void
+    {
+        try {
+            $default_tiers = array(
+                'Opt-In',
+                'Wood',
+                'Gold',
+                'Silver',
+                'Bronze',
+                'Bronze Purchase',
+                'Silver Purchase',
+                'Gold Purchase',
+            );
+
+            update_option('bema_crm_tiers', $default_tiers);
+            Bema_CRM::get_logger()->debug('Default tiers updated successfully', [
+                'tier_count' => count($default_tiers)
+            ]);
+        } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('Failed to setup default tiers', [
+                'error' => $e->getMessage()
+            ]);
+            throw new Exception("Default tiers setup failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get component initialization status
+     */
+    public function get_component_status(): array
+    {
+        return [
+            'initialized' => $this->initialized,
+            'component_count' => count($this->component_registry),
+            'components' => array_keys($this->component_registry),
+            'has_logger' => isset($this->logger),
+            'has_settings' => isset($this->settings),
+            'has_sync_instance' => isset($this->sync_instance),
+            'has_admin_interface' => isset($this->admin_interface),
+            'has_db_manager' => isset($this->db_manager)
+        ];
+    }
+
+    /**
+     * Get detailed initialization status for debugging
+     */
+    public function get_initialization_status(): array
+    {
+        $edd_active = false;
+        if (function_exists('is_plugin_active')) {
+            $edd_active = \is_plugin_active('easy-digital-downloads/easy-digital-downloads.php') ||
+                \is_plugin_active('easy-digital-downloads-pro/easy-digital-downloads.php');
+        }
+
+        return [
+            'plugin_initialized' => $this->initialized,
+            'static_instance_exists' => self::$instance !== null,
+            'component_registry_count' => count($this->component_registry),
+            'registered_components' => array_keys($this->component_registry),
+            'core_components' => [
+                'logger' => isset($this->logger),
+                'settings' => isset($this->settings),
+                'utils' => isset($this->utils),
+                'db_manager' => isset($this->db_manager),
+            ],
+            'database_managers' => [
+                'sync_db_manager' => isset($this->sync_db_manager),
+                'campaign_db_manager' => isset($this->campaign_db_manager),
+                'subscriber_db_manager' => isset($this->subscriber_db_manager),
+                'transition_db_manager' => isset($this->transition_db_manager),
+            ],
+            'sync_components' => [
+                'sync_instance' => isset($this->sync_instance),
+                'transition_instance' => isset($this->transition_instance),
+                'sync_scheduler' => isset($this->sync_scheduler),
+            ],
+            'admin_components' => [
+                'admin_interface' => isset($this->admin_interface),
+                'is_admin_context' => is_admin(),
+            ],
+            'environment' => [
+                'edd_active' => $edd_active,
+                'php_version' => PHP_VERSION,
+                'wp_version' => get_bloginfo('version'),
+                'plugin_version' => self::VERSION,
+            ]
+        ];
     }
     private function verify_critical_paths(): void
     {
@@ -385,6 +480,8 @@ class Bema_CRM
     private function load_dependencies(): void
     {
         try {
+            Bema_CRM::get_logger()->info('=== STARTING DEPENDENCY LOADING ===');
+
             // Core files that must be loaded first
             $core_files = [
                 'includes/class-batch-processor.php',
@@ -396,30 +493,35 @@ class Bema_CRM
                 'includes/class-performance.php'
             ];
 
+            Bema_CRM::get_logger()->debug('Loading core files', ['count' => count($core_files)]);
             foreach ($core_files as $file) {
                 $filepath = BEMA_PATH . $file;
                 if (!file_exists($filepath)) {
                     throw new Exception("Critical core file missing: {$file}");
                 }
                 require_once $filepath;
+                Bema_CRM::get_logger()->debug("Loaded core file: {$file}");
             }
+            Bema_CRM::get_logger()->info('Core files loaded successfully');
 
             // Load interfaces first
             $interface_files = [
                 'includes/interfaces/interface-provider.php',
-
                 'includes/interfaces/interface-lock-handler.php',
                 'includes/interfaces/interface-health-monitor.php',
                 'includes/interfaces/interface-stats-collector.php'
             ];
 
+            Bema_CRM::get_logger()->debug('Loading interface files', ['count' => count($interface_files)]);
             foreach ($interface_files as $file) {
                 $filepath = BEMA_PATH . $file;
                 if (!file_exists($filepath)) {
                     throw new Exception("Required interface file missing: {$file}");
                 }
                 require_once $filepath;
+                Bema_CRM::get_logger()->debug("Loaded interface file: {$file}");
             }
+            Bema_CRM::get_logger()->info('Interface files loaded successfully');
 
             // Load remaining dependencies
             $dependencies = [
@@ -428,7 +530,6 @@ class Bema_CRM
                 'includes/exceptions/class-api-exception.php',
                 'includes/exceptions/class-database-exception.php',
                 'includes/exceptions/class-retryable-exception.php',
-
                 'includes/handlers/class-default-lock-handler.php',
                 'includes/handlers/class-default-health-monitor.php',
                 'includes/handlers/class-default-stats-collector.php',
@@ -441,22 +542,47 @@ class Bema_CRM
                 'em_sync/triggers/class-edd-triggers.php',
             ];
 
+            $loaded_count = 0;
+            $skipped_count = 0;
+            
+            Bema_CRM::get_logger()->debug('Loading dependency files', ['count' => count($dependencies)]);
             foreach ($dependencies as $file) {
                 $filepath = BEMA_PATH . $file;
                 if (!file_exists($filepath)) {
+                    Bema_CRM::get_logger()->debug("Skipping missing optional file: {$file}");
+                    $skipped_count++;
                     continue;
                 }
                 require_once $filepath;
+                Bema_CRM::get_logger()->debug("Loaded dependency file: {$file}");
+                $loaded_count++;
             }
+            
+            Bema_CRM::get_logger()->info('Dependency files processed', [
+                'loaded' => $loaded_count,
+                'skipped' => $skipped_count,
+                'total' => count($dependencies)
+            ]);
 
+            // Validate critical dependencies
+            Bema_CRM::get_logger()->debug('Validating dependencies');
             $this->validate_dependencies();
+            Bema_CRM::get_logger()->info('Dependencies validated successfully');
+
+            Bema_CRM::get_logger()->info('=== DEPENDENCY LOADING COMPLETED ===');
         } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('=== DEPENDENCY LOADING FAILED ===', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             throw new Exception("Critical initialization error: " . $e->getMessage());
         }
     }
 
     private function validate_dependencies(): void
     {
+        Bema_CRM::get_logger()->debug('Starting dependency validation');
+        
         $required_classes = [
             'Bema\\Bema_CRM_Logger',
             'Bema\\Database_Manager',
@@ -467,46 +593,199 @@ class Bema_CRM
             'Bema\\Utils'
         ];
 
+        $missing_classes = [];
+        $found_classes = [];
+
         foreach ($required_classes as $class) {
             if (!class_exists($class)) {
-                throw new Exception("Required class not found: {$class}");
+                $missing_classes[] = $class;
+                Bema_CRM::get_logger()->warning("Required class not found: {$class}");
+            } else {
+                $found_classes[] = $class;
+                Bema_CRM::get_logger()->debug("Required class found: {$class}");
             }
         }
+
+        if (!empty($missing_classes)) {
+            Bema_CRM::get_logger()->error('Dependency validation failed', [
+                'missing_classes' => $missing_classes,
+                'found_classes' => $found_classes
+            ]);
+            throw new Exception("Required classes not found: " . implode(', ', $missing_classes));
+        }
+
+        Bema_CRM::get_logger()->info('Dependency validation completed successfully', [
+            'validated_classes' => count($found_classes),
+            'classes' => $found_classes
+        ]);
     }
 
     private function init_components(): void
     {
         try {
             if ($this->initialized) {
+                Bema_CRM::get_logger()->debug('Components already initialized, skipping');
                 return;
             }
 
+            Bema_CRM::get_logger()->info('=== STARTING COMPONENT INITIALIZATION ===');
 
             // Initialize logger first
+            $this->init_core_logger();
+            
+            // Initialize utilities
+            $this->init_utilities();
+            
+            // Initialize settings
+            $this->init_settings();
+            
+            // Initialize database manager
+            $this->init_database_manager();
+            
+            // Initialize database tables
+            $this->init_database_tables();
+            
+            // Initialize EDD-dependent components
+            $this->init_edd_components();
+            
+            // Initialize admin components
+            if (is_admin()) {
+                $this->init_admin_components_internal();
+            }
+
+            $this->initialized = true;
+            Bema_CRM::get_logger()->info('=== COMPONENT INITIALIZATION COMPLETED SUCCESSFULLY ===', [
+                'total_components' => count($this->component_registry),
+                'components' => array_keys($this->component_registry)
+            ]);
+        } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('=== COMPONENT INITIALIZATION FAILED ===', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
+    }
+
+    private function init_core_logger(): void
+    {
+        try {
+            Bema_CRM::get_logger()->debug('Initializing core logger component');
+            
             if (!isset($this->logger)) {
                 $this->logger = Bema_CRM_Logger::create('bema-crm-core');
                 $this->component_registry['logger'] = $this->logger;
+                Bema_CRM::get_logger()->info('Core logger initialized successfully');
+            } else {
+                Bema_CRM::get_logger()->debug('Core logger already exists');
             }
+        } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('Failed to initialize core logger', [
+                'error' => $e->getMessage()
+            ]);
+            throw new Exception("Core logger initialization failed: " . $e->getMessage());
+        }
+    }
 
-            // Initialize utils
+    private function init_utilities(): void
+    {
+        try {
+            Bema_CRM::get_logger()->debug('Initializing utilities component');
+            
             if (!isset($this->utils)) {
                 $this->utils = new Utils;
                 $this->component_registry['utils'] = $this->utils;
+                Bema_CRM::get_logger()->info('Utilities initialized successfully');
+            } else {
+                Bema_CRM::get_logger()->debug('Utilities already exists');
             }
+        } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('Failed to initialize utilities', [
+                'error' => $e->getMessage()
+            ]);
+            throw new Exception("Utilities initialization failed: " . $e->getMessage());
+        }
+    }
 
-            // Initialize settings with logger
+    private function init_settings(): void
+    {
+        try {
+            Bema_CRM::get_logger()->debug('Initializing settings component');
+            
             if (!isset($this->settings) && isset($this->logger)) {
                 $this->settings = Bema_Settings::get_instance();
                 $this->component_registry['settings'] = $this->settings;
+                Bema_CRM::get_logger()->info('Settings initialized successfully');
+            } else {
+                Bema_CRM::get_logger()->debug('Settings already exists or logger not available');
             }
+        } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('Failed to initialize settings', [
+                'error' => $e->getMessage()
+            ]);
+            throw new Exception("Settings initialization failed: " . $e->getMessage());
+        }
+    }
 
-            // Initialize database manager
+    private function init_database_manager(): void
+    {
+        try {
+            Bema_CRM::get_logger()->debug('Initializing database manager component');
+            
             if (!isset($this->db_manager) && isset($this->logger)) {
                 global $wpdb;
                 $this->db_manager = new Database_Manager($wpdb);
                 $this->component_registry['db_manager'] = $this->db_manager;
+                Bema_CRM::get_logger()->info('Database manager initialized successfully');
+            } else {
+                Bema_CRM::get_logger()->debug('Database manager already exists or logger not available');
             }
+        } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('Failed to initialize database manager', [
+                'error' => $e->getMessage()
+            ]);
+            throw new Exception("Database manager initialization failed: " . $e->getMessage());
+        }
+    }
 
+    private function init_database_tables(): void
+    {
+        try {
+            Bema_CRM::get_logger()->debug('Initializing database table managers');
+            
+            $table_managers = [
+                'transition_db_manager' => \Bema\Database\Transition_Database_Manager::class,
+                'transition_subscribers_db_manager' => \Bema\Database\Transition_Subscribers_Database_Manager::class,
+                'campaign_db_manager' => \Bema\Database\Campaign_Database_Manager::class,
+                'group_db_manager' => \Bema\Database\Group_Database_Manager::class,
+                'field_db_manager' => \Bema\Database\Field_Database_Manager::class,
+                'subscriber_db_manager' => \Bema\Database\Subscribers_Database_Manager::class,
+                'campaign_group_subscribers_db_manager' => \Bema\Database\Campaign_Group_Subscribers_Database_Manager::class,
+                'sync_db_manager' => \Bema\Database\Sync_Database_Manager::class,
+            ];
+
+            foreach ($table_managers as $property => $class) {
+                Bema_CRM::get_logger()->debug("Initializing {$property}");
+                $this->$property = new $class();
+                $this->component_registry[$property] = $this->$property;
+            }
+            
+            Bema_CRM::get_logger()->info('Database table managers initialized successfully', [
+                'managers_count' => count($table_managers)
+            ]);
+        } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('Failed to initialize database table managers', [
+                'error' => $e->getMessage()
+            ]);
+            throw new Exception("Database table managers initialization failed: " . $e->getMessage());
+        }
+    }
+
+    private function init_edd_components(): void
+    {
+        try {
+            Bema_CRM::get_logger()->debug('Checking EDD availability for component initialization');
+            
             // Check if EDD or EDD Pro is active
             if (!function_exists('is_plugin_active')) {
                 require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -516,38 +795,35 @@ class Bema_CRM
                 \is_plugin_active('easy-digital-downloads-pro/easy-digital-downloads.php');
 
             if ($edd_active) {
+                Bema_CRM::get_logger()->info('EDD detected - initializing sync components');
                 if ($this->settings && $this->logger) {
                     $this->initialize_sync_components();
+                    Bema_CRM::get_logger()->info('EDD-dependent components initialized successfully');
+                } else {
+                    Bema_CRM::get_logger()->warning('Cannot initialize EDD components - missing settings or logger');
                 }
             } else {
                 Bema_CRM::get_logger()->info('EDD not active - skipping sync component initialization');
             }
-
-            // Initialize admin components
-            if (is_admin()) {
-                $this->initialize_admin_components();
-            }
-
-            // create transition db instance
-            $this->transition_db_manager = new \Bema\Database\Transition_Database_Manager();
-            // create transition db instance
-            $this->transition_subscribers_db_manager = new \Bema\Database\Transition_Subscribers_Database_Manager();
-            // create campaign db instance
-            $this->campaign_db_manager = new \Bema\Database\Campaign_Database_Manager();
-            // create group db instance
-            $this->group_db_manager = new \Bema\Database\Group_Database_Manager();
-            // create field db instance
-            $this->field_db_manager = new \Bema\Database\Field_Database_Manager();
-            // create subscriber db instance
-            $this->subscriber_db_manager = new \Bema\Database\Subscribers_Database_Manager();
-            // create campaign subscriber db instance
-            $this->campaign_group_subscribers_db_manager = new \Bema\Database\Campaign_Group_Subscribers_Database_Manager();
-            // create sync db instance
-            $this->sync_db_manager = new \Bema\Database\Sync_Database_Manager();
-
-            $this->initialized = true;
         } catch (Exception $e) {
-            throw $e;
+            Bema_CRM::get_logger()->error('Failed to initialize EDD components', [
+                'error' => $e->getMessage()
+            ]);
+            // Don't throw here as EDD components are optional
+        }
+    }
+
+    private function init_admin_components_internal(): void
+    {
+        try {
+            Bema_CRM::get_logger()->debug('Initializing admin components (internal)');
+            $this->initialize_admin_components();
+            Bema_CRM::get_logger()->info('Admin components initialized successfully');
+        } catch (Exception $e) {
+            Bema_CRM::get_logger()->error('Failed to initialize admin components', [
+                'error' => $e->getMessage()
+            ]);
+            // Don't throw here as admin components are optional in some contexts
         }
     }
 

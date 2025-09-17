@@ -38,7 +38,6 @@ class Sync_Database_Manager
                 status VARCHAR(50) NOT NULL,
                 synced_subscribers INT UNSIGNED NOT NULL,
                 notes TEXT,
-                data LONGBLOB,
                 PRIMARY KEY (id),
                 UNIQUE KEY sync_date_unique (sync_date)
             ) $charset_collate;";
@@ -65,7 +64,7 @@ class Sync_Database_Manager
     /**
      * Inserts or updates a sync record based on sync_date.
      */
-    public function upsert_sync_record($status, $synced_subscribers, $notes = '', $data = null)
+    public function upsert_sync_record($status, $synced_subscribers, $notes = '')
     {
         try {
             $date_only = current_time('Y-m-d');
@@ -74,15 +73,10 @@ class Sync_Database_Manager
                 $date_only
             ));
 
-            if ($data !== null && (is_array($data) || is_object($data))) {
-                $data = gzcompress(serialize($data));
-            }
-
             $record_data = [
                 'status' => sanitize_text_field($status),
                 'synced_subscribers' => absint($synced_subscribers),
                 'notes' => sanitize_textarea_field($notes),
-                'data' => $data,
             ];
 
             if ($existing) {
@@ -91,7 +85,7 @@ class Sync_Database_Manager
                     $this->table_name,
                     $record_data,
                     ['id' => $existing],
-                    ['%s', '%d', '%s', '%s'],
+                    ['%s', '%d', '%s'],
                     ['%d']
                 );
             } else {
@@ -100,7 +94,7 @@ class Sync_Database_Manager
                 $this->wpdb->insert(
                     $this->table_name,
                     $record_data,
-                    ['%s', '%d', '%s', '%s', '%s'] 
+                    ['%s', '%d', '%s', '%s'] 
                 );
             }
 
@@ -140,9 +134,9 @@ class Sync_Database_Manager
     }
 
     /**
-     * Fetch all sync records without decoding data (memory-efficient).
+     * Fetch all sync records.
      */
-    public function get_sync_records_without_data()
+    public function get_sync_records()
     {
         return $this->wpdb->get_results(
             "SELECT id, sync_date, status, synced_subscribers, notes FROM {$this->table_name} ORDER BY sync_date DESC",
@@ -151,21 +145,14 @@ class Sync_Database_Manager
     }
 
     /**
-     * Fetch only the data for a given record ID.
+     * Fetch a sync record by ID.
      */
-    public function get_sync_data_by_id($id)
+    public function get_sync_record_by_id($id)
     {
-        $record = $this->wpdb->get_var($this->wpdb->prepare(
-            "SELECT data FROM {$this->table_name} WHERE id = %d LIMIT 1",
+        return $this->wpdb->get_row($this->wpdb->prepare(
+            "SELECT id, sync_date, status, synced_subscribers, notes FROM {$this->table_name} WHERE id = %d LIMIT 1",
             absint($id)
         ));
-
-        if ($record) {
-            $decoded = @gzuncompress($record);
-            return $decoded !== false ? unserialize($decoded) : null;
-        }
-
-        return null;
     }
 
     /**

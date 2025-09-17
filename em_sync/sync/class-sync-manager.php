@@ -242,7 +242,7 @@ class Sync_Manager
             $total_duration = round(microtime(true) - $start_time, 2);
 
             $this->update_sync_status('Completed', 'Sync completed', 5, 5, $sync_option_key, $subscribers_count);
-            $this->sync_database->upsert_sync_record('Completed', $subscribers_count, "Successfully synced {$subscribers_count} subscribers.", null);
+            $this->sync_database->upsert_sync_record('Completed', $subscribers_count, "Successfully synced {$subscribers_count} subscribers.");
 
             $this->logger->info('=== FULL MAILERLITE SYNC COMPLETED SUCCESSFULLY ===', [
                 'duration' => $total_duration,
@@ -252,7 +252,7 @@ class Sync_Manager
         } catch (Exception $e) {
             $this->logger->error('=== FULL MAILERLITE SYNC FAILED ===', ['error' => $e->getMessage()]);
             $this->update_sync_status('Idle', 'Sync failed: ' . $e->getMessage(), 0, 5, $sync_option_key);
-            $this->sync_database->upsert_sync_record('Failed', 0, $e->getMessage(), null);
+            $this->sync_database->upsert_sync_record('Failed', 0, $e->getMessage());
         }
     }
 
