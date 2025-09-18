@@ -8,7 +8,9 @@ if (!defined('ABSPATH')) {
 }
 
 $sync_manager = Manager_Factory::get_sync_manager();
-$transition_database = new Transition_Database_Manager();
+// Get database manager from main plugin instance
+
+$transition_database = new \Bema\Database\Transition_Database_Manager();
 
 $transition_date_from_id_map = $transition_database->get_transition_date_from_id_map();
 
@@ -18,7 +20,7 @@ $selected_campaign = isset($_GET['campaign']) ? sanitize_text_field(wp_unslash($
 $search_query = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
 
 // Fetch subscriber data with filters/pagination.
-$subscriber_db = new Subscribers_Database_Manager();
+$subscriber_db = new \Bema\Database\Subscribers_Database_Manager();
 
 // Retrieve tiers from WordPress option.
 $tiers = get_option('bema_crm_tiers', []);

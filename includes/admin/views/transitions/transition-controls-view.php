@@ -5,9 +5,11 @@ use Bema\Database\Transition_Database_Manager;
 use Bema\Database\Transition_Subscribers_Database_Manager;
 use Bema\Transition_Manager;
 
-$campaign_database = new Campaign_Database_Manager();
-$transition_database = new Transition_Database_Manager();
-$transition_subscribers_database = new Transition_Subscribers_Database_Manager();
+// Get database managers from main plugin instance
+
+$campaign_database = new \Bema\Database\Campaign_Database_Manager();
+$transition_database = new \Bema\Database\Transition_Database_Manager();
+$transition_subscribers_database = new \Bema\Database\Transition_Subscribers_Database_Manager();
 
 $transition_manager = new Transition_Manager();
 $transition_manager->campaign_database = $campaign_database;

@@ -35,7 +35,7 @@ class Bema_Admin_Interface
     private $sync_manager;
     private $transition_manager;
 
-    const MENU_SLUG = 'bema-sync-manager';
+    const MENU_SLUG = 'bema-dashboard';
     const CAPABILITY = 'manage_options';
     const NONCE_ACTION = 'bema_admin_action';
     const AJAX_NONCE = 'bema_ajax_nonce';
@@ -80,6 +80,8 @@ class Bema_Admin_Interface
             } catch (Exception $e) {
                 $this->logger->debug('Failed to initialize campaign manager: ' . $e->getMessage(), []);
             }
+        }
+        
         // Initialize new managers
         try {
             $this->sync_manager = Manager_Factory::get_sync_manager();
@@ -87,7 +89,7 @@ class Bema_Admin_Interface
             $this->logger->debug('New managers initialized successfully', []);
         } catch (Exception $e) {
             $this->logger->error('Failed to initialize new managers: ' . $e->getMessage(), []);
-        }        }
+        }
 
         $this->logger->debug('ADMIN_INTERFACE_INIT', [
             'sync_instance_provided' => isset($sync_instance) ? 'yes' : 'no',
@@ -331,6 +333,13 @@ class Bema_Admin_Interface
             ];
         }
 
+        // Always include Campaigns
+        $submenus['bema-campaigns'] = [
+            'title' => __('Campaigns', 'bema-crm'),
+            'menu_title' => __('Campaigns', 'bema-crm'),
+            'callback' => 'render_campaigns_page'
+        ];
+
         // Always include Settings
         $submenus['bema-settings'] = [
             'title' => __('Settings', 'bema-crm'),
@@ -440,7 +449,7 @@ class Bema_Admin_Interface
 
 
             // Module scripts for sync manager
-            if (strpos($hook, 'bema-sync-manager') !== false) {
+            if (strpos($hook, 'bema-dashboard') !== false) {
                 wp_enqueue_script(
                     'bema-sync-js',
                     plugins_url('assets/js/modules/sync.js', BEMA_FILE),
@@ -530,18 +539,14 @@ class Bema_Admin_Interface
             // Get detailed sync status data
             $sync_status = $this->get_sync_status_data();
 
-            // Set up sync status variables
+            // Set up sync status variables for dashboard
             $current_status = $sync_status['status'] ?? 'idle';
-            $processed = abs(intval($sync_status['processed'] ?? 0));
             $total = abs(intval($sync_status['total'] ?? 0));
-            $progress = $total > 0 ? min(100, round(($processed / $total) * 100)) : 0;
-
+            $progress = $total > 0 ? min(100, round((abs(intval($sync_status['processed'] ?? 0)) / $total) * 100)) : 0;
             $failed_jobs = $this->get_failed_jobs();
-            $campaigns = [];
             $max_retries = $this->max_retries;
-            $admin = $this;
 
-            require_once BEMA_PATH . 'includes/admin/views/sync-management.php';
+            require_once BEMA_PATH . 'includes/admin/views/dashboard.php';
         } catch (Exception $e) {
             $this->logger->log('Failed to render sync page', 'error', [
                 'error' => $e->getMessage()
@@ -553,15 +558,13 @@ class Bema_Admin_Interface
     public function render_synchronize_page(): void
     {
         try {
-            $admin = $this;
-
             require_once BEMA_PATH . 'includes/admin/views/synchronize.php';
         } catch (Exception $e) {
             $this->add_admin_notice(
                 sprintf(__('Error loading Synchronize page: %s', 'bema-crm'), $e->getMessage()),
                 self::STATUS_ERROR
             );
-            $this->logger->log('Failed to render logs page', 'error', [
+            $this->logger->log('Failed to render synchronize page', 'error', [
                 'error' => $e->getMessage()
             ]);
         }
@@ -570,18 +573,8 @@ class Bema_Admin_Interface
     public function render_database_page(): void
     {
         try {
-            $page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
-            $search = isset($_GET['search']) ? sanitize_text_field($_GET['search']) : '';
-            $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'subscribers';
-
-            // Get data and set up view variables
-            $offset = ($page - 1) * $this->get_per_page();
-            $total_subscribers = $this->get_total_subscribers();
-            $total_logs = $this->get_total_logs();
-            $active_filters = $this->get_active_filters();
-            $admin = $this; // Pass $this as $admin
-            $campaigns = [];
-
+            $admin = $this;
+            
             require_once BEMA_PATH . 'includes/admin/views/database-management.php';
         } catch (Exception $e) {
             $this->logger->log('Failed to render database page', 'error', [
@@ -591,13 +584,22 @@ class Bema_Admin_Interface
         }
     }
 
+    public function render_campaigns_page(): void
+    {
+        try {
+            require_once BEMA_PATH . 'includes/admin/views/campaigns.php';
+        } catch (Exception $e) {
+            $this->logger->log('Failed to render campaigns page', 'error', [
+                'error' => $e->getMessage()
+            ]);
+            wp_die('Error loading campaigns page: ' . esc_html($e->getMessage()));
+        }
+    }
+
     public function render_settings_page(): void
     {
         try {
-            // Set up required variables for the view
-            $admin = $this; 
-            $current_settings = $this->get_settings();
-            $has_sync = $this->has_sync_capability();
+            $admin = $this;
 
             require_once BEMA_PATH . 'includes/admin/views/settings.php';
         } catch (Exception $e) {
@@ -1011,18 +1013,14 @@ class Bema_Admin_Interface
             return;
         }
 
-        // Prepare data for the view
-        $view_data = [
-            'campaigns' => $this->campaign_manager->get_all_valid_campaigns(),
-            'campaign_connections' => $this->get_campaign_connections(),
-            'edd_instance' => $this->sync_instance->getMailerLiteInstance(),
-            'admin' => $this
-        ];
-
-        // Extract data to make it available in view scope
-        extract($view_data);
-
-        require_once BEMA_PATH . 'includes/admin/views/campaign-transitions.php';
+        try {
+            require_once BEMA_PATH . 'includes/admin/views/campaign-transitions.php';
+        } catch (Exception $e) {
+            $this->logger->log('Failed to render transitions page', 'error', [
+                'error' => $e->getMessage()
+            ]);
+            wp_die('Error loading transitions page: ' . esc_html($e->getMessage()));
+        }
     }
 
     private function get_campaign_connections(): array
@@ -1264,18 +1262,6 @@ class Bema_Admin_Interface
 
         $this->logger->debug($data, $label);
         wp_send_json_success();
-    }
-
-    private function get_failed_jobs(): array
-    {
-        try {
-            return $this->sync_instance ? get_option('bema_sync_failed_jobs', []) : [];
-        } catch (Exception $e) {
-            $this->logger->log('Failed to get failed jobs', 'error', [
-                'error' => $e->getMessage()
-            ]);
-            return [];
-        }
     }
 
     private function handle_sync_actions(): void

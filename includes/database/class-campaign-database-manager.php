@@ -47,6 +47,9 @@ class Campaign_Database_Manager
                 id BIGINT UNSIGNED NOT NULL,
                 campaign VARCHAR(255) NOT NULL,
                 product_id BIGINT UNSIGNED NULL,
+                start_date DATE NULL,
+                end_date DATE NULL,
+                status ENUM('draft', 'pending', 'running', 'completed') NOT NULL DEFAULT 'draft',
                 PRIMARY KEY (id),
                 UNIQUE KEY campaign_unique (campaign),
                 CONSTRAINT fk_bemacrm_campaignsmeta_product FOREIGN KEY (product_id) REFERENCES {$posts_table}(ID) ON DELETE CASCADE
@@ -79,20 +82,40 @@ class Campaign_Database_Manager
      * @param int         $id          The unique ID for the campaign.
      * @param string      $campaign    The name of the campaign.
      * @param int|null    $product_id  The EDD product ID.
+     * @param string|null $start_date  The campaign start date (Y-m-d format).
+     * @param string|null $end_date    The campaign end date (Y-m-d format).
+     * @param string      $status      The campaign status (draft, pending, running, completed).
      * @return int|false The inserted row's ID on success, or false on failure.
      */
-    public function insert_campaign(int $id, string $campaign, ?int $product_id = null): int|false
+    public function insert_campaign(int $id, string $campaign, ?int $product_id = null, ?string $start_date = null, ?string $end_date = null, string $status = 'draft'): int|false
     {
         try {
+            // Validate status
+            $valid_statuses = ['draft', 'pending', 'running', 'completed'];
+            if (!in_array($status, $valid_statuses)) {
+                $status = 'draft';
+            }
+
             $data = [
                 'id' => absint($id),
-                'campaign' => sanitize_text_field($campaign)
+                'campaign' => sanitize_text_field($campaign),
+                'status' => $status
             ];
-            $format = ['%d', '%s'];
+            $format = ['%d', '%s', '%s'];
 
             if (!is_null($product_id)) {
                 $data['product_id'] = absint($product_id);
                 $format[] = '%d';
+            }
+
+            if (!is_null($start_date)) {
+                $data['start_date'] = sanitize_text_field($start_date);
+                $format[] = '%s';
+            }
+
+            if (!is_null($end_date)) {
+                $data['end_date'] = sanitize_text_field($end_date);
+                $format[] = '%s';
             }
 
             $inserted = $this->wpdb->insert($this->table_name, $data, $format);
@@ -132,16 +155,27 @@ class Campaign_Database_Manager
         try {
             $placeholders = [];
             $values = [];
-            $update_columns = ['campaign', 'product_id'];
+            $update_columns = ['campaign', 'product_id', 'start_date', 'end_date', 'status'];
 
             foreach ($campaigns_to_upsert as $campaign) {
                 if (empty($campaign['id'])) {
                     continue;
                 }
-                $placeholders[] = "(%d, %s, %d)";
+                
+                // Validate status
+                $status = $campaign['status'] ?? 'draft';
+                $valid_statuses = ['draft', 'pending', 'running', 'completed'];
+                if (!in_array($status, $valid_statuses)) {
+                    $status = 'draft';
+                }
+                
+                $placeholders[] = "(%d, %s, %d, %s, %s, %s)";
                 $values[] = absint($campaign['id']);
                 $values[] = sanitize_text_field($campaign['campaign'] ?? '');
                 $values[] = absint($campaign['product_id'] ?? 0);
+                $values[] = !empty($campaign['start_date']) ? sanitize_text_field($campaign['start_date']) : null;
+                $values[] = !empty($campaign['end_date']) ? sanitize_text_field($campaign['end_date']) : null;
+                $values[] = $status;
             }
 
             if (empty($placeholders)) {
@@ -154,7 +188,7 @@ class Campaign_Database_Manager
             }
             $update_clause = implode(', ', $update_parts);
 
-            $query = "INSERT INTO {$this->table_name} (id, campaign, product_id) VALUES " .
+            $query = "INSERT INTO {$this->table_name} (id, campaign, product_id, start_date, end_date, status) VALUES " .
                 implode(', ', $placeholders) .
                 " ON DUPLICATE KEY UPDATE " . $update_clause;
 
@@ -226,6 +260,9 @@ class Campaign_Database_Manager
                 t1.id,
                 t1.campaign,
                 t1.product_id,
+                t1.start_date,
+                t1.end_date,
+                t1.status,
                 t2.post_title AS album,
                 YEAR(t2.post_date) AS year,
                 (SELECT t4.name FROM {$term_relationships_table} AS t3
@@ -286,6 +323,9 @@ class Campaign_Database_Manager
                 t1.id,
                 t1.campaign,
                 t1.product_id,
+                t1.start_date,
+                t1.end_date,
+                t1.status,
                 t2.post_title AS album,
                 YEAR(t2.post_date) AS year,
                 (SELECT t4.name FROM {$term_relationships_table} AS t3
@@ -325,6 +365,20 @@ class Campaign_Database_Manager
                     case 'product_id':
                         $update_data['product_id'] = is_null($value) ? null : absint($value);
                         $format[] = '%d';
+                        break;
+                    case 'start_date':
+                        $update_data['start_date'] = is_null($value) ? null : sanitize_text_field($value);
+                        $format[] = '%s';
+                        break;
+                    case 'end_date':
+                        $update_data['end_date'] = is_null($value) ? null : sanitize_text_field($value);
+                        $format[] = '%s';
+                        break;
+                    case 'status':
+                        $valid_statuses = ['draft', 'pending', 'running', 'completed'];
+                        $status = in_array($value, $valid_statuses) ? $value : 'draft';
+                        $update_data['status'] = $status;
+                        $format[] = '%s';
                         break;
                 }
             }
@@ -376,6 +430,20 @@ class Campaign_Database_Manager
                         $update_data['product_id'] = is_null($value) ? null : absint($value);
                         $format[] = '%d';
                         break;
+                    case 'start_date':
+                        $update_data['start_date'] = is_null($value) ? null : sanitize_text_field($value);
+                        $format[] = '%s';
+                        break;
+                    case 'end_date':
+                        $update_data['end_date'] = is_null($value) ? null : sanitize_text_field($value);
+                        $format[] = '%s';
+                        break;
+                    case 'status':
+                        $valid_statuses = ['draft', 'pending', 'running', 'completed'];
+                        $status = in_array($value, $valid_statuses) ? $value : 'draft';
+                        $update_data['status'] = $status;
+                        $format[] = '%s';
+                        break;
                 }
             }
 
@@ -421,13 +489,16 @@ class Campaign_Database_Manager
             } else {
                 // If the campaign does not exist, insert a new record.
                 $product_id = $data['product_id'] ?? null;
+                $start_date = $data['start_date'] ?? null;
+                $end_date = $data['end_date'] ?? null;
+                $status = $data['status'] ?? 'draft';
 
-                return $this->insert_campaign($id, $campaign, $product_id) !== false;
+                return $this->insert_campaign($id, $campaign, $product_id, $start_date, $end_date, $status) !== false;
             }
         } catch (Exception $e) {
             $this->logger->error('Failed to upsert campaign', [
                 'campaign' => $campaign,
-                'product_id' => $product_id,
+                'data' => $data,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);

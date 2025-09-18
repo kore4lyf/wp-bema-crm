@@ -44,7 +44,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'subscr
 
     <?php elseif ($current_tab === 'sync-logs'): ?>
         <!-- Sync Logs Content -->
-        <?php require 'sync-logs.php'; ?>
+        <p>Sync logs functionality not yet implemented.</p>
 
     <?php endif; ?>
 </div>

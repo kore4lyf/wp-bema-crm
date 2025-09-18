@@ -11,6 +11,8 @@ define('SYNC_CRON_JOB', 'bema_crm_sync_cron_job');
 // Option Key
 $sync_option_key = 'bema_crm_sync_status';
 // Ensure DB Manager Available
+// Get database manager from main plugin instance
+
 $sync_db_manager = new \Bema\Database\Sync_Database_Manager();
 $sync_state = get_option($sync_option_key, []);
 $sync_state['status'] = COMPLETE;

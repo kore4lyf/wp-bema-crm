@@ -39,6 +39,17 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
             }
         ?>
 
+        <!-- Tier Transition Matrix -->
+        <?php
+        $transition_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'transitions-matrix-view.php';
+
+        if (file_exists($transition_table_view_path)) {
+            include $transition_table_view_path;
+        } else {
+            echo '<div class="notice notice-error"><p>Missing view file: transitions-matrix-view.php</p></div>';
+        }
+        ?>
+
     <?php elseif ($current_tab === 'history'): ?>
         <!-- Campaign Connections -->
         <?php
@@ -61,19 +72,6 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
             } else {
                 echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
             }
-        ?>
-
-
-
-        <!-- Tier Transition Matrix -->
-        <?php
-        $transition_table_view_path = plugin_dir_path(BEMA_FILE) . 'includes/' . 'admin/' . 'views/' . 'transitions/' . 'transitions-matrix-view.php';
-
-        if (file_exists($transition_table_view_path)) {
-            include $transition_table_view_path;
-        } else {
-            echo '<div class="notice notice-error"><p>Missing view file: transitions-matrix-view.php</p></div>';
-        }
         ?>
 
     <?php endif; ?>
