@@ -185,4 +185,25 @@ class Sync_Database_Manager
             return false;
         }
     }
+
+    public function get_success_count(): int
+    {
+        return (int) $this->wpdb->get_var(
+            "SELECT COUNT(*) FROM {$this->table_name} WHERE status = 'success'"
+        );
+    }
+
+    public function get_failed_count(): int
+    {
+        return (int) $this->wpdb->get_var(
+            "SELECT COUNT(*) FROM {$this->table_name} WHERE status = 'failed'"
+        );
+    }
+
+    public function get_last_sync_time(): ?string
+    {
+        return $this->wpdb->get_var(
+            "SELECT sync_date FROM {$this->table_name} ORDER BY sync_date DESC LIMIT 1"
+        );
+    }
 }

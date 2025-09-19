@@ -414,10 +414,7 @@ class Triggers
         if ($post && $post->post_type === 'download') {
             $this->deleted_album_details[$post_id] = [
                 'album_name' => $post->post_title,
-                'album_details' => [
-                    'year' => '2025',
-                    'artist' => 'Eko the beat'
-                ]
+                'album_details' => $this->utils->get_album_details($post->post_title)
             ];
         }
     }
@@ -494,7 +491,7 @@ class Triggers
 
         // Delete album groups on MailerLite
         foreach ($tiers as $tier) {
-            $group_name = $this->utils->get_campaign_group_name('2025', 'Eko the beat', $album_name, $tier);
+            $group_name = $this->utils->get_campaign_group_name($album_release_year, $album_artist, $album_name, $tier);
 
             if (!empty($group_name)) {
                 // Delete mailerlite subscriber group with post title

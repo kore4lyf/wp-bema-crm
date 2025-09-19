@@ -4,7 +4,7 @@ namespace Bema\Admin;
 
 use Exception;
 use Bema\EM_Sync;
-use Bema\Sync_Scheduler;
+
 use Bema\Bema_Settings;
 use Bema\Bema_CRM_Logger;
 use Bema\Providers\EDD;
@@ -21,7 +21,7 @@ class Bema_Admin_Interface
     private $logger;
     private $sync_instance;
     private $utils;
-    private $sync_scheduler;
+
     private $settings;
     private $page_hooks = [];
     private $per_page = 20;
@@ -49,14 +49,14 @@ class Bema_Admin_Interface
     public function __construct(
         Bema_Settings $settings,
         ?EM_Sync $sync_instance = null,
-        ?Sync_Scheduler $sync_scheduler = null
+
     ) {
         global $wpdb;
         $this->wpdb = $wpdb;
         $this->logger = Bema_CRM_Logger::create('admin-interface');
         $this->settings = $settings;
         $this->sync_instance = $sync_instance;
-        $this->sync_scheduler = $sync_scheduler;
+
         $this->system_logger = $this->logger;
         $this->utils = new \Bema\Utils();
         $this->current_tab = $_GET['tab'] ?? 'general';
@@ -93,7 +93,6 @@ class Bema_Admin_Interface
 
         $this->logger->debug('ADMIN_INTERFACE_INIT', [
             'sync_instance_provided' => isset($sync_instance) ? 'yes' : 'no',
-            'sync_scheduler_provided' => isset($sync_scheduler) ? 'yes' : 'no',
             'settings_provided' => isset($settings) ? 'yes' : 'no',
             'logger_provided' => isset($logger) ? 'yes' : 'no'
         ]);
@@ -126,7 +125,6 @@ class Bema_Admin_Interface
                 'edd_pro_active' => is_plugin_active($edd_pro),
                 'edd_active' => $edd_active,
                 'sync_instance' => isset($this->sync_instance),
-                'sync_scheduler' => isset($this->sync_scheduler)
             ]);
 
             // If EDD is not active, return false
@@ -137,11 +135,11 @@ class Bema_Admin_Interface
             }
 
             // Check that our sync components are initialized
-            $has_components = isset($this->sync_instance) && isset($this->sync_scheduler);
+            $has_components = isset($this->sync_instance);
             if (!$has_components) {
                 $this->logger->debug('SYNC_COMPONENTS_CHECK', [
                     'sync_instance_exists' => isset($this->sync_instance),
-                    'sync_scheduler_exists' => isset($this->sync_scheduler)
+
                 ]);
                 $capability = false;
                 return false;
@@ -173,7 +171,6 @@ class Bema_Admin_Interface
             'sync_disabled' => $sync_disabled ? 'yes' : 'no',
             'has_sync_capability' => $this->has_sync_capability() ? 'yes' : 'no',
             'sync_instance_exists' => isset($this->sync_instance) ? 'yes' : 'no',
-            'sync_scheduler_exists' => isset($this->sync_scheduler) ? 'yes' : 'no'
         ]);
 
         return $sync_disabled ? ' disabled' : '';
@@ -192,7 +189,7 @@ class Bema_Admin_Interface
 
         if (!$edd_base_active && !$edd_pro_active) {
             $message = __('Sync functionality is currently disabled because Easy Digital Downloads is not active. Please activate either EDD or EDD Pro.', 'bema-crm');
-        } elseif (!isset($this->sync_instance) || !isset($this->sync_scheduler)) {
+        } elseif (!isset($this->sync_instance) || !isset($this->settings)) {
             $message = __('Sync functionality is currently disabled because sync components are not properly initialized. Please check your plugin settings.', 'bema-crm');
         }
 
@@ -252,7 +249,7 @@ class Bema_Admin_Interface
 
     private function verify_dependencies(): bool
     {
-        if (!$this->logger || !$this->sync_instance || !$this->sync_scheduler || !$this->settings) {
+        if (!$this->logger || !$this->sync_instance || !$this->settings) {
             $this->logger?->log('Missing required dependencies', 'error');
             return false;
         }
@@ -528,7 +525,6 @@ class Bema_Admin_Interface
             $this->logger->log('Rendering sync page:', 'debug', [
                 'has_capability' => $has_capability,
                 'sync_instance_exists' => isset($this->sync_instance),
-                'sync_scheduler_exists' => isset($this->sync_scheduler)
             ]);
 
             if (!$has_capability) {
@@ -542,9 +538,39 @@ class Bema_Admin_Interface
             // Set up sync status variables for dashboard
             $current_status = $sync_status['status'] ?? 'idle';
             $total = abs(intval($sync_status['total'] ?? 0));
-            $progress = $total > 0 ? min(100, round((abs(intval($sync_status['processed'] ?? 0)) / $total) * 100)) : 0;
+            $processed = abs(intval($sync_status['processed'] ?? 0));
+            $progress = $total > 0 ? min(100, round(($processed / $total) * 100)) : 0;
             $failed_jobs = $this->get_failed_jobs();
             $max_retries = $this->max_retries;
+
+            // Set up dashboard statistics - provide default values if methods don't exist
+            $campaign_stats = [
+                'active_count' => 0,
+                'total_count' => 0,
+                'active_campaigns' => []
+            ];
+
+            $sync_stats = [
+                'success_count' => 0,
+                'failed_count' => 0,
+                'last_sync_time' => null
+            ];
+
+            $subscriber_stats = [
+                'total_count' => 0,
+                'status_counts' => [
+                    'active' => 0,
+                    'unsubscribed' => 0,
+                    'unconfirmed' => 0,
+                    'bounced' => 0,
+                    'junk' => 0
+                ]
+            ];
+
+            $tier_revenue_stats = [
+                'tier_counts' => [],
+                'total_revenue' => 0
+            ];
 
             require_once BEMA_PATH . 'includes/admin/views/dashboard.php';
         } catch (Exception $e) {
@@ -685,7 +711,35 @@ class Bema_Admin_Interface
 
     public function handle_get_sync_status(): void
     {
+        try {
+            check_ajax_referer('bema_admin_nonce', 'nonce');
+
+            if (!$this->sync_instance) {
+                throw new Exception('Sync instance not initialized');
+            }
+
+            $status = $this->sync_instance->getCurrentProgress();
+
+            // Add additional status data
+            $status['memory_usage'] = size_format(memory_get_usage(true));
+            $status['peak_memory'] = size_format(memory_get_peak_usage(true));
+
+            $this->logger->debug('GET_SYNC_STATUS', [
+                'status' => $status
+            ]);
+
+            wp_send_json_success($status);
+        } catch (Exception $e) {
+            $this->logger->debug('GET_SYNC_STATUS_ERROR', [
+                'error' => $e->getMessage()
+            ]);
+
+            wp_send_json_error([
+                'message' => $e->getMessage()
+            ]);
+        }
     }
+
 
     /**
      * Handle sync using new Sync_Manager
@@ -1080,6 +1134,23 @@ class Bema_Admin_Interface
         return $this->campaign_manager;
     }
 
+    private function get_failed_jobs(): array
+    {
+        try {
+            if (!$this->sync_instance) {
+                return [];
+            }
+            
+            $error_logs = $this->sync_instance->getErrorLogs();
+            return is_array($error_logs) ? $error_logs : [];
+        } catch (Exception $e) {
+            $this->logger->log('Failed to get failed jobs', 'error', [
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+    }
+
     private function get_sync_status_data(): array
     {
         try {
@@ -1274,7 +1345,9 @@ class Bema_Admin_Interface
                     $this->add_admin_notice(__('Sync started successfully', 'bema-crm'), self::STATUS_SUCCESS);
                     break;
                 case 'stop':
-                    $this->sync_scheduler->cancel_sync();
+                    if ($this->sync_instance) {
+                        $this->sync_instance->stopSync();
+                    }
                     $this->add_admin_notice(__('Sync stopped successfully', 'bema-crm'), self::STATUS_SUCCESS);
                     break;
                 default:
@@ -1312,9 +1385,9 @@ class Bema_Admin_Interface
                 'show_sync' => $show_sync,
                 'has_capability' => $this->has_sync_capability(),
                 'sync_instance_exists' => isset($this->sync_instance),
-                'sync_scheduler_exists' => isset($this->sync_scheduler)
             ]);
         }
+        
         return $show_sync;
     }
 

@@ -446,4 +446,53 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
             return false;
         }
     }
+    
+    public function get_tier_counts_by_campaign(int $campaign_id): array
+    {
+        $results = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT tier, COUNT(*) as count FROM {$this->table_name} WHERE campaign_id = %d GROUP BY tier",
+                $campaign_id
+            ),
+            ARRAY_A
+        );
+        
+        $counts = [];
+        foreach ($results as $row) {
+            $counts[$row['tier']] = (int) $row['count'];
+        }
+        
+        return $counts;
+    }
+
+    public function get_total_subscribers_without_tier(): int
+    {
+        return (int) $this->wpdb->get_var(
+            "SELECT COUNT(*) FROM {$this->subscribers_table_name} s 
+             WHERE s.id NOT IN (SELECT DISTINCT subscriber_id FROM {$this->table_name})"
+        );
+    }
+
+    public function get_revenue_by_campaign(int $campaign_id): float
+    {
+        global $wpdb;
+        $edd_payments_table = $wpdb->prefix . 'posts';
+        $edd_payment_meta_table = $wpdb->prefix . 'postmeta';
+        
+        $total = $this->wpdb->get_var(
+            $this->wpdb->prepare(
+                "SELECT SUM(pm.meta_value) 
+                 FROM {$this->table_name} cgs
+                 JOIN {$edd_payments_table} p ON cgs.purchase_id = p.ID
+                 JOIN {$edd_payment_meta_table} pm ON p.ID = pm.post_id
+                 WHERE cgs.campaign_id = %d 
+                 AND p.post_type = 'edd_payment'
+                 AND p.post_status = 'publish'
+                 AND pm.meta_key = '_edd_payment_total'",
+                $campaign_id
+            )
+        );
+        
+        return (float) ($total ?? 0);
+    }
 }

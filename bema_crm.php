@@ -120,7 +120,7 @@ class Bema_CRM
     private $subscriber_db_manager;
     private $campaign_group_subscribers_db_manager;
     private $sync_db_manager;
-    private $sync_scheduler;
+
     private $admin_interface;
     private $settings;
     private $db_manager;
@@ -317,7 +317,7 @@ class Bema_CRM
             'sync_components' => [
                 'sync_instance' => isset($this->sync_instance),
                 'transition_instance' => isset($this->transition_instance),
-                'sync_scheduler' => isset($this->sync_scheduler),
+
             ],
             'admin_components' => [
                 'admin_interface' => isset($this->admin_interface),
@@ -484,11 +484,10 @@ class Bema_CRM
 
             // Core files that must be loaded first
             $core_files = [
-                'includes/class-batch-processor.php',
                 'includes/class-bema-crm-logger.php',
                 'includes/class-database-manager.php',
                 'includes/class-database-migrations.php',
-                'includes/class-sync-scheduler.php',
+
                 'includes/class-settings.php',
                 'includes/class-performance.php'
             ];
@@ -587,7 +586,7 @@ class Bema_CRM
             'Bema\\Bema_CRM_Logger',
             'Bema\\Database_Manager',
             'Bema\\EM_Sync',
-            'Bema\\Sync_Scheduler',
+
             'Bema\\Bema_Settings',
             'Bema\\Triggers',
             'Bema\\Utils'
@@ -897,27 +896,10 @@ class Bema_CRM
             $health_monitor = new \Bema\Handlers\Default_Health_Monitor();
             $stats_collector = new \Bema\Handlers\Default_Stats_Collector();
 
-            // Create Sync_Scheduler instance
-            Bema_CRM::get_logger()->debug('Initializing Sync Scheduler', ['context' => 'SYNC_INIT']);
-            $this->sync_scheduler = \Bema\Sync_Scheduler::get_instance(
-                $this->sync_instance,
-                $lock_handler,
-                $health_monitor,
-                $stats_collector
-            );
-
-            // Update EM_Sync with the scheduler
-            if ($this->sync_instance && method_exists($this->sync_instance, 'setSyncScheduler')) {
-                $this->sync_instance->setSyncScheduler($this->sync_scheduler);
-                Bema_CRM::get_logger()->debug('Sync scheduler set in EM_Sync', ['context' => 'SYNC_INIT']);
-            }
-
             Bema_CRM::get_logger()->debug('Sync components status', [
                 'context' => 'SYNC_COMPONENTS_STATUS',
                 'sync_instance_created' => isset($this->sync_instance) ? 'yes' : 'no',
-                'sync_scheduler_created' => isset($this->sync_scheduler) ? 'yes' : 'no'
             ]);
-
             Bema_CRM::get_logger()->info('Sync components initialized successfully');
         } catch (Exception $e) {
             Bema_CRM::get_logger()->error('Sync initialization error', [
@@ -955,7 +937,7 @@ class Bema_CRM
             $this->admin_interface = new \Bema\Admin\Bema_Admin_Interface(
                 $this->settings,                           // Required: Bema_Settings
                 $has_edd ? $this->sync_instance : null,    // Optional: ?EM_Sync
-                $has_edd ? $this->sync_scheduler : null    // Optional: ?Sync_Scheduler
+
             );
 
             $this->component_registry['admin'] = $this->admin_interface;
@@ -1098,11 +1080,11 @@ class Bema_CRM
                     \is_plugin_active('easy-digital-downloads-pro/easy-digital-downloads.php');
 
                 // Initialize admin interface with correct parameter order:
-                // Bema_CRM_Logger, Bema_Settings, ?EM_Sync, ?Sync_Scheduler
+
                 $this->admin_interface = new \Bema\Admin\Bema_Admin_Interface(
                     $this->settings,         // Required settings
                     $has_edd ? $this->sync_instance : null,    // Optional sync instance
-                    $has_edd ? $this->sync_scheduler : null    // Optional scheduler
+
                 );
 
                 $this->component_registry['admin'] = $this->admin_interface;

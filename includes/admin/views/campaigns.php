@@ -1,106 +1,224 @@
 <?php
-/**
- * Campaigns Management Page
- * 
- * @package Bema_CRM
- */
-
 if (!defined('ABSPATH')) {
     exit;
+}
+
+// Debug information
+$debug_info = [];
+$campaigns = [];
+$products = [];
+
+try {
+    global $wpdb;
+    
+    // Check if campaigns table exists
+    $campaigns_table = $wpdb->prefix . 'bemacrm_campaignsmeta';
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$campaigns_table}'") === $campaigns_table;
+    $debug_info['table_exists'] = $table_exists;
+    $debug_info['table_name'] = $campaigns_table;
+    
+    if ($table_exists) {
+        // Get campaigns from database
+        $campaigns = $wpdb->get_results("SELECT * FROM {$campaigns_table} ORDER BY id DESC", ARRAY_A);
+        $debug_info['campaigns_count'] = count($campaigns);
+        $debug_info['last_error'] = $wpdb->last_error;
+    }
+    
+    // Get EDD products
+    $products = get_posts([
+        'post_type' => 'download',
+        'post_status' => 'publish',
+        'numberposts' => 50,
+        'orderby' => 'title',
+        'order' => 'ASC'
+    ]);
+    $debug_info['products_count'] = count($products);
+    
+} catch (Exception $e) {
+    $debug_info['error'] = $e->getMessage();
+}
+
+function get_status_class($status) {
+    $classes = [
+        'publish' => 'status-active',
+        'draft' => 'status-draft',
+        'completed' => 'status-completed',
+        'paused' => 'status-paused'
+    ];
+    return $classes[$status] ?? 'status-unknown';
 }
 ?>
 
 <div class="wrap">
-    <h1 class="wp-heading-inline">CRM Campaigns</h1>
-    <hr class="wp-header-end">
+    <h1>Campaigns</h1>
 
-    <!-- Search -->
-    <form method="get">
-        <input type="hidden" name="page" value="bema-crm-campaigns">
-        <p class="search-box">
-            <label class="screen-reader-text" for="campaign-search-input">Search Campaigns:</label>
-            <input type="search" id="campaign-search-input" name="s" value="">
-            <input type="submit" id="search-submit" class="button" value="Search Campaigns">
-        </p>
-    </form>
+    <!-- Raw Data Display -->
+    <?php if (!empty($campaigns)): ?>
+        <div class="notice notice-success">
+            <h3>Raw Campaign Data:</h3>
+            <pre><?php echo esc_html(print_r(array_slice($campaigns, 0, 2), true)); ?></pre>
+        </div>
+    <?php endif; ?>
 
-    <!-- Campaigns Table -->
-    <form method="post">
-        <table class="wp-list-table widefat fixed striped table-view-list">
+    <!-- Create Campaign Form -->
+    <div class="campaign-form-section">
+        <h2>Create New Campaign</h2>
+        <form method="post" action="">
+            <?php wp_nonce_field('bema_create_campaign', 'bema_nonce'); ?>
+            
+            <table class="form-table">
+                <tr>
+                    <th><label for="campaign_name">Campaign Name</label></th>
+                    <td>
+                        <input type="text" id="campaign_name" name="campaign_name" class="regular-text" required>
+                        <p class="description">e.g., 2024_ARTIST_ALBUM</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="product_id">Product</label></th>
+                    <td>
+                        <select id="product_id" name="product_id">
+                            <option value="">Select Product (Optional)</option>
+                            <?php if (!empty($products)): ?>
+                                <?php foreach ($products as $product): ?>
+                                    <option value="<?php echo esc_attr($product->ID); ?>">
+                                        <?php echo esc_html($product->post_title); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="start_date">Start Date</label></th>
+                    <td>
+                        <input type="date" id="start_date" name="start_date" class="regular-text">
+                        <p class="description">Optional campaign start date</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th><label for="end_date">End Date</label></th>
+                    <td>
+                        <input type="date" id="end_date" name="end_date" class="regular-text">
+                        <p class="description">Optional campaign end date</p>
+                    </td>
+                </tr>
+            </table>
+            
+            <p class="submit">
+                <input type="submit" name="create_campaign" class="button button-primary" value="Create Campaign">
+            </p>
+        </form>
+    </div>
+
+    <!-- Campaigns List -->
+    <div class="campaigns-list-section">
+        <h2>All Campaigns (<?php echo count($campaigns); ?>)</h2>
+        
+        <table class="wp-list-table widefat fixed striped">
             <thead>
                 <tr>
-                    <td id="cb" class="manage-column column-cb check-column">
-                        <input type="checkbox">
-                    </td>
-                    <th scope="col" class="manage-column">Campaign</th>
-                    <th scope="col" class="manage-column">Product</th>
-                    <th scope="col" class="manage-column">Subscribers</th>
-                    <th scope="col" class="manage-column">Revenue</th>
-                    <th scope="col" class="manage-column">Status</th>
-                    <th scope="col" class="manage-column">View Subscribers</th>
-                    <th scope="col" class="manage-column">Actions</th>
+                    <th>Campaign</th>
+                    <th>Product ID</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
-                <!-- Example Row -->
-                <tr>
-                    <th scope="row" class="check-column">
-                        <input type="checkbox" name="campaign[]" value="163667485400237380">
-                    </th>
-                    <td>2024_WURRDIE_WT<br><small>ID: 163667485400237380</small></td>
-                    <td>Product #1679</td>
-                    <td>350</td>
-                    <td>$1,200</td>
-                    <td><span class="status active">Active</span></td>
-                    <td><a href="#">View Subscribers</a></td>
-                    <td>
-                        <a href="#" class="button">Resync</a>
-                        <a href="#" class="delete-campaign" style="color:red;">Delete</a>
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row" class="check-column">
-                        <input type="checkbox" name="campaign[]" value="165023190687418052">
-                    </th>
-                    <td>2024_ETB_GIG<br><small>ID: 165023190687418052</small></td>
-                    <td>Product #1732</td>
-                    <td>210</td>
-                    <td>$890</td>
-                    <td><span class="status completed">Completed</span></td>
-                    <td><a href="#">View Subscribers</a></td>
-                    <td>
-                        <a href="#" class="button">Resync</a>
-                        <a href="#" class="delete-campaign" style="color:red;">Delete</a>
-                    </td>
-                </tr>
+                <?php if (!empty($campaigns)): ?>
+
+                    <?php foreach ($campaigns as $campaign): ?>
+                        <tr>
+                            <td>
+                                <strong><?php echo esc_html($campaign['campaign'] ?? 'N/A'); ?></strong>
+                                <br><small>ID: <?php echo esc_html($campaign['id'] ?? 'N/A'); ?></small>
+                            </td>
+                            <td><?php echo esc_html($campaign['product_id'] ?? 'N/A'); ?></td>
+                            <td>
+                                <?php echo esc_html($campaign['start_date'] ?? 'N/A'); ?>
+                            </td>
+                            <td>
+                                <?php echo esc_html($campaign['end_date'] ?? 'N/A'); ?>
+                            </td>
+                            <td>
+                                <?php if (!empty($campaign['start_date']) || !empty($campaign['end_date'])): ?>
+                                    <?php echo esc_html($campaign['start_date'] ?? 'N/A'); ?><br>
+                                    <?php echo esc_html($campaign['end_date'] ?? 'N/A'); ?>
+                                <?php else: ?>
+                                    Not set
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <span class="status-badge <?php echo esc_attr(get_status_class($campaign['status'] ?? 'draft')); ?>">
+                                    <?php echo esc_html(ucfirst($campaign['status'] ?? 'Draft')); ?>
+                                </span>
+                            </td>
+                            <td>
+                                <a href="#" class="button button-small">Edit</a>
+                                <a href="#" class="button button-small">Subscribers</a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php else: ?>
+                        <tr>
+                            <td colspan="6" class="no-campaigns">
+                                <?php if (!$debug_info['table_exists']): ?>
+                                    <strong>No campaigns table found.</strong>
+                                <?php else: ?>
+                                    <strong>No campaigns found.</strong>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                <?php endif; ?>
             </tbody>
         </table>
-
-        <!-- Bulk Action & Pagination -->
-        <div class="tablenav bottom">
-            <div class="alignleft actions bulkactions">
-                <select name="action">
-                    <option value="-1">Bulk actions</option>
-                    <option value="delete">Delete</option>
-                </select>
-                <input type="submit" class="button action" value="Apply">
-            </div>
-            <div class="tablenav-pages">
-                <span class="displaying-num">2 items</span>
-                <span class="pagination-links">
-                    <a class="tablenav-pages-navspan button disabled">«</a>
-                    <a class="tablenav-pages-navspan button disabled">‹</a>
-                    <span class="paging-input">1 of <span class="total-pages">1</span></span>
-                    <a class="tablenav-pages-navspan button disabled">›</a>
-                    <a class="tablenav-pages-navspan button disabled">»</a>
-                </span>
-            </div>
-        </div>
-    </form>
+    </div>
 </div>
 
 <style>
-    .status.active { color: green; font-weight: bold; }
-    .status.completed { color: #555; font-weight: bold; }
-    .status.draft { color: #999; font-style: italic; }
+.campaign-form-section {
+    background: #fff;
+    padding: 20px;
+    margin: 20px 0;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+}
+
+.campaigns-list-section {
+    margin-top: 30px;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.status-active {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+
+.status-draft {
+    background: #fff3cd;
+    color: #664d03;
+}
+
+.no-campaigns {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+    font-style: italic;
+}
+
+pre {
+    background: #f1f1f1;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 12px;
+}
 </style>

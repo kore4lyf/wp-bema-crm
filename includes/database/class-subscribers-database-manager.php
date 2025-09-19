@@ -697,4 +697,31 @@ VALUES " . implode(', ', $placeholders);
             return false;
         }
     }
+
+    public function get_total_subscribers_count(): int
+    {
+        return (int) $this->wpdb->get_var("SELECT COUNT(*) FROM {$this->table_name}");
+    }
+
+    public function get_subscribers_count_by_status(): array
+    {
+        $results = $this->wpdb->get_results(
+            "SELECT status, COUNT(*) as count FROM {$this->table_name} GROUP BY status",
+            ARRAY_A
+        );
+        
+        $counts = [
+            'active' => 0,
+            'unsubscribed' => 0,
+            'unconfirmed' => 0,
+            'bounced' => 0,
+            'junk' => 0
+        ];
+        
+        foreach ($results as $row) {
+            $counts[$row['status']] = (int) $row['count'];
+        }
+        
+        return $counts;
+    }
 }

@@ -1,9 +1,11 @@
 <?php
 
+use Bema\Manager_Factory;
+
 $logger = \Bema\Bema_CRM_Logger::create('transition-history-view');
 
 try {
-    $transition_database = new \Bema\Database\Transition_Database_Manager($logger);
+    $transition_database = Manager_Factory::get_transition_manager()->transition_database;
     $transition_history = $transition_database->get_all_records();
 } catch (Exception $e) {
     $transition_history = [];

@@ -171,7 +171,19 @@ class Transition_Database_Manager
             t.transition_date DESC
         ";
 
-        return $this->wpdb->get_results($sql, ARRAY_A);
+        $results = $this->wpdb->get_results($sql, ARRAY_A);
+
+        foreach ($results as &$result) {
+            try {
+                $date_time_obj = new \DateTime($result['transition_date']);
+                $result['transition_date'] = $date_time_obj->format('F j, Y, g:i a');
+            } catch (Exception $e) {
+                $result['transition_date'] = '—';
+                $this->logger->error('Date formatting error', ['error' => $e->getMessage()]);
+            }
+        }
+
+        return $results;
     }
 
     /**

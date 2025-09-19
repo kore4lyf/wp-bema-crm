@@ -110,7 +110,6 @@ Defined in: `em_sync/class.em_sync.php`
 |------|--------|-------|
 | Transition matrix UI | 🔲 Incomplete | Needs admin interface for dynamic mapping |
 | Logs tab & notices UI | 🔲 Incomplete | Add viewer in admin to review logs/errors |
-| Sync batching UI | 🔲 Optional | See `class-batch-processor.php` for logic |
 | Campaign auto-validation | 🔲 Partial | Product-to-group consistency check |
 | WooCommerce adapter | 🔲 Future | Currently EDD-only |
 

@@ -43,7 +43,7 @@ class Utils
    * For example: Eko the beat
    * result: EKB
    * 
-   * Case 3: If artist name is empty return an empty value.ss
+   * Case 3: If artist name is empty return an empty value.
    * 
    * @param string $name Value may be an album name or an artist name
    * @return string

@@ -1,0 +1,42 @@
+.hidden {
+    display: none;
+}
+
+.bema-status {
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    display: inline-block;
+}
+
+.bema-status.status-active {
+    background: #ecf8f1;
+    color: #0a7a3b;
+    border: 1px solid #c7eed6;
+}
+
+.bema-status.status-draft {
+    background: #fff9e6;
+    color: #a87100;
+    border: 1px solid #fde9b7;
+}
+
+.bema-status.status-completed {
+    background: #f4f4f5;
+    color: #444;
+    border: 1px solid #e2e2e6;
+}
+
+.bema-status.status-paused {
+    background: #fff5f6;
+    color: #b0302a;
+    border: 1px solid #f6d6d8;
+}
+
+/* Make the create form and table a bit more compact on wide screens */
+@media (min-width: 880px) {
+    .create-campaign-form .form-table th {
+        width: 160px;
+    }
+}

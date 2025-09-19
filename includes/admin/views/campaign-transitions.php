@@ -70,7 +70,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
             if (file_exists($tier_table_view_path)) {
                 include $tier_table_view_path;
             } else {
-                echo '<div class="notice notice-error"><p>Missing view file: table-view.php</p></div>';
+                echo '<div class="notice notice-error"><p>Missing view file: tier-view.php</p></div>';
             }
         ?>
 

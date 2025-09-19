@@ -319,6 +319,26 @@ class Bema_CRM_Logger
         $this->info($logMessage, $context);
     }
 
+    public function logDataValidation(string $dataType, array $missingFields, array $context = []): void
+    {
+        if (empty($missingFields)) {
+            return;
+        }
+
+        $this->warning("Missing required data for {$dataType}", array_merge($context, [
+            'missing_fields' => $missingFields,
+            'validation_type' => 'data_integrity'
+        ]));
+    }
+
+    public function logApiCall(string $service, string $endpoint, array $context = []): void
+    {
+        $this->debug("API call to {$service}: {$endpoint}", array_merge($context, [
+            'api_service' => $service,
+            'api_endpoint' => $endpoint
+        ]));
+    }
+
     // ========================================
     // FILE MANAGEMENT
     // ========================================

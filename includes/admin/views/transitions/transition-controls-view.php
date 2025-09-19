@@ -1,29 +1,27 @@
 <?php
 
-use Bema\Database\Campaign_Database_Manager;
-use Bema\Database\Transition_Database_Manager;
-use Bema\Database\Transition_Subscribers_Database_Manager;
-use Bema\Transition_Manager;
+use Bema\Manager_Factory;
 
 // Get database managers from main plugin instance
 
 $campaign_database = new \Bema\Database\Campaign_Database_Manager();
-$transition_database = new \Bema\Database\Transition_Database_Manager();
-$transition_subscribers_database = new \Bema\Database\Transition_Subscribers_Database_Manager();
-
-$transition_manager = new Transition_Manager();
-$transition_manager->campaign_database = $campaign_database;
-$transition_manager->transition_database = $transition_database;
-$transition_manager->transition_subscribers_database = $transition_subscribers_database;
+$transition_manager = Manager_Factory::get_transition_manager();
 
 $available_campaigns = $campaign_database->get_all_campaigns();
-$transition_history = $transition_database->get_all_records();
 
 /**
  * Handles the form submission for campaign transition.
  */
 function handle_campaign_transition($transition_manager)
 {
+    if (!isset($_POST['campaign_transition_nonce']) || !wp_verify_nonce($_POST['campaign_transition_nonce'], 'campaign_transition_nonce')) {
+        wp_die('Invalid nonce specified', 'Error', ['response' => 403]);
+    }
+
+    if (!current_user_can('manage_options')) {
+        wp_die('You do not have permission to access this page.', 'Error', ['response' => 403]);
+    }
+
     $source_campaign = isset($_POST['source_campaign']) ? sanitize_text_field($_POST['source_campaign']) : '';
     $destination_campaign = isset($_POST['destination_campaign']) ? sanitize_text_field($_POST['destination_campaign']) : '';
 
