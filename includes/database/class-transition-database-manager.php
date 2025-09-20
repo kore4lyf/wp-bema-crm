@@ -60,7 +60,7 @@ class Transition_Database_Manager
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 source BIGINT UNSIGNED NOT NULL,
                 destination BIGINT UNSIGNED NOT NULL,
-                status ENUM('complete', 'failed') NOT NULL,
+                status ENUM('Complete', 'Failed') NOT NULL,
                 subscribers INT UNSIGNED DEFAULT 0,
                 transition_date DATETIME NOT NULL,
                 PRIMARY KEY (id),
@@ -175,8 +175,8 @@ class Transition_Database_Manager
 
         foreach ($results as &$result) {
             try {
-                $date_time_obj = new \DateTime($result['transition_date']);
-                $result['transition_date'] = $date_time_obj->format('F j, Y, g:i a');
+                $timestamp = new \DateTime($result['transition_date']);
+                $result['transition_date'] = $timestamp->format('F j, Y, g:i a');
             } catch (Exception $e) {
                 $result['transition_date'] = '—';
                 $this->logger->error('Date formatting error', ['error' => $e->getMessage()]);

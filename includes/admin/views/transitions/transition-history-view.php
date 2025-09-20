@@ -41,8 +41,8 @@ try {
                             <?php
                                 if (isset($row['transition_date'])) {
                                     try {
-                                        $date_time_obj = new DateTime($row['transition_date']);
-                                        echo esc_html($date_time_obj->format('F j, Y, g:i a'));
+                                        $timestamp = new DateTime($row['transition_date']);
+                                        echo esc_html($timestamp->format('F j, Y, g:i a'));
                                     } catch (Exception $e) {
                                         echo '—';
                                         $logger->error('Date formatting error', ['error' => $e->getMessage()]);

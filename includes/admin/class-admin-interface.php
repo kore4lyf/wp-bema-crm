@@ -57,7 +57,6 @@ class Bema_Admin_Interface
         $this->settings = $settings;
         $this->sync_instance = $sync_instance;
 
-        $this->system_logger = $this->logger;
         $this->utils = new \Bema\Utils();
         $this->current_tab = $_GET['tab'] ?? 'general';
 
@@ -594,6 +593,7 @@ class Bema_Admin_Interface
     public function render_campaigns_page(): void
     {
         try {
+            $admin = $this;
             require_once BEMA_PATH . 'includes/admin/views/campaigns.php';
         } catch (Exception $e) {
             $this->logger->log('Failed to render campaigns page', 'error', [

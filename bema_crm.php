@@ -882,14 +882,8 @@ class Bema_CRM
                 $this->settings
             );
 
-            // Create Transition_Manager instance
-            $this->transition_instance = new \Bema\Transition_Manager();
-            $this->transition_instance->mailerLiteInstance = $mailerlite;
-            $this->transition_instance->logger = Bema_CRM::get_logger();
-            $this->transition_instance->campaign_database = $this->campaign_db_manager;
-            $this->transition_instance->group_database = $this->group_db_manager;
-            $this->transition_instance->transition_database = $this->transition_db_manager;
-            $this->transition_instance->transition_subscribers_database = $this->transition_subscribers_db_manager;
+            // Create Manager_Factory instance
+            $this->manager_factory = new \Bema\Manager_Factory();
 
             // Initialize handlers
             $lock_handler = new \Bema\Handlers\Default_Lock_Handler();
@@ -1540,19 +1534,20 @@ class Bema_CRM
 
     /**
      * Manager factory pattern to get manager instances
+     * @returns Sync_Manager|Transition_Manager
      */
-    private function get_manager(string $type)
+    private function get_manager(string $type): Sync_Manager|Transition_Manager
     {
         switch ($type) {
             case 'sync':
-                return $this->sync_instance;
+                return $this->manager_factory->get_sync_manager();
             case 'transition':
-                return $this->transition_instance;
+                return $this->manager_factory->get_transition_manager();
             default:
                 throw new Exception("Unknown manager type: {$type}");
         }
     }
-
+    
     private static function create_directories(): void
     {
         foreach (self::PROTECTED_DIRS as $dir) {

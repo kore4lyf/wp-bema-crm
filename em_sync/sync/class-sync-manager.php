@@ -242,7 +242,7 @@ class Sync_Manager
             $total_duration = round(microtime(true) - $start_time, 2);
 
             $this->update_sync_status('Completed', 'Sync completed', 5, 5, $sync_option_key, $subscribers_count);
-            $this->sync_database->upsert_sync_record('Completed', $subscribers_count, "Successfully synced {$subscribers_count} subscribers.");
+            $this->sync_database->upsert_sync_record('Complete', $subscribers_count, "Successfully synced {$subscribers_count} subscribers.");
 
             $this->logger->info('=== FULL MAILERLITE SYNC COMPLETED SUCCESSFULLY ===', [
                 'duration' => $total_duration,

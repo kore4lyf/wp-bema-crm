@@ -33,6 +33,19 @@
         bindGlobalEvents: function () {
             const self = this;
 
+            // Select all checkboxes functionality
+            $(document).on('change', '#select-all-subscribers', function() {
+                const isChecked = $(this).prop('checked');
+                $('input[name="subscriber_ids[]"]').prop('checked', isChecked);
+            });
+
+            // Update header checkbox when individual checkboxes change
+            $(document).on('change', 'input[name="subscriber_ids[]"]', function() {
+                const totalCheckboxes = $('input[name="subscriber_ids[]"]').length;
+                const checkedCheckboxes = $('input[name="subscriber_ids[]"]:checked').length;
+                $('#select-all-subscribers').prop('checked', totalCheckboxes === checkedCheckboxes);
+            });
+
             // Modal handling
             $(document).on('click', '.modal .close, .modal', function (e) {
                 if (e.target === this || $(e.target).hasClass('close')) {

@@ -10,13 +10,13 @@ define('COMPLETE', 'Complete');
 define('SYNC_CRON_JOB', 'bema_crm_sync_cron_job');
 // Option Key
 $sync_option_key = 'bema_crm_sync_status';
-// Ensure DB Manager Available
-// Get database manager from main plugin instance
 
+// Ensure Sync DB Manager Available
 $sync_db_manager = new \Bema\Database\Sync_Database_Manager();
 $sync_state = get_option($sync_option_key, []);
 $sync_state['status'] = COMPLETE;
 update_option($sync_option_key, $sync_state);
+
 // Helper to Trigger Immediate Sync
 function trigger_immediate_sync()
 {
@@ -121,8 +121,28 @@ $sync_history = $sync_db_manager->get_sync_records();
             <?php else: ?>
                 <?php foreach ($sync_history as $record): ?>
                     <tr>
-                        <td><?php echo esc_html($record['sync_date']); ?></td>
-                        <td><?php echo esc_html($record['status']); ?></td>
+                        <td>
+                            <?php
+                                if (isset($record['sync_date'])) {
+                                    try {
+                                        $timestamp = strtotime($record['sync_date']);
+
+                                        echo esc_html(date('F j, Y', $timestamp));
+                                    } catch (Exception $e) {
+                                        echo '—';
+                                        $logger->error('Date formatting error', ['error' => $e->getMessage()]);
+                                    }
+
+                                } else {
+                                    echo '—';
+                                }
+                            ?>
+                        </td>
+                        <td>
+                            <span class="status-badge status-<?php echo esc_attr(strtolower($record['status'] ?? 'unknown')); ?>">
+                                <?php echo esc_html(ucfirst($record['status'] ?? '—')); ?>
+                            </span>
+                        </td>
                         <td><?php echo intval($record['synced_subscribers']); ?></td>
                         <td><?php echo esc_html($record['notes']); ?></td>
                     </tr>

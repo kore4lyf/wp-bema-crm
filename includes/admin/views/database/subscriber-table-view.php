@@ -175,7 +175,7 @@ if (isset($_POST['bulk-action'])) {
 			<thead>
 				<tr>
 					<td id="cb" class="manage-column column-cb check-column">
-						<input type="checkbox" />
+						<input type="checkbox" id="select-all-subscribers" />
 					</td>
 					<th scope="col" class="manage-column column-email sortable <?php echo ($orderby === 'email') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('email', 'Email', $orderby, $order); ?></th>
 					<th scope="col" class="manage-column column-name sortable <?php echo ($orderby === 'name') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('name', 'Name', $orderby, $order); ?></th>
@@ -202,9 +202,9 @@ if (isset($_POST['bulk-action'])) {
 							</td>
 							<td><?php echo esc_html(strlen(trim($subscriber['name'])) ? $subscriber['name'] : '—'); ?></td>
 							<td>
-								<span class="status-badge status-<?php echo esc_attr(strtolower($subscriber['status'] ?? 'unknown')); ?>">
-                                	<?php echo esc_html(ucfirst($subscriber['status'] ?? '—')); ?>
-                            	</span>
+								<span class="status-badge status-<?php echo esc_attr($subscriber['status'] ?? 'unknown'); ?>">
+									<?php echo esc_html(ucfirst($subscriber['status'] ?? '—')); ?>
+								</span>
 							</td>
 							<?php if ($selected_campaign): ?>
 								<td><?php echo esc_html($selected_campaign); ?> </td>
@@ -215,13 +215,12 @@ if (isset($_POST['bulk-action'])) {
 									    if (isset($subscriber['transition_date'])) {
 
 											try {
-												$date_time_obj = new DateTime($subscriber['transition_date']);
-												$readable_date_time = $date_time_obj->format('F j, Y, g:i a');
-												echo $readable_date_time;
-												
+												$timestamp = new DateTime($subscriber['transition_date']);
+												echo $timestamp->format('F j, Y, g:i a');
+
 											} catch (Exception $e) {
 												echo '—';
-												$admin->$logger('Error: ' . esc_html($e->getMessage()));
+												$admin->logger('Error: ' . $e->getMessage());
 											}
 										} else {
 											echo '—';
