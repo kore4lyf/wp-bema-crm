@@ -60,7 +60,7 @@ class Transition_Database_Manager
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 source BIGINT UNSIGNED NOT NULL,
                 destination BIGINT UNSIGNED NOT NULL,
-                status ENUM('Complete', 'Failed') NOT NULL,
+                status ENUM('complete', 'failed') NOT NULL,
                 subscribers INT UNSIGNED DEFAULT 0,
                 transition_date DATETIME NOT NULL,
                 PRIMARY KEY (id),

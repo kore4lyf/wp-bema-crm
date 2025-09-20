@@ -172,7 +172,7 @@ class MailerLite implements Provider_Interface
                 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $error = curl_error($ch);
                 curl_close($ch);
-$this->logger->debug([
+                $this->logger->debug([
                     'response_received' => true,
                     'status_code' => $httpCode,
                     'response_length' => strlen($response)
@@ -231,7 +231,7 @@ $this->logger->debug([
             } catch (Exception $e) {
                 $lastException = $e;
                 $attempts++;
-$this->logger->debug([
+                $this->logger->debug([
                     'request_failed' => true,
                     'attempt' => $attempts,
                     'error' => $e->getMessage()
@@ -278,14 +278,14 @@ $this->logger->debug([
                 'groups?limit=1',
                 'GET'
             );
-$this->logger->debug([
+            $this->logger->debug([
                 'validation_response' => $response,
                 'validation_successful' => true
             ]);
 
             return true;
         } catch (Exception $e) {
-        $this->logger->debug([
+            $this->logger->debug([
                 'validation_failed' => true,
                 'error' => $e->getMessage()
             ]);
@@ -594,9 +594,9 @@ $this->logger->debug([
         $cachedFields = wp_cache_get($cacheKey, self::CACHE_GROUP);
 
         if (empty($this->apiKey)) {
-        $cacheKey = 'mailerlite_fields';
-        $cachedFields = wp_cache_get($cacheKey, self::CACHE_GROUP);
-
+            $this->logger->warning('API key is empty, returning empty fields array');
+            return [];
+        }
         if ($cachedFields !== false) {
             $this->logger->debug([
                 'using_cached_fields' => true,
@@ -630,7 +630,7 @@ $this->logger->debug([
                         'key' => $field['key'],
                         'type' => $field['type']
                     ];
-$this->logger->debug([
+                    $this->logger->debug([
                         'field_found' => [
                             'id' => $field['id'],
                             'name' => $field['name']
@@ -647,20 +647,20 @@ $this->logger->debug([
             }
 
             wp_cache_set($cacheKey, $fields, self::CACHE_GROUP, self::CACHE_TTL);
-$this->logger->debug([
+            $this->logger->debug([
                 'fields_fetched' => count($fields)
             ]);
 
             return $fields;
         } catch (Exception $e) {
-        $this->logger->debug([
+            $this->logger->debug([
                 'fields_fetch_failed' => true,
                 'error' => $e->getMessage()
             ]);
             throw $e;
+
         }
     }
-}
 
     /**
      * Creates a new custom field in MailerLite.
@@ -925,7 +925,7 @@ $this->logger->debug([
                         'unsubscribed_count' => $group['unsubscribed_count'] ?? 0,
                         'created_at' => $group['created_at'],
                     ];
-$this->logger->debug([
+                    $this->logger->debug([
                         'group_found' => [
                             'id' => $group['id'],
                             'name' => $group['name']
@@ -942,13 +942,13 @@ $this->logger->debug([
             }
 
             wp_cache_set($cacheKey, $groups, self::CACHE_GROUP, self::CACHE_TTL);
-$this->logger->debug([
+            $this->logger->debug([
                 'groups_fetched' => count($groups)
             ]);
 
             return $groups;
         } catch (Exception $e) {
-        $this->logger->debug([
+            $this->logger->debug([
                 'groups_fetch_failed' => true,
                 'error' => $e->getMessage()
             ]);
@@ -1587,7 +1587,7 @@ $this->logger->debug([
             $this->setHeaders();
             $this->logger->info('Successfully aborted pending MailerLite requests');
         } catch (Exception $e) {
-        $this->logger->debug([
+            $this->logger->debug([
                 'error' => 'Failed to abort pending requests',
                 'message' => $e->getMessage()
             ]);
@@ -1711,107 +1711,107 @@ $this->logger->debug([
     public function test_connection(): bool
     {
         try {
-            if (empty($this->apiKey)) {{
-                $this->logger->debug('MailerLite test failed - empty API key', 'API_TEST');
-                return false;
-            }
-
-            // Clear any cached responses
-            wp_cache_delete('mailerlite_test_connection', self::CACHE_GROUP);
-
-            // First try using cURL directly with better error handling
-           if (function_exists('curl_init')) {
-                $this->logger->debug('Attempting cURL connection to MailerLite', 'API_TEST');
-
-                $ch = curl_init('https://connect.mailerlite.com/api/subscribers?limit=1');
-
-                $options = [
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_HTTPHEADER => [
-                        'Authorization: Bearer ' . $this->apiKey,
-                        'Accept: application/json',
-                        'Content-Type: application/json',
-                        'X-Request-Id: ' . uniqid('ml_test_', true)
-                    ],
-                    CURLOPT_SSL_VERIFYPEER => false,
-                    CURLOPT_SSL_VERIFYHOST => false,
-                    CURLOPT_TIMEOUT => 30,
-                    CURLOPT_CONNECTTIMEOUT => 10,
-                    CURLOPT_FOLLOWLOCATION => true,
-                    CURLOPT_MAXREDIRS => 5,
-                    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1
-                ];
-
-                curl_setopt_array($ch, $options);
-
-                $response = curl_exec($ch);
-                $curl_info = curl_getinfo($ch);
-                $curl_error = curl_error($ch);
-$this->logger->debug([
-                    'curl_info' => $curl_info,
-                    'curl_error' => $curl_error,
-                    'response_code' => $curl_info['http_code']
-                ], 'API_TEST');
-
-                curl_close($ch);
-
-                if ($curl_info['http_code'] >= 200 && $curl_info['http_code'] < 300) {
-                    return true;
+            if (empty($this->apiKey)) { {
+                    $this->logger->debug('MailerLite test failed - empty API key', 'API_TEST');
+                    return false;
                 }
-            }
 
-            // Fallback to WordPress HTTP API
-            $this->logger->debug('Falling back to WP HTTP API', 'API_TEST');
+                // Clear any cached responses
+                wp_cache_delete('mailerlite_test_connection', self::CACHE_GROUP);
 
-            $args = [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $this->apiKey,
-                    'Accept' => 'application/json',
-                    'Content-Type' => 'application/json',
-                    'X-Request-Id' => uniqid('ml_test_', true)
-                ],
-                'timeout' => 30,
-                'sslverify' => false,
-                'reject_unsafe_urls' => false,
-                'redirection' => 5,
-                'httpversion' => '1.1',
-                'body' => null
-            ];
+                // First try using cURL directly with better error handling
+                if (function_exists('curl_init')) {
+                    $this->logger->debug('Attempting cURL connection to MailerLite', 'API_TEST');
 
-            // Try HTTPS first, then HTTP if that fails
-            $urls = [
-                'https://connect.mailerlite.com/api/subscribers?limit=1',
-                'http://connect.mailerlite.com/api/subscribers?limit=1'
-            ];
+                    $ch = curl_init('https://connect.mailerlite.com/api/subscribers?limit=1');
 
-            foreach ($urls as $url) {
-            $this->logger->debug("Trying MailerLite connection with URL: " . $url, 'API_TEST');
+                    $options = [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_HTTPHEADER => [
+                            'Authorization: Bearer ' . $this->apiKey,
+                            'Accept: application/json',
+                            'Content-Type: application/json',
+                            'X-Request-Id: ' . uniqid('ml_test_', true)
+                        ],
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_SSL_VERIFYHOST => false,
+                        CURLOPT_TIMEOUT => 30,
+                        CURLOPT_CONNECTTIMEOUT => 10,
+                        CURLOPT_FOLLOWLOCATION => true,
+                        CURLOPT_MAXREDIRS => 5,
+                        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1
+                    ];
 
-                $response = wp_remote_get($url, $args);
+                    curl_setopt_array($ch, $options);
 
-                if (!is_wp_error($response)) {
-                    $code = wp_remote_retrieve_response_code($response);
-                    $body = wp_remote_retrieve_body($response);
-$this->logger->debug([
-                        'url' => $url,
-                        'response_code' => $code,
-                        'response_body' => substr($body, 0, 500)
+                    $response = curl_exec($ch);
+                    $curl_info = curl_getinfo($ch);
+                    $curl_error = curl_error($ch);
+                    $this->logger->debug([
+                        'curl_info' => $curl_info,
+                        'curl_error' => $curl_error,
+                        'response_code' => $curl_info['http_code']
                     ], 'API_TEST');
 
-                    if ($code >= 200 && $code < 300) {
+                    curl_close($ch);
+
+                    if ($curl_info['http_code'] >= 200 && $curl_info['http_code'] < 300) {
                         return true;
                     }
+                }
 
-                    // Check if we need to try alternate method
-                    if (strpos($body, 'blocked requests through HTTP') !== false) {
-                        continue;
+                // Fallback to WordPress HTTP API
+                $this->logger->debug('Falling back to WP HTTP API', 'API_TEST');
+
+                $args = [
+                    'headers' => [
+                        'Authorization' => 'Bearer ' . $this->apiKey,
+                        'Accept' => 'application/json',
+                        'Content-Type' => 'application/json',
+                        'X-Request-Id' => uniqid('ml_test_', true)
+                    ],
+                    'timeout' => 30,
+                    'sslverify' => false,
+                    'reject_unsafe_urls' => false,
+                    'redirection' => 5,
+                    'httpversion' => '1.1',
+                    'body' => null
+                ];
+
+                // Try HTTPS first, then HTTP if that fails
+                $urls = [
+                    'https://connect.mailerlite.com/api/subscribers?limit=1',
+                    'http://connect.mailerlite.com/api/subscribers?limit=1'
+                ];
+
+                foreach ($urls as $url) {
+                    $this->logger->debug("Trying MailerLite connection with URL: " . $url, 'API_TEST');
+
+                    $response = wp_remote_get($url, $args);
+
+                    if (!is_wp_error($response)) {
+                        $code = wp_remote_retrieve_response_code($response);
+                        $body = wp_remote_retrieve_body($response);
+                        $this->logger->debug([
+                            'url' => $url,
+                            'response_code' => $code,
+                            'response_body' => substr($body, 0, 500)
+                        ], 'API_TEST');
+
+                        if ($code >= 200 && $code < 300) {
+                            return true;
+                        }
+
+                        // Check if we need to try alternate method
+                        if (strpos($body, 'blocked requests through HTTP') !== false) {
+                            continue;
+                        }
+                    } else {
+                        $this->logger->debug("WP Remote request failed for URL " . $url . ": " . $response->get_error_message(), 'API_TEST');
                     }
-                } else {
-                    $this->logger->debug("WP Remote request failed for URL " . $url . ": " . $response->get_error_message(), 'API_TEST');
                 }
             }
-        }
-            
+
 
             return false;
         } catch (Exception $e) {
@@ -1819,8 +1819,8 @@ $this->logger->debug([
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-             $this->logger->debug('MailerLite test_connection exception: ' . $e->getMessage(), 'API_TEST');
-             $this->logger->debug('Stack trace: ' . $e->getTraceAsString(), 'API_TEST');
+            $this->logger->debug('MailerLite test_connection exception: ' . $e->getMessage(), 'API_TEST');
+            $this->logger->debug('Stack trace: ' . $e->getTraceAsString(), 'API_TEST');
             return false;
         }
     }

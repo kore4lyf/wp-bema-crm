@@ -52,14 +52,6 @@ function get_status_class($status) {
 <div class="wrap">
     <h1>Campaigns</h1>
 
-    <!-- Raw Data Display -->
-    <?php if (!empty($campaigns)): ?>
-        <div class="notice notice-success">
-            <h3>Raw Campaign Data:</h3>
-            <pre><?php echo esc_html(print_r(array_slice($campaigns, 0, 2), true)); ?></pre>
-        </div>
-    <?php endif; ?>
-
     <!-- Create Campaign Form -->
     <div class="campaign-form-section">
         <h2>Create New Campaign</h2>
@@ -70,15 +62,14 @@ function get_status_class($status) {
                 <tr>
                     <th><label for="campaign_name">Campaign Name</label></th>
                     <td>
-                        <input type="text" id="campaign_name" name="campaign_name" class="regular-text" required>
-                        <p class="description">e.g., 2024_ARTIST_ALBUM</p>
+                        <input type="text" id="campaign_name" name="campaign_name" class="regular-text" placeholder="2025_ARTIST_ALBUM" required>
                     </td>
                 </tr>
                 <tr>
-                    <th><label for="product_id">Product</label></th>
+                    <th><label for="product_id">Album</label></th>
                     <td>
                         <select id="product_id" name="product_id">
-                            <option value="">Select Product (Optional)</option>
+                            <option value="">Album</option>
                             <?php if (!empty($products)): ?>
                                 <?php foreach ($products as $product): ?>
                                     <option value="<?php echo esc_attr($product->ID); ?>">
@@ -92,15 +83,15 @@ function get_status_class($status) {
                 <tr>
                     <th><label for="start_date">Start Date</label></th>
                     <td>
-                        <input type="date" id="start_date" name="start_date" class="regular-text">
-                        <p class="description">Optional campaign start date</p>
+                        <input type="date" id="start_date" name="start_date" class="date-text">
+                        <p class="description">Campaign start date (Optional)</p>
                     </td>
                 </tr>
                 <tr>
                     <th><label for="end_date">End Date</label></th>
                     <td>
-                        <input type="date" id="end_date" name="end_date" class="regular-text">
-                        <p class="description">Optional campaign end date</p>
+                        <input type="date" id="end_date" name="end_date" class="date-text">
+                        <p class="description">Campaign end date (Optional)</p>
                     </td>
                 </tr>
             </table>
@@ -132,23 +123,15 @@ function get_status_class($status) {
                     <?php foreach ($campaigns as $campaign): ?>
                         <tr>
                             <td>
-                                <strong><?php echo esc_html($campaign['campaign'] ?? 'N/A'); ?></strong>
-                                <br><small>ID: <?php echo esc_html($campaign['id'] ?? 'N/A'); ?></small>
+                                <strong><?php echo esc_html($campaign['campaign'] ?? '—'); ?></strong>
+                                <br><small>ID: <?php echo esc_html($campaign['id'] ?? '—'); ?></small>
                             </td>
-                            <td><?php echo esc_html($campaign['product_id'] ?? 'N/A'); ?></td>
+                            <td><?php echo esc_html($campaign['product_id'] ?? '—'); ?></td>
                             <td>
-                                <?php echo esc_html($campaign['start_date'] ?? 'N/A'); ?>
-                            </td>
-                            <td>
-                                <?php echo esc_html($campaign['end_date'] ?? 'N/A'); ?>
+                                <?php echo esc_html($campaign['start_date'] ?? '—'); ?>
                             </td>
                             <td>
-                                <?php if (!empty($campaign['start_date']) || !empty($campaign['end_date'])): ?>
-                                    <?php echo esc_html($campaign['start_date'] ?? 'N/A'); ?><br>
-                                    <?php echo esc_html($campaign['end_date'] ?? 'N/A'); ?>
-                                <?php else: ?>
-                                    Not set
-                                <?php endif; ?>
+                                <?php echo esc_html($campaign['end_date'] ?? '—'); ?>
                             </td>
                             <td>
                                 <span class="status-badge <?php echo esc_attr(get_status_class($campaign['status'] ?? 'draft')); ?>">

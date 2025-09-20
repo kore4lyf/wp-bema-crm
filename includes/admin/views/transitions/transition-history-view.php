@@ -29,9 +29,13 @@ try {
             <?php if (!empty($transition_history)): ?>
                 <?php foreach ($transition_history as $row): ?>
                     <tr>
-                        <td><?php echo esc_html($row['source'] ?? 'Unknown'); ?></td>
-                        <td><?php echo esc_html($row['destination'] ?? 'Unknown'); ?></td>
-                        <td><?php echo esc_html($row['status'] ?? 'Unknown'); ?></td>
+                        <td><?php echo esc_html($row['source'] ?? '—'); ?></td>
+                        <td><?php echo esc_html($row['destination'] ?? '—'); ?></td>
+                        <td>
+                            <span class="status-badge status-<?php echo esc_attr(strtolower($row['status'] ?? 'unknown')); ?>">
+                                <?php echo esc_html(ucfirst($row['status'] ?? '—')); ?>
+                            </span>
+                        </td>
                         <td><?php echo esc_html($row['subscribers'] ?? '0'); ?></td>
                         <td>
                             <?php

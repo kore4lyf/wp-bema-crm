@@ -35,7 +35,7 @@ class Sync_Database_Manager
             $sql = "CREATE TABLE {$this->table_name} (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 sync_date DATE NOT NULL,
-                status VARCHAR(50) NOT NULL,
+                status ENUM('Complete', 'Failed') NOT NULL,
                 synced_subscribers INT UNSIGNED NOT NULL,
                 notes TEXT,
                 PRIMARY KEY (id),

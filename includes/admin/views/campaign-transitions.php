@@ -35,7 +35,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
             if (file_exists($transition_controls_view_path)) {
                 include $transition_controls_view_path;
             } else {
-                echo '<div class="notice notice-error"><p>Missing view file: transition-controls-view.php</p></div>';
+                \Bema\bema_notice('Missing view file: transition-controls-view.php', 'error');
             }
         ?>
 
@@ -46,7 +46,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
         if (file_exists($transition_table_view_path)) {
             include $transition_table_view_path;
         } else {
-            echo '<div class="notice notice-error"><p>Missing view file: transitions-matrix-view.php</p></div>';
+            \Bema\bema_notice('Missing view file: transitions-matrix-view.php', 'error');
         }
         ?>
 
@@ -58,7 +58,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
             if (file_exists($transition_history_view_path)) {
                 include $transition_history_view_path;
             } else {
-                echo '<div class="notice notice-error"><p>Missing view file: transition-history-view.php</p></div>';
+                \Bema\bema_notice('Missing view file: transition-history-view.php', 'error');
             }
         ?>
 
@@ -70,7 +70,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'contro
             if (file_exists($tier_table_view_path)) {
                 include $tier_table_view_path;
             } else {
-                echo '<div class="notice notice-error"><p>Missing view file: tier-view.php</p></div>';
+                \Bema\bema_notice('Missing view file: tier-view.php', 'error');
             }
         ?>
 

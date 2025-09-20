@@ -20,14 +20,6 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'subscr
             class="nav-tab <?php echo $current_tab === 'subscribers' ? 'nav-tab-active' : ''; ?>">
             <?php _e('Subscribers', 'bema-crm'); ?>
         </a>
-        <a href="?page=bema-database&tab=sync-logs"
-            class="nav-tab <?php echo $current_tab === 'sync-logs' ? 'nav-tab-active' : ''; ?>">
-            <?php _e('Sync Logs', 'bema-crm'); ?>
-        </a>
-        <a href="?page=bema-database&tab=maintenance"
-            class="nav-tab <?php echo $current_tab === 'maintenance' ? 'nav-tab-active' : ''; ?>">
-            <?php _e('Maintenance', 'bema-crm'); ?>
-        </a>
     </nav>
     
 
@@ -38,7 +30,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'subscr
         if (file_exists($subscriber_table_view_path)) {
             include $subscriber_table_view_path;
         } else {
-            echo '<div class="notice notice-error"><p>Missing view file: subscriber-table-view.php</p></div>';
+            \Bema\bema_notice('Missing view file: subscriber-table-view.php', 'error');
         }
         ?>
 

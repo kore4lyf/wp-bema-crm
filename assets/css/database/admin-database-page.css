@@ -5,3 +5,34 @@
 .bulk-pagination {
   padding-bottom: 16px;
 }
+
+/* Subscriber Status Badge Styles */
+.status-badge.status-active {
+    background-color: #dbffde;
+    color: #1ea729;
+}
+
+.status-badge.status-unsubscribed {
+    background-color: #fbcece;
+    color: #d82a2a;
+}
+
+.status-badge.status-unconfirmed {
+    background-color: #f3efba;
+    color: #ffea00;
+}
+
+.status-badge.status-bounced {
+    background-color: #fcecda;
+    color: #fb8200;
+}
+
+.status-badge.status-junk {
+    background-color: #d9e9f6;
+    color: #00437d;
+}
+
+.status-badge.status-unknown {
+    background-color: #d4d4d4;
+    color: #000000;
+}

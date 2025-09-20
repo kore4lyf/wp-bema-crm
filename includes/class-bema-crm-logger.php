@@ -414,7 +414,8 @@ class Bema_CRM_Logger
         $timestamp = current_time('Y-m-d H:i:s');
         $level_upper = strtoupper($level);
         
-        $formatted = "[{$timestamp}] {$level_upper}: {$message}";
+        $message_str = is_array($message) ? json_encode($message) : (string)$message;
+        $formatted = "[{$timestamp}] {$level_upper}: {$message_str}";
         
         if (!empty($context)) {
             $formatted .= ' ' . json_encode($context, JSON_UNESCAPED_SLASHES);

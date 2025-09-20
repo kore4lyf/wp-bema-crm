@@ -8,8 +8,8 @@ if (!defined('ABSPATH')) {
 }
 
 $sync_manager = Manager_Factory::get_sync_manager();
-// Get database manager from main plugin instance
 
+// Get database manager from main plugin instance
 $transition_database = new \Bema\Database\Transition_Database_Manager();
 
 $transition_date_from_id_map = $transition_database->get_transition_date_from_id_map();
@@ -18,6 +18,8 @@ $transition_date_from_id_map = $transition_database->get_transition_date_from_id
 $selected_tier = isset($_GET['tier']) ? sanitize_text_field(wp_unslash($_GET['tier'])) : '';
 $selected_campaign = isset($_GET['campaign']) ? sanitize_text_field(wp_unslash($_GET['campaign'])) : '';
 $search_query = isset($_GET['search']) ? sanitize_text_field(wp_unslash($_GET['search'])) : '';
+$orderby = isset($_GET['orderby']) ? sanitize_text_field(wp_unslash($_GET['orderby'])) : 'id';
+$order = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : 'desc';
 
 // Fetch subscriber data with filters/pagination.
 $subscriber_db = new \Bema\Database\Subscribers_Database_Manager();
@@ -39,7 +41,9 @@ $subscribers = $subscriber_db->get_subscribers(
 	$offset,
 	$selected_campaign,
 	$selected_tier,
-	$search_query
+	$search_query,
+	$orderby,
+	$order
 );
 
 // Get total count for pagination
@@ -55,7 +59,15 @@ function bema_crm_print_notice($message, $type = 'success')
 {
 	printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($type), esc_html($message));
 }
-
+function bema_crm_sortable_column($column, $label, $current_orderby, $current_order) {
+	$new_order = ($current_orderby === $column && $current_order === 'asc') ? 'desc' : 'asc';
+	$class = 'sortable';
+	if ($current_orderby === $column) {
+		$class = $current_order === 'asc' ? 'sorted asc' : 'sorted desc';
+	}
+	$url = add_query_arg(['orderby' => $column, 'order' => $new_order]);
+	return sprintf('<a href="%s"><span>%s</span><span class="sorting-indicator"></span></a>', esc_url($url), esc_html($label));
+}
 // Bulk actions
 if (isset($_POST['bulk-action'])) {
 	switch (sanitize_text_field(wp_unslash($_POST['bulk-action']))) {
@@ -165,15 +177,14 @@ if (isset($_POST['bulk-action'])) {
 					<td id="cb" class="manage-column column-cb check-column">
 						<input type="checkbox" />
 					</td>
-					<th scope="col" class="manage-column">ID</th>
-					<th scope="col" class="manage-column">Email</th>
-					<th scope="col" class="manage-column">Name</th>
-					<th scope="col" class="manage-column">Status</th>
+					<th scope="col" class="manage-column column-email sortable <?php echo ($orderby === 'email') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('email', 'Email', $orderby, $order); ?></th>
+					<th scope="col" class="manage-column column-name sortable <?php echo ($orderby === 'name') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('name', 'Name', $orderby, $order); ?></th>
+					<th scope="col" class="manage-column column-status sortable <?php echo ($orderby === 'status') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('status', 'Status', $orderby, $order); ?></th>
 					<?php if ($selected_campaign): ?>
-						<th scope="col" class="manage-column">Campaign</th>
-						<th scope="col" class="manage-column">Tier</th>
-						<th scope="col" class="manage-column">Purchase ID</th>
-						<th scope="col" class="manage-column">Transition Date</th>
+						<th scope="col" class="manage-column column-campaign sortable <?php echo ($orderby === 'campaign') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('campaign', 'Campaign', $orderby, $order); ?></th>
+						<th scope="col" class="manage-column column-tier sortable <?php echo ($orderby === 'tier') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('tier', 'Tier', $orderby, $order); ?></th>
+						<th scope="col" class="manage-column column-purchase_id sortable <?php echo ($orderby === 'purchase_id') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('purchase_id', 'Purchase ID', $orderby, $order); ?></th>
+						<th scope="col" class="manage-column column-transition_date sortable <?php echo ($orderby === 'transition_date') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('transition_date', 'Transition Date', $orderby, $order); ?></th>
 					<?php endif; ?>
 				</tr>
 			</thead>
@@ -185,10 +196,16 @@ if (isset($_POST['bulk-action'])) {
 								<input type="checkbox" name="subscriber_ids[]"
 									value="<?php echo esc_attr($subscriber['id']); ?>" />
 							</th>
-							<td><?php echo esc_html($subscriber['id']); ?></td>
-							<td><?php echo esc_html($subscriber['email'] ?? '—'); ?></td>
+							<td>
+							<strong><?php echo esc_html($subscriber['email'] ?? '—'); ?></strong>
+                                <br><small>ID: <?php echo esc_html($subscriber['id']); ?></small>
+							</td>
 							<td><?php echo esc_html(strlen(trim($subscriber['name'])) ? $subscriber['name'] : '—'); ?></td>
-							<td><?php echo esc_html(ucfirst($subscriber['status'] ?? '—')); ?></td>
+							<td>
+								<span class="status-badge status-<?php echo esc_attr(strtolower($subscriber['status'] ?? 'unknown')); ?>">
+                                	<?php echo esc_html(ucfirst($subscriber['status'] ?? '—')); ?>
+                            	</span>
+							</td>
 							<?php if ($selected_campaign): ?>
 								<td><?php echo esc_html($selected_campaign); ?> </td>
 								<td><?php echo esc_html($subscriber['tier'] ?? '—'); ?></td>

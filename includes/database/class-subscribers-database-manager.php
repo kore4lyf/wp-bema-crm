@@ -443,7 +443,9 @@ VALUES " . implode(', ', $placeholders);
         int $offset = 0,
         string $campaign_name = '',
         string $tier = '',
-        string $search = ''
+        string $search = '',
+        string $orderby = 'id',
+        string $order = 'DESC'
     ): array {
         $tier = trim($tier);
         $campaign_name = trim($campaign_name);
@@ -493,6 +495,18 @@ VALUES " . implode(', ', $placeholders);
         
         $group_by_sql = ($campaign_name || $tier) ? "GROUP BY s.id" : "";
 
+        // Sanitize sorting parameters
+        $allowed_columns = ['id', 'email', 'name', 'status', 'tier', 'purchase_id', 'campaign', 'transition_date'];
+        $column_map = [
+            'tier' => 'c.tier',
+            'purchase_id' => 'c.purchase_id', 
+            'campaign' => 't.campaign',
+            'transition_date' => 'tm.transition_date'
+        ];
+        $orderby_column = isset($column_map[$orderby]) ? $column_map[$orderby] : "s.{$orderby}";
+        $orderby = in_array($orderby, $allowed_columns) ? $orderby_column : 's.id';
+        $order = strtoupper($order) === 'ASC' ? 'ASC' : 'DESC';
+
         // Combine all parameters for the prepared statement.
         $final_params = array_merge($params, [$per_page, $offset]);
 
@@ -502,7 +516,7 @@ VALUES " . implode(', ', $placeholders);
          {$sql_from}
          {$where_sql}
          {$group_by_sql}
-         ORDER BY s.id DESC
+         ORDER BY {$orderby} {$order}
          LIMIT %d OFFSET %d",
             ...$final_params
         );

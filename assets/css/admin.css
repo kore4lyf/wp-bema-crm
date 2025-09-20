@@ -852,3 +852,67 @@ input[type="text"] {
         margin: 10% auto;
     }
 }
+
+
+/* WordPress-style Sortable Column Styles */
+.wp-list-table th.sortable a,
+.wp-list-table th.sorted a {
+    display: block;
+    position: relative;
+    padding-right: 20px;
+}
+
+.wp-list-table th.sortable a:focus,
+.wp-list-table th.sorted a:focus {
+    box-shadow: none;
+}
+
+.wp-list-table th .sorting-indicator {
+    display: block;
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    margin-top: -4px;
+    width: 0;
+    height: 0;
+    border: 4px solid transparent;
+}
+
+.wp-list-table th.sortable .sorting-indicator {
+    border-bottom-color: #a7aaad;
+}
+
+.wp-list-table th.sortable:hover .sorting-indicator {
+    border-bottom-color: #72aee6;
+}
+
+.wp-list-table th.sorted.asc .sorting-indicator {
+    border-bottom-color: #1d2327;
+    border-top: none;
+}
+
+.wp-list-table th.sorted.desc .sorting-indicator {
+    border-top-color: #1d2327;
+    border-bottom: none;
+}
+
+.wp-list-table th.sortable a,
+.wp-list-table th.sorted a {
+    text-decoration: none;
+    color: inherit;
+}
+
+.wp-list-table th.sortable a:hover,
+.wp-list-table th.sorted a:hover {
+    color: #2271b1;
+}
+/* Transition Status Badge Styles */
+.status-badge.status-complete {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.status-badge.status-failed {
+    background-color: #ffe0e0;
+    color: #dc3232;
+}
