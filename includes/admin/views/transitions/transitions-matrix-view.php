@@ -67,9 +67,9 @@ $transition_matrix = is_array($transition_matrix) ? $transition_matrix : [];
                                 <input type="checkbox" class="bema-crm-tm-purchase-required-checkbox" <?php checked($row['requires_purchase']); ?> style="display:none;" />
                             </td>
                             <td class="bema-crm-tm-action-buttons">
-                                <button type="button" class="button bema-crm-tm-edit-button">Edit</button>
-                                <button type="button" class="button bema-crm-tm-save-button" style="display:none;">Save</button>
-                                <button type="button" class="button button-secondary danger-button bema-crm-tm-remove-button" style="display:none;">Remove</button>
+                                <button type="button" class="button button-small bema-crm-tm-edit-button ">Edit</button>
+                                <button type="button" class="button button-small bema-crm-tm-save-button " style="display:none;">Save</button>
+                                <button type="button" class="button button-small button-secondary danger-button bema-crm-tm-remove-button " style="display:none;">Remove</button>
                             </td>
                         </tr>
                     <?php

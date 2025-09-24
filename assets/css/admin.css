@@ -22,24 +22,6 @@
     color: #666;
 }
 
-/* Add animation for running status */
-.status-badge.status-running:after {
-    content: '';
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin-left: 5px;
-    border-radius: 50%;
-    background-color: currentColor;
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.3; }
-    100% { opacity: 1; }
-}
-
 /* Add to admin.css */
 .tier-badge {
     padding: 4px 8px;
@@ -297,39 +279,6 @@
     color: #666;
 }
 
-/* Animation for running state */
-.status-badge.status-running {
-    position: relative;
-    padding-right: 25px;
-}
-
-.status-badge.status-running:after {
-    content: '';
-    position: absolute;
-    right: 8px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: #fff;
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.3;
-    }
-
-    100% {
-        opacity: 1;
-    }
-}
-
 /* Sync Status Styles */
 .sync-status-grid {
     display: grid;
@@ -424,22 +373,6 @@
     min-width: 250px;
 }
 
-/* Status Badge Updates */
-.status-badge.status-running {
-    background-color: #2271b1;
-}
-
-.status-badge.status-completed {
-    background-color: #46b450;
-}
-
-.status-badge.status-failed {
-    background-color: #dc3232;
-}
-
-.status-badge.status-stopped {
-    background-color: #f0c33c;
-}
 
 .tab-content {
     margin-top: 20px;
@@ -611,33 +544,6 @@
     vertical-align: middle;
 }
 
-/* Status and Tier Badges */
-.status-badge,
-.tier-badge {
-    padding: 4px 8px;
-    border-radius: 3px;
-    font-size: 12px;
-    font-weight: 500;
-    text-transform: capitalize;
-    display: inline-block;
-}
-
-/* Status Colors */
-.status-success {
-    background-color: #dff0d8;
-    color: #3c763d;
-}
-
-.status-error {
-    background-color: #f2dede;
-    color: #a94442;
-}
-
-.status-warning {
-    background-color: #fcf8e3;
-    color: #8a6d3b;
-}
-
 /* Tier Colors */
 .tier-gold,
 .tier-gold_purchased {
@@ -707,38 +613,6 @@
 
 .sync-controls button {
     margin-right: 10px;
-}
-
-.status-badge {
-    padding: 4px 8px;
-    border-radius: 3px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.status-badge.status-running {
-    background-color: #2271b1;
-    color: white;
-}
-
-.status-badge.status-stopped {
-    background-color: #dc3232;
-    color: white;
-}
-
-.status-badge.status-completed {
-    background-color: #46b450;
-    color: white;
-}
-
-.status-badge.status-pending {
-    background-color: #ffb900;
-    color: #000;
-}
-
-.status-badge.status-idle {
-    background-color: #72aee6;
-    color: white;
 }
 
 .progress-bar {
@@ -908,11 +782,26 @@ input[type="text"] {
 }
 /* Transition Status Badge Styles */
 .status-badge.status-complete {
-    background-color: #d4edda;
-    color: #155724;
+    background-color: #dbffde;
+    color: #1ea729;
 }
 
 .status-badge.status-failed {
     background-color: #ffe0e0;
     color: #dc3232;
+}
+
+
+
+.bema-crm-lite-section-card {
+  border-radius: 4px;
+  padding: 20px;
+  margin-top: 20px;
+  border: 1px solid #c3c4c7;
+  box-shadow: 0 1px 1px rgba(0,0,0,.04);
+  background-color: #fff;
+}
+
+.bema-crm-lite-section-card p {
+  margin-bottom: 1rem;
 }

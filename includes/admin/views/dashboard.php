@@ -14,10 +14,10 @@ class Dashboard_Data {
             $table = $wpdb->prefix . 'bemacrm_campaignsmeta';
             
             $total = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
-            $active = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'publish'");
+            $active = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'active'");
             
             $active_campaigns = $wpdb->get_results(
-                "SELECT * FROM {$table} WHERE status = 'publish' ORDER BY id DESC LIMIT 5", 
+                "SELECT * FROM {$table} WHERE status = 'active' ORDER BY id DESC LIMIT 5", 
                 ARRAY_A
             );
             
@@ -95,7 +95,7 @@ class Dashboard_Data {
             
             // Get active campaigns
             $active_campaigns = $wpdb->get_results(
-                "SELECT * FROM {$campaigns_table} WHERE status = 'publish'", 
+                "SELECT * FROM {$campaigns_table} WHERE status = 'active'", 
                 ARRAY_A
             );
             

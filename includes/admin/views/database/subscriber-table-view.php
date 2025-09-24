@@ -1,5 +1,6 @@
 <?php
 use Bema\Database\Subscribers_Database_Manager;
+use Bema\Database\Campaign_Database_Manager;
 use Bema\Database\Transition_Database_Manager;
 use Bema\Manager_Factory;
 
@@ -8,9 +9,10 @@ if (!defined('ABSPATH')) {
 }
 
 $sync_manager = Manager_Factory::get_sync_manager();
+$campaign_database = new Campaign_Database_Manager();
 
 // Get database manager from main plugin instance
-$transition_database = new \Bema\Database\Transition_Database_Manager();
+$transition_database = new Transition_Database_Manager();
 
 $transition_date_from_id_map = $transition_database->get_transition_date_from_id_map();
 
@@ -22,13 +24,14 @@ $orderby = isset($_GET['orderby']) ? sanitize_text_field(wp_unslash($_GET['order
 $order = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : 'desc';
 
 // Fetch subscriber data with filters/pagination.
-$subscriber_db = new \Bema\Database\Subscribers_Database_Manager();
+$subscriber_db = new Subscribers_Database_Manager();
 
 // Retrieve tiers from WordPress option.
 $tiers = get_option('bema_crm_tiers', []);
 
 // Retrieve EDD product list (campaigns).
-$campaigns = $admin->utils->get_campaigns_names();
+$campaigns = $campaign_database->get_all_campaigns();
+
 
 // Pagination setup.
 $paged = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;

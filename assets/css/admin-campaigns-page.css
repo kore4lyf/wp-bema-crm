@@ -2,7 +2,8 @@
     display: none;
 }
 
-.bema-status {
+/* Status Badge Updates */
+.status-badge {
     font-weight: 600;
     padding: 4px 8px;
     border-radius: 6px;
@@ -10,29 +11,51 @@
     display: inline-block;
 }
 
-.bema-status.status-active {
-    background: #ecf8f1;
-    color: #0a7a3b;
-    border: 1px solid #c7eed6;
+
+.status-badge.status-active {
+    background-color: #d6ebfc;
+    color: #2271b1;
 }
 
-.bema-status.status-draft {
-    background: #fff9e6;
+.status-badge.status-draft {
+    background: #fff3cd;
     color: #a87100;
-    border: 1px solid #fde9b7;
 }
 
-.bema-status.status-completed {
-    background: #f4f4f5;
-    color: #444;
-    border: 1px solid #e2e2e6;
+.status-badge.status-completed {
+    background-color: #dbffde;
+    color: #1ea729;
 }
 
-.bema-status.status-paused {
-    background: #fff5f6;
-    color: #b0302a;
-    border: 1px solid #f6d6d8;
+.status-badge.status-pending {
+    background-color: #fffcd9;
+    color: #ffbb00;
 }
+
+.status-badge.status-unknown {
+    background: #f1f1f1;
+    color: #555;
+}
+
+/* Add animation for active status */
+.status-badge.status-active:before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 5px;
+    border-radius: 50%;
+    background-color: currentColor;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+}
+
+/* Remove all custom sorting styles - use WordPress defaults */
 
 /* Make the create form and table a bit more compact on wide screens */
 @media (min-width: 880px) {

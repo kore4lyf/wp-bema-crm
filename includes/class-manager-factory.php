@@ -14,6 +14,11 @@ use Bema\Database\Transition_Subscribers_Database_Manager;
 
 class Manager_Factory
 {
+    public static function get_campaign_database_manager(): Campaign_Database_Manager
+    {
+        return new Campaign_Database_Manager();
+    }
+
     public static function get_sync_manager(): \Bema\Sync_Manager
     {
         $manager = new \Bema\Sync_Manager();

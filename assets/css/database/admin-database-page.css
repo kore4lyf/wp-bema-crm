@@ -18,8 +18,8 @@
 }
 
 .status-badge.status-unconfirmed {
-    background-color: #f3efba;
-    color: #ffea00;
+    background-color: #fffcd9;
+    color: #ffbb00;
 }
 
 .status-badge.status-bounced {

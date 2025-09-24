@@ -433,7 +433,7 @@ class Sync_Manager
         return $campaigns_to_upsert;
     }
 
-    private function create_new_mailerlite_campaign(array $campaign): ?string
+    public function create_new_mailerlite_campaign(array $campaign): ?string
     {
         $subject = isset($campaign['album'])
             ? 'Music album: ' . $campaign['album'] . ' by ' . $campaign['artist']
@@ -448,7 +448,7 @@ class Sync_Manager
         return $response['id'] ?? null;
     }
 
-    private function format_campaign_for_upsert(array $campaign, string $campaign_id): array
+    public function format_campaign_for_upsert(array $campaign, string $campaign_id): array
     {
         return [
             'campaign' => strtoupper($campaign['name']),

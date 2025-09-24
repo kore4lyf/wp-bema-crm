@@ -7,6 +7,7 @@ use Bema\Manager_Factory;
 $campaign_database = new \Bema\Database\Campaign_Database_Manager();
 $transition_manager = Manager_Factory::get_transition_manager();
 
+$available_campaigns = $campaign_database->get_all_campaigns();
 
 /**
  * Handles the form submission for campaign transition.

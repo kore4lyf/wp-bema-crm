@@ -224,6 +224,8 @@ class Bema_Admin_Interface
             add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
             add_action('admin_notices', [$this, 'display_admin_notices']);
             add_action('admin_post_test_connection', [$this, 'handle_test_connection']);
+            add_action('admin_post_bema_create_campaign', [$this, 'handle_create_campaign']);
+            add_action('wp_ajax_update_campaign', [$this, 'handle_campaign_update']);
 
             $this->current_tab = $_GET['tab'] ?? 'general';
             $initialized = true;
@@ -345,6 +347,24 @@ class Bema_Admin_Interface
 
         try {
             $this->logger->debug('Enqueuing assets for hook: ' . $hook, []);
+
+            // Campaigns page assets
+            if ( isset($_GET['page']) && $_GET['page'] === 'bema-campaigns' ) {
+                wp_enqueue_style(
+                    'bema-crm-campaigns-style',
+                    plugins_url('assets/css/admin-campaigns-page.css', BEMA_FILE),
+                    [],
+                    BEMA_VERSION
+                );
+
+                wp_enqueue_script(
+                    'bema-crm-campaigns-script',
+                    plugins_url('assets/js/admin-campaigns-page.js', BEMA_FILE),
+                    ['jquery'],
+                    BEMA_VERSION,
+                    true
+                );
+            }
 
             // Core styles
             wp_enqueue_style(
@@ -1173,4 +1193,132 @@ class Bema_Admin_Interface
             exit;
         }
     }
-}
+    public function handle_create_campaign()
+    {
+        try {
+            // Capability check
+            if (!current_user_can('manage_options')) {
+                wp_die('Unauthorized');
+            }
+
+            // Nonce check
+            check_admin_referer('bema_create_campaign', 'bema_nonce');
+
+            // Gather and sanitize inputs
+            $name       = isset($_POST['campaign_name']) ? strtoupper(sanitize_text_field(wp_unslash($_POST['campaign_name']))) : '';
+            $product_id = isset($_POST['product_id']) && $_POST['product_id'] !== '' ? absint($_POST['product_id']) : null;
+            $start_date = isset($_POST['start_date']) && $_POST['start_date'] !== '' ? sanitize_text_field($_POST['start_date']) : null;
+            $end_date   = isset($_POST['end_date']) && $_POST['end_date'] !== '' ? sanitize_text_field($_POST['end_date']) : null;
+
+            if (empty($name)) {
+                wp_safe_redirect(add_query_arg([
+                    'page' => 'bema-campaigns',
+                    'bema_msg' => rawurlencode('Campaign name is required'),
+                    'bema_status' => 'error'
+                ], admin_url('admin.php')));
+                exit;
+            }
+
+            // Validate dates order
+            if (!empty($start_date) && !empty($end_date)) {
+                if (strtotime($end_date) < strtotime($start_date)) {
+                    wp_safe_redirect(add_query_arg([
+                        'page' => 'bema-campaigns',
+                        'bema_msg' => rawurlencode('End date cannot be earlier than start date'),
+                        'bema_status' => 'error'
+                    ], admin_url('admin.php')));
+                    exit;
+                }
+            }
+
+            // Build minimal campaign array for Sync_Manager
+            $campaign = [
+                'name' => $name,
+                'product_id' => $product_id,
+            ];
+
+            // Create campaign on MailerLite and get ID
+            $sync = Manager_Factory::get_sync_manager();
+            $mailerlite_id = $sync->create_new_mailerlite_campaign($campaign);
+
+            if (!$mailerlite_id) {
+                // Fail gracefully if MailerLite creation fails
+                wp_safe_redirect(add_query_arg([
+                    'page' => 'bema-campaigns',
+                    'bema_msg' => rawurlencode('Failed to create MailerLite campaign'),
+                    'bema_status' => 'error'
+                ], admin_url('admin.php')));
+                exit;
+            }
+
+            // Prepare upsert payload based on ML response
+            $formatted = $sync->format_campaign_for_upsert($campaign, $mailerlite_id);
+
+            // Upsert into local database
+            $campaign_db = Manager_Factory::get_campaign_database_manager();
+            $campaign_db->upsert_campaign((int) $formatted['id'], $formatted['campaign'], [
+                'product_id' => $product_id,
+                'start_date' => $start_date,
+                'end_date'   => $end_date,
+                // default to draft on creation; can be edited inline later
+                'status'     => 'draft',
+            ]);
+
+            // Redirect back with success
+            wp_safe_redirect(add_query_arg([
+                'page' => 'bema-campaigns',
+                'bema_msg' => rawurlencode('Campaign created successfully'),
+                'bema_status' => 'success'
+            ], admin_url('admin.php')));
+            exit;
+        } catch (\Exception $e) {
+            wp_safe_redirect(add_query_arg([
+                'page' => 'bema-campaigns',
+                'bema_msg' => rawurlencode('Error creating campaign: ' . $e->getMessage()),
+                'bema_status' => 'error'
+            ], admin_url('admin.php')));
+            exit;
+        }
+    }
+
+    public function handle_campaign_update()
+    {
+        check_ajax_referer('bema_campaign_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        $campaign_id = intval($_POST['campaign_id']);
+        $campaign_name = sanitize_text_field($_POST['campaign_name']);
+        $start_date = sanitize_text_field($_POST['start_date']);
+        $end_date = sanitize_text_field($_POST['end_date']);
+        $status = sanitize_text_field($_POST['status']);
+
+        // Status is sent in DB-native form (draft, pending, running, completed)
+        $db_status = $status;
+
+        try {
+            $campaign_db = Manager_Factory::get_campaign_database_manager();
+            
+            $data = [
+                'start_date' => $start_date ?: null,
+                'end_date' => $end_date ?: null,
+                'status' => $db_status
+            ];
+
+            $result = $campaign_db->upsert_campaign($campaign_id, $campaign_name, $data);
+            
+            if ($result) {
+                wp_send_json_success(['message' => 'Campaign updated successfully']);
+            } else {
+                wp_send_json_error(['message' => 'Failed to update campaign']);
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Campaign update failed', [
+                'campaign_id' => $campaign_id,
+                'error' => $e->getMessage()
+            ]);
+            wp_send_json_error(['message' => 'Error updating campaign: ' . $e->getMessage()]);
+        }
+    }}

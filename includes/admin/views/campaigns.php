@@ -1,26 +1,31 @@
 <?php
+use Bema\Manager_Factory;
+
 if (!defined('ABSPATH')) {
     exit;
 }
 
 // Debug information
-$debug_info = [];
 $campaigns = [];
 $products = [];
 
 try {
-    global $wpdb;
+    // Handle sorting and pagination
+    $orderby = isset($_GET['orderby']) ? sanitize_text_field(wp_unslash($_GET['orderby'])) : 'start_date';
+    $order = isset($_GET['order']) ? sanitize_text_field(wp_unslash($_GET['order'])) : 'asc';
 
-    // Check if campaigns table exists
-    $campaigns_table = $wpdb->prefix . 'bemacrm_campaignsmeta';
-    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$campaigns_table}'") === $campaigns_table;
-    $debug_info['table_exists'] = $table_exists;
+    // Pagination setup
+    $paged = isset($_GET['paged']) ? max(1, absint($_GET['paged'])) : 1;
+    $per_page = 5;
+    $offset = ($paged - 1) * $per_page;
 
+    // Get campaigns from the database with sorting and pagination
+    $campaigns_db = Manager_Factory::get_campaign_database_manager();
+    $campaigns = $campaigns_db->get_campaigns($per_page, $offset, $orderby, $order);
 
-    if ($table_exists) {
-        // Get campaigns from database
-        $campaigns = $wpdb->get_results("SELECT * FROM {$campaigns_table} ORDER BY id DESC", ARRAY_A);
-    }
+    // Get total count for pagination
+    $total_items = $campaigns_db->count_campaigns();
+    $total_pages = max(1, (int) ceil($total_items / $per_page));
 
     // Get EDD products
     $products = get_posts([
@@ -38,24 +43,37 @@ try {
 function get_status_class($status)
 {
     $classes = [
-        'publish' => 'status-active',
+        'active' => 'status-active',
         'draft' => 'status-draft',
         'completed' => 'status-completed',
-        'paused' => 'status-paused'
+        'pending' => 'status-pending'
     ];
     return $classes[$status] ?? 'status-unknown';
 }
+
+function bema_crm_sortable_column($column, $label, $current_orderby, $current_order) {
+	$new_order = ($current_orderby === $column && $current_order === 'asc') ? 'desc' : 'asc';
+	$class = 'sortable';
+	if ($current_orderby === $column) {
+		$class = $current_order === 'asc' ? 'sorted asc' : 'sorted desc';
+	}
+	$url = add_query_arg(['orderby' => $column, 'order' => $new_order]);
+	return sprintf('<a href="%s"><span>%s</span><span class="sorting-indicator"></span></a>', esc_url($url), esc_html($label));
+}
+
 ?>
 
 <div class="wrap">
     <h1>Campaigns</h1>
+    <?php wp_nonce_field('bema_campaign_nonce', 'bema_campaign_nonce'); ?>
 
     <!-- Create Campaign Form -->
-    <div class="campaign-form-section">
+    <div class="campaign-form-section bema-crm-lite-section-card">
         <h2>Create New Campaign</h2>
-        <form method="post" action="">
+        <form method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>">
             <?php wp_nonce_field('bema_create_campaign', 'bema_nonce'); ?>
 
+            <input type="hidden" name="action" value="bema_create_campaign" />
             <table class="form-table">
                 <tr>
                     <th><label for="campaign_name">Campaign Name</label></th>
@@ -103,77 +121,109 @@ function get_status_class($status)
 
     <!-- Campaigns List -->
     <div class="campaigns-list-section">
-        <h2>All Campaigns (<?php echo count($campaigns); ?>)</h2>
+        <h2>All Campaigns</h2>
+
+        <div class="tablenav top">
+            <div class="tablenav-pages">
+                <span class="displaying-num"><?php echo esc_html($total_items); ?> items</span>
+                <?php
+                echo paginate_links(array(
+                    'base' => add_query_arg('paged', '%#%'),
+                    'format' => '',
+                    'prev_text' => '«',
+                    'next_text' => '»',
+                    'total' => $total_pages,
+                    'current' => $paged,
+                ));
+                ?>
+            </div>
+        </div>
 
         <table class="wp-list-table widefat fixed striped">
             <thead>
                 <tr>
-                    <th>Campaign</th>
-                    <th>Product ID</th>
-                    <th>Start Date</th>
-                    <th>End Date</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th scope="col" class="manage-column column-name">Campaign</th>
+                    <th scope="col" class="manage-column column-product product-id-col">Product ID</th>
+                    <th scope="col" class="manage-column column-start-date sortable <?php echo ($orderby === 'start_date') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('start_date', 'Start Date', $orderby, $order); ?></th>
+                    <th scope="col" class="manage-column column-end-date sortable <?php echo ($orderby === 'end_date') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('end_date', 'End Date', $orderby, $order); ?></th>
+                    <th scope="col" class="manage-column column-status sortable <?php echo ($orderby === 'status') ? ($order === 'asc' ? 'sorted asc' : 'sorted desc') : 'desc'; ?>"><?php echo bema_crm_sortable_column('status', 'Status', $orderby, $order); ?></th>
+                    <th scope="col" class="manage-column column-actions">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (!empty($campaigns)): ?>
 
                     <?php foreach ($campaigns as $campaign): ?>
-                        <tr>
+                        <tr data-campaign-id="<?php echo esc_attr($campaign['id']); ?>" data-campaign-name="<?php echo esc_attr($campaign['campaign']); ?>">
                             <td>
                                 <strong><?php echo esc_html($campaign['campaign'] ?? '—'); ?></strong>
                                 <br><small>ID: <?php echo esc_html($campaign['id'] ?? '—'); ?></small>
                             </td>
-                            <td><?php echo esc_html($campaign['product_id'] ?? '—'); ?></td>
-                            <td>
-                                <?php
-                                if (!empty($campaign['start_date']) && $campaign['start_date'] !== '0000-00-00') {
-                                    try {
-                                        $timestamp = new DateTime($campaign['start_date']);
-                                        echo esc_html($timestamp->format('F j, Y'));
-                                    } catch (Exception $e) {
+                            <td  class="product-id-col"><?php echo esc_html($campaign['product_id'] ?? '—'); ?></td>
+                            <td class="editable-cell" data-field="start_date">
+                                <span class="display-value">
+                                    <?php
+                                    if (!empty($campaign['start_date']) && $campaign['start_date'] !== '0000-00-00') {
+                                        try {
+                                            $timestamp = new DateTime($campaign['start_date']);
+                                            echo esc_html($timestamp->format('F j, Y'));
+                                        } catch (Exception $e) {
+                                            echo '—';
+                                        }
+                                    } else {
                                         echo '—';
-                                        $logger->error('Date formatting error', ['error' => $e->getMessage()]);
                                     }
-                                } else {
-                                    echo '—';
-                                }
-                                ?>
-
-                            </td>
-                            <td>
-                                <?php
-                                if (!empty($campaign['start_date']) && $campaign['start_date'] !== '0000-00-00') {
-                                    try {
-                                        $timestamp = new DateTime($campaign['start_date']);
-                                        echo esc_html($timestamp->format('F j, Y'));
-                                    } catch (Exception $e) {
-                                        echo '—';
-                                        $logger->error('Date formatting error', ['error' => $e->getMessage()]);
-                                    }
-                                } else {
-                                    echo '—';
-                                }
-                                ?>
-
-                            </td>
-                            <td>
-                                <span
-                                    class="status-badge <?php echo esc_attr(get_status_class($campaign['status'] ?? 'draft')); ?>">
-                                    <?php echo esc_html(ucfirst($campaign['status'] ?? 'Draft')); ?>
+                                    ?>
                                 </span>
+                                <input type="date" class="edit-input" value="<?php echo esc_attr($campaign['start_date'] ?? ''); ?>" style="display:none;">
                             </td>
-                            <td>
-                                <a href="#" class="button button-small">Edit</a>
-                                <a href="#" class="button button-small">Subscribers</a>
+                            <td class="editable-cell" data-field="end_date">
+                                <span class="display-value">
+                                    <?php
+                                    if (!empty($campaign['end_date']) && $campaign['end_date'] !== '0000-00-00') {
+                                        try {
+                                            $timestamp = new DateTime($campaign['end_date']);
+                                            echo esc_html($timestamp->format('F j, Y'));
+                                        } catch (Exception $e) {
+                                            echo '—';
+                                        }
+                                    } else {
+                                        echo '—';
+                                    }
+                                    ?>
+                                </span>
+                                <input type="date" class="edit-input" value="<?php echo esc_attr($campaign['end_date'] ?? ''); ?>" style="display:none;">
+                            </td>
+                            <td class="editable-cell" data-field="status">
+                                <span class="display-value">
+                                    <?php $ui_status = $campaign['status'] ?? 'draft'; ?>
+                                                                        <span class="status-badge <?php echo esc_attr(get_status_class($ui_status)); ?>">
+                                                                            <?php echo esc_html(ucfirst($ui_status)); ?>
+                                    </span>
+                                </span>
+                                <select class="edit-input" style="display:none;">
+                                    <?php $ui_status_for_select = $campaign['status'] ?? 'draft'; ?>
+                                    <option value="draft" <?php selected($ui_status_for_select, 'draft'); ?>>Draft</option>
+                                    <option value="active" <?php selected($ui_status_for_select, 'active'); ?>>Active</option>
+                                    <option value="pending" <?php selected($ui_status_for_select, 'pending'); ?>>Pending</option>
+                                    <option value="completed" <?php selected($ui_status_for_select, 'completed'); ?>>Completed</option>
+                                </select>
+                            </td>
+                            <td class="actions-cell">
+                                <button class="button button-small edit-btn">Edit</button>
+                                <button class="button button-primary button-small submit-btn" style="display:none;">Submit</button>
+                                <button class="button button-small cancel-btn" style="display:none;">Cancel</button>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
                     <tr>
                         <td colspan="6" class="no-campaigns">
-                            <?php if (!$debug_info['table_exists']): ?>
+                            <?php
+
+                            $tableExists = !empty($campaigns) || $total_items > 0;
+                            
+                            if (!$tableExists): ?>
                                 <strong>No campaigns table found.</strong>
                             <?php else: ?>
                                 <strong>No campaigns found.</strong>
@@ -183,51 +233,21 @@ function get_status_class($status)
                 <?php endif; ?>
             </tbody>
         </table>
+        
+        <div class="tablenav bottom">
+            <div class="tablenav-pages">
+                <span class="displaying-num"><?php echo esc_html($total_items); ?> items</span>
+                <?php
+                echo paginate_links(array(
+                    'base' => add_query_arg('paged', '%#%'),
+                    'format' => '',
+                    'prev_text' => '«',
+                    'next_text' => '»',
+                    'total' => $total_pages,
+                    'current' => $paged,
+                ));
+                ?>
+            </form>
+        </div>
     </div>
 </div>
-
-<style>
-    .campaign-form-section {
-        background: #fff;
-        padding: 20px;
-        margin: 20px 0;
-        border: 1px solid #ccd0d4;
-        border-radius: 4px;
-    }
-
-    .campaigns-list-section {
-        margin-top: 30px;
-    }
-
-    .status-badge {
-        padding: 4px 8px;
-        border-radius: 3px;
-        font-size: 12px;
-        font-weight: 600;
-    }
-
-    .status-active {
-        background: #d1e7dd;
-        color: #0f5132;
-    }
-
-    .status-draft {
-        background: #fff3cd;
-        color: #664d03;
-    }
-
-    .no-campaigns {
-        text-align: center;
-        padding: 40px 20px;
-        color: #666;
-        font-style: italic;
-    }
-
-    pre {
-        background: #f1f1f1;
-        padding: 10px;
-        border-radius: 4px;
-        overflow-x: auto;
-        font-size: 12px;
-    }
-</style>

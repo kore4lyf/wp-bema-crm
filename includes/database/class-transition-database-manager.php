@@ -187,6 +187,75 @@ class Transition_Database_Manager
     }
 
     /**
+     * Get transition records with pagination and sorting support.
+     *
+     * @param int $per_page Number of records per page.
+     * @param int $offset Starting offset for pagination.
+     * @param string $orderby Column to order by (status, subscribers, transition_date).
+     * @param string $order Sort order (asc or desc).
+     * @return array Array of transition records.
+     */
+    public function get_records($per_page = 25, $offset = 0, $orderby = 'transition_date', $order = 'desc')
+    {
+        // Validate orderby parameter
+        $valid_orderby = ['id', 'source', 'destination', 'status', 'subscribers', 'transition_date'];
+        if (!in_array($orderby, $valid_orderby, true)) {
+            $orderby = 'transition_date';
+        }
+
+        // Validate order parameter
+        $order = strtoupper($order);
+        if (!in_array($order, ['ASC', 'DESC'], true)) {
+            $order = 'DESC';
+        }
+
+        $sql = $this->wpdb->prepare("
+            SELECT
+            t.id,
+            s.campaign AS source,
+            d.campaign AS destination,
+            t.status,
+            t.subscribers,
+            t.transition_date
+            FROM
+            {$this->table_name} AS t
+            LEFT JOIN
+            {$this->campaigns_table} AS s ON t.source = s.id
+            LEFT JOIN
+            {$this->campaigns_table} AS d ON t.destination = d.id
+            ORDER BY
+            t.{$orderby} {$order}
+            LIMIT %d OFFSET %d
+        ", $per_page, $offset);
+
+        $results = $this->wpdb->get_results($sql, ARRAY_A);
+
+        if ($results === null) {
+            return [];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Count total transition records for pagination.
+     *
+     * @return int Total number of transition records.
+     */
+    public function count_records()
+    {
+        $sql = "
+            SELECT COUNT(*)
+            FROM {$this->table_name} AS t
+            LEFT JOIN {$this->campaigns_table} AS s ON t.source = s.id
+            LEFT JOIN {$this->campaigns_table} AS d ON t.destination = d.id
+        ";
+
+        $count = $this->wpdb->get_var($sql);
+        return (int) $count;
+    }
+
+    /**
      * Updates an existing transition record.
      *
      * @param int $transition_id The ID of the transition record to update.
