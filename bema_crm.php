@@ -121,6 +121,7 @@ class Bema_CRM
     private $campaign_group_subscribers_db_manager;
     private $sync_db_manager;
 
+    private $manager_factory;
     private $admin_interface;
     private $settings;
     private $db_manager;
@@ -882,9 +883,6 @@ class Bema_CRM
                 $this->settings
             );
 
-            // Create Manager_Factory instance
-            $this->manager_factory = new \Bema\Manager_Factory();
-
             // Initialize handlers
             $lock_handler = new \Bema\Handlers\Default_Lock_Handler();
             $health_monitor = new \Bema\Handlers\Default_Health_Monitor();
@@ -1540,9 +1538,9 @@ class Bema_CRM
     {
         switch ($type) {
             case 'sync':
-                return $this->manager_factory->get_sync_manager();
+                return \Bema\Manager_Factory::get_sync_manager();
             case 'transition':
-                return $this->manager_factory->get_transition_manager();
+                return \Bema\Manager_Factory::get_transition_manager();
             default:
                 throw new Exception("Unknown manager type: {$type}");
         }

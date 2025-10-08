@@ -1301,13 +1301,7 @@ class Bema_Admin_Interface
 
             // Upsert into local database
             $campaign_db = Manager_Factory::get_campaign_database_manager();
-            $campaign_db->upsert_campaign((int) $formatted['id'], $formatted['campaign'], [
-                'product_id' => $product_id,
-                'start_date' => $start_date,
-                'end_date'   => $end_date,
-                // default to draft on creation; can be edited inline later
-                'status'     => 'draft',
-            ]);
+            $campaign_db->insert_campaign((int) $formatted['id'], $formatted['campaign'], $product_id, $start_date, $end_date, 'draft');
 
             // Redirect back with success
             wp_safe_redirect(add_query_arg([

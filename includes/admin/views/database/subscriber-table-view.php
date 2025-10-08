@@ -130,8 +130,8 @@ if (isset($_POST['bulk-action'])) {
 				<select name="campaign" id="filter-campaign">
 					<option value="">Campaigns</option>
 					<?php foreach ($campaigns as $name): ?>
-						<option value="<?php echo esc_attr($name); ?>" <?php selected($selected_campaign, $name); ?>>
-							<?php echo esc_html($name); ?>
+						<option value="<?php echo esc_attr($name['campaign']); ?>" <?php selected($selected_campaign, $name['campaign']); ?>>
+							<?php echo esc_html($name['campaign']); ?>
 						</option>
 					<?php endforeach; ?>
 				</select>
