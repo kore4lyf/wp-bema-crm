@@ -17,16 +17,16 @@ if (!defined('ABSPATH')) {
 }
 class Triggers
 {
-    private MailerLite $mailerlite;
-    private EM_Sync $em_sync;
-    private Utils $utils;
-    private Group_Database_Manager $group_database;
-    private Field_Database_Manager $field_database;
+    private ?MailerLite $mailerlite;
+    private ?EM_Sync $em_sync;
+    private ?Utils $utils;
+    private ?Group_Database_Manager $group_database;
+    private ?Field_Database_Manager $field_database;
     private Campaign_Database_Manager $campaign_database;
-    private Bema_CRM_Logger $logger;
+    private ?Bema_CRM_Logger $logger;
     private array $deleted_album_details = [];
 
-    public function __construct(MailerLite $mailerlite, EM_Sync $em_sync, Utils $utils, Group_Database_Manager $group_database, Field_Database_Manager $field_database, ?Bema_CRM_Logger $logger = null)
+    public function __construct(?MailerLite $mailerlite, ?EM_Sync $em_sync, ?Utils $utils, ?Group_Database_Manager $group_database, ?Field_Database_Manager $field_database, ?Bema_CRM_Logger $logger = null)
     {
         $this->mailerlite = $mailerlite;
         $this->em_sync = $em_sync;
@@ -67,6 +67,18 @@ class Triggers
 
         // WP-Cron hook to handle deletion of album groups/campaigns on mailerlite
         add_action('bema_handle_deleted_album', [$this, 'handle_deleted_album_cron'], 10, 2);
+        
+        // WP-Cron hook to handle creation of custom campaigns
+        add_action('bema_create_custom_campaign', [$this, 'handle_create_custom_campaign_via_cron'], 10, 1);
+        
+        // WP-Cron hook to handle deletion of custom campaigns
+        add_action('bema_delete_custom_campaign', [$this, 'handle_delete_custom_campaign_via_cron'], 10, 1);
+        
+        // WP-Cron hook to handle creation of purchase fields for custom campaigns
+        add_action('bema_create_custom_campaign_purchase_field', [$this, 'handle_create_custom_campaign_purchase_field_via_cron'], 10, 1);
+        
+        // WP-Cron hook to handle deletion of purchase fields for custom campaigns
+        add_action('bema_delete_custom_campaign_purchase_field', [$this, 'handle_delete_custom_campaign_purchase_field_via_cron'], 10, 1);
     }
 
     /**
@@ -529,4 +541,380 @@ class Triggers
         // Handle group deletion
         $this->handle_deleted_album_groups($album_name, $album_details, $tiers);
     }
+
+    /**
+     * Schedules a WP-Cron event to handle custom campaign creation asynchronously.
+     *
+     * @param array $campaign_data The campaign data to create.
+     * @return void
+     */
+    public function schedule_custom_campaign_creation(array $campaign_data): void
+    {
+        $this->logger->info('Scheduling custom campaign creation', [
+            'campaign_name' => $campaign_data['name'] ?? 'Unknown'
+        ]);
+
+        // Schedule a single event to run in 30 seconds, passing the campaign data
+        wp_schedule_single_event(
+            time() + 30,
+            'bema_create_custom_campaign',
+            [$campaign_data]
+        );
+    }
+
+    /**
+     * Handles the creation of a custom campaign via a WP-Cron event.
+     *
+     * @param array $campaign_data The campaign data to create.
+     * @return void
+     */
+    public function handle_create_custom_campaign_via_cron(array $campaign_data): void
+    {
+        // Log that the cron job is being executed
+        if ($this->logger) {
+            $this->logger->info('Custom campaign cron job executing', [
+                'campaign_data' => $campaign_data
+            ]);
+        }
+        
+        $this->logger->startTimer('custom_campaign_creation');
+        
+        $campaign_name = $campaign_data['name'] ?? '';
+        if (empty($campaign_name)) {
+            $this->logger->error('WP-Cron event failed: Campaign name is required');
+            return;
+        }
+
+        $this->logger->info('WP-Cron Trigger Start: create custom campaign', [
+            'campaign_name' => $campaign_name
+        ]);
+
+        try {
+            // Create campaign on MailerLite
+            $this->logger->logApiCall('MailerLite', 'create_draft_campaign', [
+                'campaign_name' => $campaign_name
+            ]);
+            
+            // Get sync manager to create the MailerLite campaign
+            $sync_manager = \Bema\Manager_Factory::get_sync_manager();
+            $mailerlite_id = $sync_manager->create_new_mailerlite_campaign($campaign_data);
+
+            if (!$mailerlite_id) {
+                $this->logger->error('Failed to create MailerLite campaign', [
+                    'campaign_name' => $campaign_name
+                ]);
+                return;
+            }
+
+            // Prepare upsert payload based on ML response
+            $formatted = $sync_manager->format_campaign_for_upsert($campaign_data, $mailerlite_id);
+
+            // Upsert into local database
+            $campaign_db = \Bema\Manager_Factory::get_campaign_database_manager();
+            $result = $campaign_db->insert_campaign(
+                (int) $formatted['id'], 
+                $formatted['campaign'], 
+                $campaign_data['product_id'] ?? null, 
+                $campaign_data['start_date'] ?? null, 
+                $campaign_data['end_date'] ?? null, 
+                'draft'
+            );
+            
+            if ($result) {
+                $this->logger->info('Custom campaign created successfully', [
+                    'campaign_name' => $campaign_name,
+                    'mailerlite_id' => $mailerlite_id
+                ]);
+                
+                // Schedule purchase field creation for the custom campaign
+                $this->schedule_custom_campaign_purchase_field_creation($campaign_data);
+            } else {
+                $this->logger->error('Failed to insert campaign into database', [
+                    'campaign_name' => $campaign_name,
+                    'mailerlite_id' => $mailerlite_id
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Custom campaign creation failed', [
+                'campaign_name' => $campaign_name,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        $this->logger->endTimer('custom_campaign_creation');
+    }
+
+    /**
+     * Schedules a WP-Cron event to handle custom campaign deletion asynchronously.
+     *
+     * @param int $campaign_id The ID of the campaign to delete.
+     * @return void
+     */
+    public function schedule_custom_campaign_deletion(int $campaign_id): void
+    {
+        $this->logger->info('Scheduling custom campaign deletion', [
+            'campaign_id' => $campaign_id
+        ]);
+
+        // Schedule a single event to run in 30 seconds, passing the campaign ID
+        wp_schedule_single_event(
+            time() + 30,
+            'bema_delete_custom_campaign',
+            [$campaign_id]
+        );
+    }
+
+    /**
+     * Handles the deletion of a custom campaign via a WP-Cron event.
+     *
+     * @param int $campaign_id The ID of the campaign to delete.
+     * @return void
+     */
+    public function handle_delete_custom_campaign_via_cron(int $campaign_id): void
+    {
+        // Log that the cron job is being executed
+        if ($this->logger) {
+            $this->logger->info('Custom campaign deletion cron job executing', [
+                'campaign_id' => $campaign_id
+            ]);
+        }
+        
+        $this->logger->startTimer('custom_campaign_deletion');
+        
+        if (empty($campaign_id)) {
+            $this->logger->error('WP-Cron event failed: Campaign ID is required');
+            return;
+        }
+
+        $this->logger->info('WP-Cron Trigger Start: delete custom campaign', [
+            'campaign_id' => $campaign_id
+        ]);
+
+        try {
+            // Get campaign details before deletion for logging
+            $campaign_db = \Bema\Manager_Factory::get_campaign_database_manager();
+            $campaign_data = $campaign_db->get_campaign_by_id($campaign_id);
+            
+            if (!$campaign_data) {
+                $this->logger->warning('Campaign not found for deletion', [
+                    'campaign_id' => $campaign_id
+                ]);
+                return;
+            }
+
+            // Delete campaign from local database
+            $result = $campaign_db->delete_campaign_by_id($campaign_id);
+            
+            if ($result) {
+                $this->logger->info('Custom campaign deleted successfully', [
+                    'campaign_id' => $campaign_id,
+                    'campaign_name' => $campaign_data['campaign'] ?? 'Unknown'
+                ]);
+                
+                // Schedule purchase field deletion for the custom campaign
+                $this->schedule_custom_campaign_purchase_field_deletion($campaign_data['campaign'] ?? '');
+            } else {
+                $this->logger->error('Failed to delete campaign from database', [
+                    'campaign_id' => $campaign_id,
+                    'campaign_name' => $campaign_data['campaign'] ?? 'Unknown'
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Custom campaign deletion failed', [
+                'campaign_id' => $campaign_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        $this->logger->endTimer('custom_campaign_deletion');
+    }
+
+    /**
+     * Schedules a WP-Cron event to handle custom campaign purchase field creation asynchronously.
+     *
+     * @param array $campaign_data The campaign data to create a purchase field for.
+     * @return void
+     */
+    public function schedule_custom_campaign_purchase_field_creation(array $campaign_data): void
+    {
+        $this->logger->info('Scheduling custom campaign purchase field creation', [
+            'campaign_name' => $campaign_data['name'] ?? 'Unknown'
+        ]);
+
+        // Schedule a single event to run in 30 seconds, passing the campaign data
+        wp_schedule_single_event(
+            time() + 30,
+            'bema_create_custom_campaign_purchase_field',
+            [$campaign_data]
+        );
+    }
+
+    /**
+     * Handles the creation of a purchase field for a custom campaign via a WP-Cron event.
+     *
+     * @param array $campaign_data The campaign data to create a purchase field for.
+     * @return void
+     */
+    public function handle_create_custom_campaign_purchase_field_via_cron(array $campaign_data): void
+    {
+        // Log that the cron job is being executed
+        if ($this->logger) {
+            $this->logger->info('Custom campaign purchase field creation cron job executing', [
+                'campaign_data' => $campaign_data
+            ]);
+        }
+        
+        $campaign_name = $campaign_data['name'] ?? '';
+        if (empty($campaign_name)) {
+            $this->logger->error('WP-Cron event failed: Campaign name is required');
+            return;
+        }
+
+        $this->logger->info('WP-Cron Trigger Start: create custom campaign purchase field', [
+            'campaign_name' => $campaign_name
+        ]);
+
+        try {
+            // Generate the field name for custom campaign
+            $field_name = $campaign_name . '_PURCHASE';
+            $field_name = strtoupper($field_name);
+
+            // Create the field on MailerLite
+            $this->logger->logApiCall('MailerLite', 'createField', [
+                'field_name' => $field_name
+            ]);
+            
+            $field_data = $this->mailerlite->createField($field_name, 'number');
+            
+            // Log the response from MailerLite for debugging
+            $this->logger->debug('MailerLite createField response', [
+                'field_name' => $field_name,
+                'field_data' => $field_data,
+                'field_data_type' => gettype($field_data)
+            ]);
+            
+            $field_id = $field_data['id'] ?? null;
+
+            if (!$field_id) {
+                $this->logger->error('Failed to create MailerLite field for custom campaign', [
+                    'campaign_name' => $campaign_name,
+                    'field_name' => $field_name,
+                    'field_data' => $field_data,
+                    'error_message' => isset($field_data['error']) ? $field_data['error'] : 'No field ID returned'
+                ]);
+                return;
+            }
+
+            // Get campaign ID from database
+            $campaign_db = \Bema\Manager_Factory::get_campaign_database_manager();
+            $campaign_record = $campaign_db->get_campaign_by_name($campaign_name);
+            $campaign_id = $campaign_record['id'] ?? null;
+
+            if (!$campaign_id) {
+                $this->logger->error('Failed to find campaign in database', [
+                    'campaign_name' => $campaign_name
+                ]);
+                return;
+            }
+
+            // Store field in the field table
+            $this->field_database->upsert_field($field_id, $field_name, $campaign_id);
+            
+            $this->logger->info("Custom campaign purchase field created and recorded in the database", [
+                'campaign_name' => $campaign_name,
+                'field_name' => $field_name,
+                'field_id' => $field_id
+            ]);
+        } catch (\Exception $e) {
+            $this->logger->error('Custom campaign purchase field creation failed', [
+                'campaign_name' => $campaign_name,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+
+        $this->logger->info('WP-Cron Trigger End: create custom campaign purchase field');
+    }
+
+    /**
+     * Schedules a WP-Cron event to handle custom campaign purchase field deletion asynchronously.
+     *
+     * @param string $campaign_name The name of the campaign to delete the purchase field for.
+     * @return void
+     */
+    public function schedule_custom_campaign_purchase_field_deletion(string $campaign_name): void
+    {
+        $this->logger->info('Scheduling custom campaign purchase field deletion', [
+            'campaign_name' => $campaign_name
+        ]);
+
+        // Schedule a single event to run in 30 seconds, passing the campaign name
+        wp_schedule_single_event(
+            time() + 30,
+            'bema_delete_custom_campaign_purchase_field',
+            [$campaign_name]
+        );
+    }
+
+    /**
+     * Handles the deletion of a purchase field for a custom campaign via a WP-Cron event.
+     *
+     * @param string $campaign_name The name of the campaign to delete the purchase field for.
+     * @return void
+     */
+    public function handle_delete_custom_campaign_purchase_field_via_cron(string $campaign_name): void
+    {
+        // Log that the cron job is being executed
+        if ($this->logger) {
+            $this->logger->info('Custom campaign purchase field deletion cron job executing', [
+                'campaign_name' => $campaign_name
+            ]);
+        }
+        
+        if (empty($campaign_name)) {
+            $this->logger->error('WP-Cron event failed: Campaign name is required');
+            return;
+        }
+
+        $this->logger->info('WP-Cron Trigger Start: delete custom campaign purchase field', [
+            'campaign_name' => $campaign_name
+        ]);
+
+        try {
+            // Generate the field name for custom campaign
+            $field_name = $campaign_name . '_PURCHASE';
+            $field_name = strtoupper($field_name);
+
+            // Delete the field on MailerLite
+            $this->logger->logApiCall('MailerLite', 'deleteField', [
+                'field_name' => $field_name
+            ]);
+            
+            $is_field_deleted_on_mailerlite = $this->mailerlite->deleteField($field_name);
+
+            // Delete field from local database regardless of MailerLite result
+            $this->field_database->delete_field_by_name($field_name);
+            
+            if ($is_field_deleted_on_mailerlite) {
+                $this->logger->info('Custom campaign purchase field deleted successfully', [
+                    'campaign_name' => $campaign_name,
+                    'field_name' => $field_name
+                ]);
+            } else {
+                $this->logger->warning('Failed to delete MailerLite field for custom campaign, but database record was removed', [
+                    'campaign_name' => $campaign_name,
+                    'field_name' => $field_name
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Custom campaign purchase field deletion failed', [
+                'campaign_name' => $campaign_name,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        $this->logger->info('WP-Cron Trigger End: delete custom campaign purchase field');
+    }
+
 }
+?>

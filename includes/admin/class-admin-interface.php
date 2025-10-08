@@ -1281,40 +1281,28 @@ class Bema_Admin_Interface
             $campaign = [
                 'name' => $name,
                 'product_id' => $product_id,
+                'start_date' => $start_date,
+                'end_date' => $end_date
             ];
 
-            // Create campaign on MailerLite and get ID
-            $sync = Manager_Factory::get_sync_manager();
-            $mailerlite_id = $sync->create_new_mailerlite_campaign($campaign);
-
-            if (!$mailerlite_id) {
-                // Fail gracefully if MailerLite creation fails
-                wp_safe_redirect(add_query_arg([
-                    'page' => 'bema-campaigns',
-                    'bema_msg' => rawurlencode('Failed to create MailerLite campaign'),
-                    'bema_status' => 'error'
-                ], admin_url('admin.php')));
-                exit;
-            }
-
-            // Prepare upsert payload based on ML response
-            $formatted = $sync->format_campaign_for_upsert($campaign, $mailerlite_id);
-
-            // Upsert into local database
-            $campaign_db = Manager_Factory::get_campaign_database_manager();
-            $campaign_db->insert_campaign((int) $formatted['id'], $formatted['campaign'], $product_id, $start_date, $end_date, 'draft');
+            // Get the Bema_CRM instance to access triggers
+            $bema_crm = \Bema\Bema_CRM::get_instance();
+            $triggers = $bema_crm->get_triggers();
+            
+            // Schedule custom campaign creation via cron
+            $triggers->schedule_custom_campaign_creation($campaign);
 
             // Redirect back with success
             wp_safe_redirect(add_query_arg([
                 'page' => 'bema-campaigns',
-                'bema_msg' => rawurlencode('Campaign created successfully'),
+                'bema_msg' => rawurlencode('Campaign creation scheduled successfully. It will be processed in the background.'),
                 'bema_status' => 'success'
             ], admin_url('admin.php')));
             exit;
         } catch (\Exception $e) {
             wp_safe_redirect(add_query_arg([
                 'page' => 'bema-campaigns',
-                'bema_msg' => rawurlencode('Error creating campaign: ' . $e->getMessage()),
+                'bema_msg' => rawurlencode('Error scheduling campaign creation: ' . $e->getMessage()),
                 'bema_status' => 'error'
             ], admin_url('admin.php')));
             exit;
@@ -1457,21 +1445,21 @@ class Bema_Admin_Interface
         $campaign_id = intval($_POST['campaign_id']);
 
         try {
-            $campaign_db = Manager_Factory::get_campaign_database_manager();
+            // Get the Bema_CRM instance to access triggers
+            $bema_crm = \Bema\Bema_CRM::get_instance();
+            $triggers = $bema_crm->get_triggers();
             
-            $result = $campaign_db->delete_campaign_by_id($campaign_id);
-            
-            if ($result) {
-                wp_send_json_success(['message' => 'Campaign deleted successfully']);
-            } else {
-                wp_send_json_error(['message' => 'Failed to delete campaign']);
-            }
+            // Schedule custom campaign deletion via cron
+            $triggers->schedule_custom_campaign_deletion($campaign_id);
+
+            wp_send_json_success(['message' => 'Campaign deletion scheduled successfully. It will be processed in the background.']);
         } catch (Exception $e) {
-            $this->logger->error('Campaign deletion failed', [
+            $this->logger->error('Campaign deletion scheduling failed', [
                 'campaign_id' => $campaign_id,
                 'error' => $e->getMessage()
             ]);
-            wp_send_json_error(['message' => 'Error deleting campaign: ' . $e->getMessage()]);
+            wp_send_json_error(['message' => 'Error scheduling campaign deletion: ' . $e->getMessage()]);
         }
     }
 }
+

@@ -180,16 +180,6 @@
             return classes[status] || 'status-unknown';
         }
 
-        function showNotice(message, type) {
-            var $notice = $('<div class="notice notice-' + type + ' is-dismissible"><p>' + message + '</p></div>');
-            $('.wrap h1').after($notice);
-            
-            setTimeout(function() {
-                $notice.fadeOut();
-            }, 6000);
-        }
-        
-
         function updateDisplayValues($row, startDate, endDate, status) {
             // Update start date display
             var startDisplay = startDate ? formatDate(startDate) : '—';

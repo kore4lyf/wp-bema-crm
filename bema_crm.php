@@ -125,6 +125,7 @@ class Bema_CRM
     private $admin_interface;
     private $settings;
     private $db_manager;
+    private $triggers;
     private $component_registry = [];
     private $initialized = false;
     private static $instance_creating = false;
@@ -168,6 +169,10 @@ class Bema_CRM
             self::$static_logger = Bema_CRM_Logger::create('bema-crm-main');
         }
         return self::$static_logger;
+    }
+
+    public function get_triggers() {
+        return $this->triggers;
     }
 
     public static function get_instance(): ?self
@@ -1019,8 +1024,8 @@ class Bema_CRM
 
             // Add CRM Trigger
             $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '');
-            $triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager);
-            $triggers->init();
+            $this->triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager);
+            $this->triggers->init();
 
             // Register sync cron Hook
             add_action('bema_crm_sync_cron_job', function () {
