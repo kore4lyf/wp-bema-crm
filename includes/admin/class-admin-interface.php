@@ -226,6 +226,7 @@ class Bema_Admin_Interface
             add_action('admin_post_test_connection', [$this, 'handle_test_connection']);
             add_action('admin_post_bema_create_campaign', [$this, 'handle_create_campaign']);
             add_action('wp_ajax_update_campaign', [$this, 'handle_campaign_update']);
+            add_action('wp_ajax_delete_campaign', [$this, 'handle_campaign_delete']);
             add_action('wp_ajax_bema_debug_log', [$this, 'handle_debug_log']);
             add_action('wp_ajax_bema_get_sync_status', [$this, 'handle_get_sync_status']);
 
@@ -1431,6 +1432,46 @@ class Bema_Admin_Interface
         } catch (\Exception $e) {
             $this->logger->error('Get sync status handler error: ' . $e->getMessage());
             wp_send_json_error(['message' => 'Error getting sync status: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Handle campaign deletion AJAX requests
+     * 
+     * @return void
+     */
+    public function handle_campaign_delete(): void
+    {
+        // Verify nonce for security
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'bema_campaign_nonce')) {
+            wp_send_json_error(['message' => 'Invalid nonce']);
+            return;
+        }
+
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized']);
+            return;
+        }
+
+        $campaign_id = intval($_POST['campaign_id']);
+
+        try {
+            $campaign_db = Manager_Factory::get_campaign_database_manager();
+            
+            $result = $campaign_db->delete_campaign_by_id($campaign_id);
+            
+            if ($result) {
+                wp_send_json_success(['message' => 'Campaign deleted successfully']);
+            } else {
+                wp_send_json_error(['message' => 'Failed to delete campaign']);
+            }
+        } catch (Exception $e) {
+            $this->logger->error('Campaign deletion failed', [
+                'campaign_id' => $campaign_id,
+                'error' => $e->getMessage()
+            ]);
+            wp_send_json_error(['message' => 'Error deleting campaign: ' . $e->getMessage()]);
         }
     }
 }

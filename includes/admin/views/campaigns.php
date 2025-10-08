@@ -213,6 +213,7 @@ function bema_crm_sortable_column($column, $label, $current_orderby, $current_or
                                 <button class="button button-small edit-btn">Edit</button>
                                 <button class="button button-primary button-small submit-btn" style="display:none;">Submit</button>
                                 <button class="button button-small cancel-btn" style="display:none;">Cancel</button>
+                                <button class="button button-small delete-btn" style="display:none; margin-left: 5px; background-color: #dc3545; color: white; border-color: #dc3545;">Delete</button>
                             </td>
                         </tr>
                     <?php endforeach; ?>

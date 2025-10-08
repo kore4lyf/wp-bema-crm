@@ -9,9 +9,9 @@
             $row.find('.display-value').hide();
             $row.find('.edit-input').show();
             
-            // Hide edit button and show submit/cancel buttons
+            // Hide edit button and show submit/cancel/delete buttons
             $(this).hide();
-            $row.find('.submit-btn, .cancel-btn').show();
+            $row.find('.submit-btn, .cancel-btn, .delete-btn').show();
         });
 
         // Cancel button click
@@ -23,9 +23,10 @@
             $row.find('.edit-input').hide();
             $row.find('.display-value').show();
             
-            // Hide submit/cancel buttons and show edit button
+            // Hide submit/cancel/delete buttons and show edit button
             $(this).hide();
             $row.find('.submit-btn').hide();
+            $row.find('.delete-btn').hide();
             $row.find('.edit-btn').show();
         });
 
@@ -77,7 +78,7 @@
                         $row.find('.edit-input').hide();
                         $row.find('.display-value').show();
                         $row.find('.edit-btn').show();
-                        $row.find('.submit-btn, .cancel-btn').hide();
+                        $row.find('.submit-btn, .cancel-btn, .delete-btn').hide();
                         
                         // Show success message
                         showNotice('Campaign updated successfully', 'success');
@@ -94,6 +95,100 @@
                 }
             });
         });
+
+        // Delete button click
+        $(document).on('click', '.delete-btn', function(e) {
+            e.preventDefault();
+            var $row = $(this).closest('tr');
+            var $button = $(this);
+            
+            var campaignId = $row.data('campaign-id');
+            var campaignName = $row.data('campaign-name');
+            
+            // Confirm deletion
+            if (!confirm('Are you sure you want to delete the campaign "' + campaignName + '"? This action cannot be undone.')) {
+                return;
+            }
+            
+            $button.prop('disabled', true).text('Deleting...');
+            
+            // Get nonce value correctly
+            var nonce = $('input[name="bema_campaign_nonce"]').val();
+            
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'delete_campaign',
+                    nonce: nonce,
+                    campaign_id: campaignId
+                },
+                success: function(response) {
+                    if (response.success) {
+                        // Remove the row from the table
+                        $row.fadeOut(400, function() {
+                            $(this).remove();
+                            showNotice('Campaign deleted successfully', 'success');
+                        });
+                    } else {
+                        showNotice(response.data.message || 'Failed to delete campaign', 'error');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.log('AJAX Error:', {xhr: xhr, status: status, error: error});
+                    showNotice('Error deleting campaign: ' + error, 'error');
+                },
+                complete: function() {
+                    $button.prop('disabled', false).text('Delete');
+                }
+            });
+        });
+
+        function updateDisplayValues($row, startDate, endDate, status) {
+            // Update start date display
+            var startDisplay = startDate ? formatDate(startDate) : '—';
+            $row.find('[data-field="start_date"] .display-value').text(startDisplay);
+            
+            // Update end date display
+            var endDisplay = endDate ? formatDate(endDate) : '—';
+            $row.find('[data-field="end_date"] .display-value').text(endDisplay);
+            
+            // Update status display
+            var statusClass = getStatusClass(status);
+            var statusText = status.charAt(0).toUpperCase() + status.slice(1);
+            $row.find('[data-field="status"] .display-value').html(
+                '<span class="status-badge ' + statusClass + '">' + statusText + '</span>'
+            );
+        }
+
+        function formatDate(dateString) {
+            var date = new Date(dateString);
+            return date.toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+        }
+
+        function getStatusClass(status) {
+            var classes = {
+                'active': 'status-active',
+                'draft': 'status-draft',
+                'completed': 'status-completed',
+                'pending': 'status-pending'
+            };
+            return classes[status] || 'status-unknown';
+        }
+
+        function showNotice(message, type) {
+            var $notice = $('<div class="notice notice-' + type + ' is-dismissible"><p>' + message + '</p></div>');
+            $('.wrap h1').after($notice);
+            
+            setTimeout(function() {
+                $notice.fadeOut();
+            }, 6000);
+        }
+        
 
         function updateDisplayValues($row, startDate, endDate, status) {
             // Update start date display
