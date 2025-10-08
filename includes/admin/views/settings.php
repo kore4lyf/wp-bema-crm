@@ -401,48 +401,12 @@ if ($test_results && is_array($test_results['messages'])) {
     });
 </script>
 
-<style>
-    h1.wp-heading-inline {
-        margin-bottom: 24px;
-    }
-
-    .settings-section.disabled {
-        opacity: 0.5;
-        pointer-events: none;
-    }
-
-    .settings-section.disabled input,
-    .settings-section.disabled select {
-        background: #f5f5f5;
-    }
-
-    .settings-container {
-        max-width: 1200px;
-    }
-
-    .settings-section {
-        background: #fff;
-        padding: 20px;
-        margin-bottom: 20px;
-        border: 1px solid #ccd0d4;
-        box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
-    }
-
-    .inline-form {
-        display: inline-block;
-        margin-right: 10px;
-    }
-
-    .action-buttons {
-        margin-top: 20px;
-    }
-
-    .form-table td {
-        vertical-align: top;
-    }
-
-    .description {
-        margin-top: 5px;
-        color: #666;
-    }
-</style>
+<?php
+// Enqueue settings-specific CSS
+wp_enqueue_style(
+    'bema-settings-css',
+    plugins_url('assets/css/settings.css', BEMA_FILE),
+    [],
+    BEMA_VERSION
+);
+?>

@@ -96,6 +96,9 @@ window.BemaLogs = {
                     self.updateLogTable(response.data.logs);
                     self.updateSyncStatus(response.data.sync_status);
                 }
+            },
+            error: function (xhr, status, error) {
+                console.log('Error refreshing log data:', error);
             }
         });
     },
@@ -127,6 +130,9 @@ window.BemaLogs = {
                 } else {
                     BemaAdmin.showNotification(response.data.message || 'Error loading log details', 'error');
                 }
+            },
+            error: function (xhr, status, error) {
+                BemaAdmin.showNotification('Failed to load log details: ' + error, 'error');
             }
         });
     },
@@ -275,6 +281,9 @@ window.BemaLogs = {
                     BemaAdmin.showNotification(response.data.message || 'Error filtering logs', 'error');
                 }
             },
+            error: function (xhr, status, error) {
+                BemaAdmin.showNotification('Failed to filter logs: ' + error, 'error');
+            },
             complete: function () {
                 $form.find('button, select, input').prop('disabled', false);
             }
@@ -353,6 +362,9 @@ window.BemaLogs = {
                 } else {
                     BemaAdmin.showNotification(response.data.message || 'Error exporting logs', 'error');
                 }
+            },
+            error: function (xhr, status, error) {
+                BemaAdmin.showNotification('Failed to export logs: ' + error, 'error');
             }
         });
     },
@@ -376,6 +388,9 @@ window.BemaLogs = {
                 } else {
                     BemaAdmin.showNotification(response.data.message || 'Error clearing logs', 'error');
                 }
+            },
+            error: function (xhr, status, error) {
+                BemaAdmin.showNotification('Failed to clear logs: ' + error, 'error');
             }
         });
     },

@@ -151,47 +151,13 @@ $sync_history = $sync_db_manager->get_sync_records();
         </tbody>
     </table>
 </div>
-<style>
-    .text-center {
-        text-align: center;
-    }
-    .status-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 20px;
-        margin: 15px 0;
-    }
-    .status-item {
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 4px;
-        border: 1px solid #dee2e6;
-        display: grid;
-        grid-template-rows: auto 1fr auto;
-    }
-    .status-item .label {
-        font-size: 1.2rem;
-    }
-    .sync-progress-container {
-        width: 100%;
-        background: #eee;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        height: 25px;
-    }
-    .sync-progress-bar {
-        height: 100%;
-        background: #2271b1;
-        color: #fff;
-        text-align: center;
-        line-height: 25px;
-        border-radius: 4px;
-        transition: width 0.5s ease-in-out;
-    }
-    pre {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        font-family: monospace;
-        font-size: 14px;
-    }
-</style>
+
+<?php
+// Enqueue synchronize-specific CSS
+wp_enqueue_style(
+    'bema-synchronize-css',
+    plugins_url('assets/css/synchronize.css', BEMA_FILE),
+    [],
+    BEMA_VERSION
+);
+?>

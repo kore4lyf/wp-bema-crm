@@ -2,10 +2,10 @@
     'use strict';
 
     // Add global debug function
-    window.debugLog = function (data, label) {
+    window.debugLog = function (data, label, skipAjax = false) {
         console.log(`${label || ''}: `, data);
 
-        if (!window.bemaAdmin?.debug?.enabled) return;
+        if (!window.bemaAdmin?.debug?.enabled || skipAjax) return;
 
         $.post(bemaAdmin.ajaxUrl, {
             action: 'bema_debug_log',
@@ -60,7 +60,7 @@
                     xhr: xhr.responseText,
                     settings: settings,
                     error: error
-                }, 'AJAX_ERROR');
+                }, 'AJAX_ERROR', true); // Skip AJAX logging to prevent loops
 
                 self.showNotification(
                     error || 'An error occurred during the request.',

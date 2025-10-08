@@ -40,7 +40,7 @@ class Transition_Subscribers_Database_Manager
     {
         try {
             if (!function_exists('dbDelta')) {
-                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+                require_once \ABSPATH . 'wp-admin/includes/upgrade.php';
             }
 
             $charset_collate = $this->wpdb->get_charset_collate();
@@ -57,7 +57,7 @@ class Transition_Subscribers_Database_Manager
                 CONSTRAINT fk_subscriber FOREIGN KEY (subscriber_id) REFERENCES {$this->subscribers_table}(id) ON DELETE CASCADE
             ) $charset_collate;";
 
-            dbDelta($sql);
+            \dbDelta($sql);
 
             // Check for errors after dbDelta
             if ($this->wpdb->last_error) {
@@ -81,8 +81,8 @@ class Transition_Subscribers_Database_Manager
     {
         try {
             $record_data = [
-                'transition_id' => absint($transition_id),
-                'subscriber_id' => absint($subscriber_id),
+                'transition_id' => \absint($transition_id),
+                'subscriber_id' => \absint($subscriber_id),
             ];
 
             $this->wpdb->insert(
@@ -121,8 +121,8 @@ class Transition_Subscribers_Database_Manager
             );
 
             $record_data = [
-                'transition_id' => absint($transition_id),
-                'subscriber_id' => absint($subscriber_id),
+                'transition_id' => \absint($transition_id),
+                'subscriber_id' => \absint($subscriber_id),
             ];
 
             if ($existing_id) {
@@ -169,8 +169,8 @@ class Transition_Subscribers_Database_Manager
 
             foreach ($records as $index => $record) {
                 if ((isset($record['transition_id']) || !empty($transition_id)) && isset($record['id'])) {
-                    $val_transition = !empty($transition_id) ? $transition_id : absint($record['transition_id']);
-                    $val_subscriber = absint($record['id']);
+                    $val_transition = !empty($transition_id) ? $transition_id : \absint($record['transition_id']);
+                    $val_subscriber = \absint($record['id']);
 
                     $values[] = $val_transition;
                     $values[] = $val_subscriber;
@@ -227,7 +227,7 @@ class Transition_Subscribers_Database_Manager
                 t.id DESC
         ";
 
-        return $this->wpdb->get_results($sql, ARRAY_A);
+        return $this->wpdb->get_results($sql, \ARRAY_A);
     }
 
     /**

@@ -655,7 +655,7 @@ class Database_Manager
                 $email
             );
 
-            $result = $this->wpdb->get_row($query, ARRAY_A);
+            $result = $this->wpdb->get_row($query, \ARRAY_A);
 
             if ($result && $this->cacheEnabled) {
                 wp_cache_set($cacheKey, $result, self::CACHE_GROUP, self::CACHE_TTL);
@@ -691,7 +691,7 @@ class Database_Manager
                 $subscriberId
             );
 
-            $result = $this->wpdb->get_row($query, ARRAY_A);
+            $result = $this->wpdb->get_row($query, \ARRAY_A);
 
             if ($result && $this->cacheEnabled) {
                 wp_cache_set($cacheKey, $result, self::CACHE_GROUP, self::CACHE_TTL);

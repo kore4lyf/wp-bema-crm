@@ -74,7 +74,7 @@ class Field_Database_Manager
     {
         try {
             if (!function_exists('dbDelta')) {
-                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+                require_once \ABSPATH . 'wp-admin/includes/upgrade.php';
             }
 
             $charset_collate = $this->wpdb->get_charset_collate();
@@ -88,7 +88,7 @@ class Field_Database_Manager
                 CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES {$this->campaign_table_name}(id) ON DELETE CASCADE
             ) $charset_collate;";
 
-            $result = dbDelta($sql);
+            $result = \dbDelta($sql);
 
             if (!$result) {
                 throw new Exception('Failed to create the field table.');
@@ -118,9 +118,9 @@ class Field_Database_Manager
             $result = $this->wpdb->query(
                 $this->wpdb->prepare(
                     $query,
-                    absint($id),
-                    sanitize_text_field($field_name),
-                    absint($campaign_id)
+                    \absint($id),
+                    \sanitize_text_field($field_name),
+                    \absint($campaign_id)
                 )
             );
 
@@ -155,9 +155,9 @@ class Field_Database_Manager
             $values = [];
 
             foreach ($fields_to_upsert as $field) {
-                $sanitized_id = absint($field['id']);
-                $sanitized_field_name = sanitize_text_field($field['field_name']);
-                $sanitized_campaign_id = absint($field['campaign_id']);
+                $sanitized_id = \absint($field['id']);
+                $sanitized_field_name = \sanitize_text_field($field['field_name']);
+                $sanitized_campaign_id = \absint($field['campaign_id']);
 
                 $this->logger->debug('Processing field', [
                     'id' => $sanitized_id,
@@ -199,84 +199,6 @@ class Field_Database_Manager
         }
     }
 
-
-    /**
-     * Deletes a field record from the database by its name.
-     *
-     * @param string $field_name The name of the field to delete.
-     * @return int|false The number of deleted rows on success, or false on failure.
-     */
-    public function delete_field_by_name($field_name)
-    {
-        try {
-            $deleted = $this->wpdb->delete(
-                $this->table_name,
-                ['field_name' => sanitize_text_field($field_name)],
-                ['%s']
-            );
-
-            if (false === $deleted) {
-                throw new Exception('Failed to delete field: ' . $this->wpdb->last_error);
-            }
-
-            return $deleted;
-        } catch (Exception $e) {
-            $this->logger->error('Field_Database_Manager Error: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Retrieves a single field record by its ID.
-     *
-     * @param int $id The ID of the field to retrieve.
-     * @return array|object|null A row object or array on success, null if no row is found.
-     */
-    public function get_field_by_id($id)
-    {
-        return $this->wpdb->get_row(
-            $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE id = %d",
-                absint($id)
-            ),
-            ARRAY_A
-        );
-    }
-
-    /**
-     * Retrieves a single field record by its name.
-     *
-     * @param string $field_name The name of the field to retrieve.
-     * @return array|object|null A row object or array on success, null if no row is found.
-     */
-    public function get_field_by_name($field_name)
-    {
-        return $this->wpdb->get_row(
-            $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE field_name = %s",
-                sanitize_text_field($field_name)
-            ),
-            ARRAY_A
-        );
-    }
-
-    /**
-     * Retrieves all field records associated with a specific campaign ID.
-     *
-     * @param int $campaign_id The ID of the campaign.
-     * @return array|object|null An array of row objects or arrays on success, null if no rows are found.
-     */
-    public function get_field_by_campaign_id($campaign_id)
-    {
-        return $this->wpdb->get_results(
-            $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE campaign_id = %d",
-                absint($campaign_id)
-            ),
-            ARRAY_A
-        );
-    }
-
     /**
      * Retrieves all field records from the database.
      *
@@ -284,7 +206,7 @@ class Field_Database_Manager
      */
     public function get_all_fields()
     {
-        return $this->wpdb->get_results("SELECT * FROM {$this->table_name}", ARRAY_A);
+        return $this->wpdb->get_results("SELECT * FROM {$this->table_name}", \ARRAY_A);
     }
 
     /**
@@ -321,7 +243,7 @@ class Field_Database_Manager
         try {
             $deleted = $this->wpdb->delete(
                 $this->table_name,
-                ['campaign_id' => absint($campaign_id)],
+                ['campaign_id' => \absint($campaign_id)],
                 ['%d']
             );
 

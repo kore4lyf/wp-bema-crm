@@ -226,6 +226,8 @@ class Bema_Admin_Interface
             add_action('admin_post_test_connection', [$this, 'handle_test_connection']);
             add_action('admin_post_bema_create_campaign', [$this, 'handle_create_campaign']);
             add_action('wp_ajax_update_campaign', [$this, 'handle_campaign_update']);
+            add_action('wp_ajax_bema_debug_log', [$this, 'handle_debug_log']);
+            add_action('wp_ajax_bema_get_sync_status', [$this, 'handle_get_sync_status']);
 
             $this->current_tab = $_GET['tab'] ?? 'general';
             $initialized = true;
@@ -348,6 +350,36 @@ class Bema_Admin_Interface
         try {
             $this->logger->debug('Enqueuing assets for hook: ' . $hook, []);
 
+            // Dashboard page assets
+            if ( isset($_GET['page']) && $_GET['page'] === 'bema-dashboard' ) {
+                wp_enqueue_style(
+                    'bema-dashboard-style',
+                    plugins_url('assets/css/dashboard.css', BEMA_FILE),
+                    [],
+                    BEMA_VERSION
+                );
+            }
+
+            // Settings page assets
+            if ( isset($_GET['page']) && $_GET['page'] === 'bema-settings' ) {
+                wp_enqueue_style(
+                    'bema-settings-style',
+                    plugins_url('assets/css/settings.css', BEMA_FILE),
+                    [],
+                    BEMA_VERSION
+                );
+            }
+
+            // Synchronize page assets
+            if ( isset($_GET['page']) && $_GET['page'] === 'bema-synchronize' ) {
+                wp_enqueue_style(
+                    'bema-synchronize-style',
+                    plugins_url('assets/css/synchronize.css', BEMA_FILE),
+                    [],
+                    BEMA_VERSION
+                );
+            }
+
             // Campaigns page assets
             if ( isset($_GET['page']) && $_GET['page'] === 'bema-campaigns' ) {
                 wp_enqueue_style(
@@ -385,16 +417,27 @@ class Bema_Admin_Interface
                 true
             );
 
+            // Localize bemaAdmin for admin.js
+            wp_localize_script('bema-admin-js', 'bemaAdmin', [
+                'ajaxUrl' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('bema_admin_nonce'),
+                'debug' => [
+                    'enabled' => defined('WP_DEBUG') && WP_DEBUG
+                ]
+            ]);
+
             if ( isset($_GET['page']) && $_GET['page'] === 'bema-transitions' ) {
                 wp_enqueue_style(
                     'bema-crm-tier-style',
                     plugins_url('assets/css/settings/admin-transitions-page.css', BEMA_FILE),
-                    BEMA_VERSION,
+                    [],
+                    BEMA_VERSION
                 );
         
                 wp_enqueue_script(
                     'bema-crm-tier-script',
                     plugins_url('assets/js/settings/admin-tier-table.js', BEMA_FILE),
+                    [],
                     BEMA_VERSION,
                     true
                 );
@@ -402,6 +445,7 @@ class Bema_Admin_Interface
                 wp_enqueue_script(
                     'bema-crm-tier-transitions-script',
                     plugins_url('assets/js/settings/admin-tier-transitions-table.js', BEMA_FILE),
+                    [],
                     BEMA_VERSION,
                     true
                 );
@@ -422,7 +466,8 @@ class Bema_Admin_Interface
                 wp_enqueue_style(
                     'bema-crm-database-style',
                     plugins_url('assets/css/database/admin-database-page.css', BEMA_FILE),
-                    BEMA_VERSION,
+                    [],
+                    BEMA_VERSION
                 );
         
                 wp_enqueue_script(
@@ -696,7 +741,7 @@ class Bema_Admin_Interface
             $query .= " ORDER BY date_added DESC LIMIT %d OFFSET %d";
             $params = array_merge($params, [$this->per_page, $offset]);
 
-            return $this->wpdb->get_results($this->wpdb->prepare($query, $params), ARRAY_A);
+            return $this->wpdb->get_results($this->wpdb->prepare($query, $params), \ARRAY_A);
         } catch (Exception $e) {
             $this->logger->error('Database query failed', [
                 'query' => 'get_subscribers',
@@ -725,7 +770,7 @@ class Bema_Admin_Interface
             $query .= " ORDER BY created_at DESC LIMIT %d OFFSET %d";
             $params = array_merge($params, [$this->per_page, $offset]);
 
-            return $this->wpdb->get_results($this->wpdb->prepare($query, $params), ARRAY_A);
+            return $this->wpdb->get_results($this->wpdb->prepare($query, $params), \ARRAY_A);
         } catch (Exception $e) {
             $this->logger->error('Database query failed', [
                 'query' => 'get_sync_logs',
@@ -1283,10 +1328,16 @@ class Bema_Admin_Interface
 
     public function handle_campaign_update()
     {
-        check_ajax_referer('bema_campaign_nonce', 'nonce');
-        
+        // Verify nonce for security
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'bema_campaign_nonce')) {
+            wp_send_json_error(['message' => 'Invalid nonce']);
+            return;
+        }
+
+        // Check user capabilities
         if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
+            wp_send_json_error(['message' => 'Unauthorized']);
+            return;
         }
 
         $campaign_id = intval($_POST['campaign_id']);
@@ -1307,7 +1358,7 @@ class Bema_Admin_Interface
                 'status' => $db_status
             ];
 
-            $result = $campaign_db->upsert_campaign($campaign_id, $campaign_name, $data);
+            $result = $campaign_db->update_campaign_by_id($campaign_id, $data);
             
             if ($result) {
                 wp_send_json_success(['message' => 'Campaign updated successfully']);
@@ -1321,4 +1372,71 @@ class Bema_Admin_Interface
             ]);
             wp_send_json_error(['message' => 'Error updating campaign: ' . $e->getMessage()]);
         }
-    }}
+    }
+
+    /**
+     * Handle debug log AJAX requests from frontend
+     * 
+     * @return void
+     */
+    public function handle_debug_log(): void
+    {
+        // Verify nonce for security
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'bema_admin_nonce')) {
+            wp_send_json_error(['message' => 'Invalid nonce']);
+            return;
+        }
+
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized']);
+            return;
+        }
+
+        try {
+            // Get the debug data
+            $data = isset($_POST['data']) ? json_decode(sanitize_text_field(wp_unslash($_POST['data'])), true) : [];
+            $label = isset($_POST['label']) ? sanitize_text_field(wp_unslash($_POST['label'])) : '';
+
+            // Log the debug information
+            $this->logger->debug("Frontend Debug Log [{$label}]", is_array($data) ? $data : []);
+
+            // Send success response
+            wp_send_json_success(['message' => 'Debug log recorded']);
+        } catch (Exception $e) {
+            $this->logger->error('Debug log handler error: ' . $e->getMessage());
+            wp_send_json_error(['message' => 'Error processing debug log: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Handle AJAX request for sync status
+     * 
+     * @return void
+     */
+    public function handle_get_sync_status(): void
+    {
+        // Verify nonce for security
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), 'bema_admin_nonce')) {
+            wp_send_json_error(['message' => 'Invalid nonce']);
+            return;
+        }
+
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Unauthorized']);
+            return;
+        }
+
+        try {
+            // Get the sync status data
+            $sync_status_data = $this->get_sync_status_data();
+            
+            // Send success response with sync status data
+            wp_send_json_success($sync_status_data);
+        } catch (\Exception $e) {
+            $this->logger->error('Get sync status handler error: ' . $e->getMessage());
+            wp_send_json_error(['message' => 'Error getting sync status: ' . $e->getMessage()]);
+        }
+    }
+}

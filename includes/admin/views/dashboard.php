@@ -1,6 +1,13 @@
 <?php
 namespace Bema\Admin\Views;
 
+use function esc_url;
+use function admin_url;
+use function esc_html;
+use function esc_attr__;
+use function wp_json_encode;
+use const ARRAY_A;
+
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -18,7 +25,7 @@ class Dashboard_Data {
             
             $active_campaigns = $wpdb->get_results(
                 "SELECT * FROM {$table} WHERE status = 'active' ORDER BY id DESC LIMIT 5", 
-                ARRAY_A
+                \ARRAY_A
             );
             
             return [
@@ -26,7 +33,7 @@ class Dashboard_Data {
                 'active_count' => $active,
                 'active_campaigns' => $active_campaigns ?: []
             ];
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return ['total_count' => 0, 'active_count' => 0, 'active_campaigns' => []];
         }
     }
@@ -36,17 +43,23 @@ class Dashboard_Data {
             global $wpdb;
             $table = $wpdb->prefix . 'bemacrm_sync_log';
             
-            $success = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'success'");
-            $failed = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'failed'");
+            // Check if table exists first
+            $table_exists = $wpdb->get_var( $wpdb->prepare( "SHOW TABLES LIKE %s", $table ) ) === $table;
+            if (!$table_exists) {
+                return ['success_count' => 0, 'failed_count' => 0, 'last_sync_time' => 'Never'];
+            }
+            
+            $success = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'Complete'");
+            $failed = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE status = 'Failed'");
             $last_sync = $wpdb->get_var("SELECT sync_date FROM {$table} ORDER BY sync_date DESC LIMIT 1");
             
             return [
                 'success_count' => $success,
                 'failed_count' => $failed,
-                'last_sync_time' => $last_sync
+                'last_sync_time' => $last_sync ?: 'Never'
             ];
-        } catch (Exception $e) {
-            return ['success_count' => 0, 'failed_count' => 0, 'last_sync_time' => null];
+        } catch (\Exception $e) {
+            return ['success_count' => 0, 'failed_count' => 0, 'last_sync_time' => 'Never'];
         }
     }
     
@@ -59,7 +72,7 @@ class Dashboard_Data {
             
             $status_results = $wpdb->get_results(
                 "SELECT status, COUNT(*) as count FROM {$table} GROUP BY status", 
-                ARRAY_A
+                \ARRAY_A
             );
             
             $status_counts = [
@@ -78,7 +91,7 @@ class Dashboard_Data {
                 'total_count' => $total,
                 'status_counts' => $status_counts
             ];
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return [
                 'total_count' => 0,
                 'status_counts' => ['active' => 0, 'unsubscribed' => 0, 'unconfirmed' => 0, 'bounced' => 0, 'junk' => 0]
@@ -86,78 +99,101 @@ class Dashboard_Data {
         }
     }
     
-    public static function get_tier_and_revenue_statistics(): array {
+    /**
+     * Calculate campaign revenue using EDD functions.
+     * 
+     * @param int $campaign_id The campaign ID
+     * @return float The total revenue for the campaign
+     */
+    private static function get_campaign_revenue_from_edd(int $campaign_id): float
+    {
+        try {
+            global $wpdb;
+            
+            // Get all purchase IDs for this campaign
+            $campaign_subs_table = $wpdb->prefix . 'bemacrm_campaign_subscribersmeta';
+            $purchase_ids = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT purchase_id FROM {$campaign_subs_table} WHERE campaign_id = %d AND purchase_id IS NOT NULL",
+                    $campaign_id
+                )
+            );
+            
+            $total_revenue = 0.0;
+            
+            // For each purchase ID, get the payment amount using EDD functions
+            foreach ($purchase_ids as $purchase_id) {
+                if (function_exists('edd_get_payment_amount')) {
+                    // edd_get_payment_amount returns the payment total
+                    $amount = \edd_get_payment_amount($purchase_id);
+                    $total_revenue += (float) $amount;
+                } elseif (function_exists('edd_get_payment_meta')) {
+                    // Fallback to edd_get_payment_meta
+                    $amount = \edd_get_payment_meta($purchase_id, '_edd_payment_total', true);
+                    $total_revenue += (float) $amount;
+                }
+            }
+            
+            return $total_revenue;
+        } catch (\Exception $e) {
+            // Log the error and return 0 revenue
+            error_log('Error calculating EDD revenue for campaign ' . $campaign_id . ': ' . $e->getMessage());
+            return 0.0;
+        }
+    }
+    
+    public static function get_revenue_statistics(): array {
         try {
             global $wpdb;
             $campaigns_table = $wpdb->prefix . 'bemacrm_campaignsmeta';
-            $subscribers_table = $wpdb->prefix . 'bemacrm_subscribersmeta';
-            $campaign_subs_table = $wpdb->prefix . 'bemacrm_campaign_subscribersmeta';
             
-            // Get active campaigns
-            $active_campaigns = $wpdb->get_results(
-                "SELECT * FROM {$campaigns_table} WHERE status = 'active'", 
-                ARRAY_A
+            // Get all campaigns
+            $campaigns_list = $wpdb->get_results(
+                "SELECT id, campaign, status FROM {$campaigns_table} ORDER BY id DESC",
+                \ARRAY_A
             );
+
+            $total_revenue = 0.0;
+            $campaign_revenues = [];
+
+            // Check if EDD functions are available
+            $edd_available = function_exists('edd_get_payment_meta');
             
-            $tier_data = [];
-            $total_revenue = 0;
-            
-            foreach ($active_campaigns as $campaign) {
-                $campaign_id = $campaign['id'];
-                
-                // Get tier counts for this campaign
-                $tier_results = $wpdb->get_results(
-                    $wpdb->prepare(
-                        "SELECT tier, COUNT(*) as count FROM {$campaign_subs_table} WHERE campaign_id = %d GROUP BY tier",
-                        $campaign_id
-                    ),
-                    ARRAY_A
-                );
-                
-                $tier_counts = [];
-                foreach ($tier_results as $row) {
-                    $tier_counts[$row['tier']] = (int) $row['count'];
+            if ($edd_available) {
+                // Use EDD functions to calculate revenue
+                foreach ($campaigns_list as $c) {
+                    $rev = self::get_campaign_revenue_from_edd((int) $c['id']);
+                    $total_revenue += $rev;
+                    $campaign_revenues[] = [
+                        'id' => $c['id'],
+                        'name' => $c['campaign'],
+                        'status' => $c['status'],
+                        'revenue' => $rev
+                    ];
                 }
-                
-                // Get revenue for this campaign
-                $revenue = (float) $wpdb->get_var(
-                    $wpdb->prepare(
-                        "SELECT SUM(pm.meta_value) 
-                         FROM {$campaign_subs_table} cgs
-                         JOIN {$wpdb->posts} p ON cgs.purchase_id = p.ID
-                         JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-                         WHERE cgs.campaign_id = %d 
-                         AND p.post_type = 'edd_payment'
-                         AND p.post_status = 'publish'
-                         AND pm.meta_key = '_edd_payment_total'",
-                        $campaign_id
-                    )
-                );
-                
-                $tier_data[$campaign['campaign']] = [
-                    'tiers' => $tier_counts,
-                    'revenue' => $revenue ?: 0
-                ];
-                
-                $total_revenue += $revenue ?: 0;
+            } else {
+                // Fallback to database helper method
+                $cgsm = new \Bema\Database\Campaign_Group_Subscribers_Database_Manager();
+                foreach ($campaigns_list as $c) {
+                    $rev = (float) $cgsm->get_revenue_by_campaign((int) $c['id']);
+                    $total_revenue += $rev;
+                    $campaign_revenues[] = [
+                        'id' => $c['id'],
+                        'name' => $c['campaign'],
+                        'status' => $c['status'],
+                        'revenue' => $rev
+                    ];
+                }
             }
             
-            // Subscribers without tier
-            $without_tier = (int) $wpdb->get_var(
-                "SELECT COUNT(*) FROM {$subscribers_table} s 
-                 WHERE s.id NOT IN (SELECT DISTINCT subscriber_id FROM {$campaign_subs_table})"
-            );
-            
             return [
-                'tier_data' => $tier_data,
                 'total_revenue' => $total_revenue,
-                'subscribers_without_tier' => $without_tier
+                'campaigns' => $campaign_revenues
             ];
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return [
-                'tier_data' => [],
                 'total_revenue' => 0,
-                'subscribers_without_tier' => 0
+                'campaigns' => []
             ];
         }
     }
@@ -167,14 +203,14 @@ class Dashboard_Data {
 $campaign_stats = Dashboard_Data::get_campaign_statistics();
 $sync_stats = Dashboard_Data::get_sync_statistics();
 $subscriber_stats = Dashboard_Data::get_subscriber_statistics();
-$tier_revenue_stats = Dashboard_Data::get_tier_and_revenue_statistics();
+$revenue_stats = Dashboard_Data::get_revenue_statistics();
 ?>
 
 <div class="wrap bema-dashboard">
     <div class="bema-header">
         <h1 class="bema-title">
-            <span class="bema-logo">🎵</span>
-            Bema CRM Dashboard
+            <img src="<?php echo esc_url('https://bemamusic.com/wp-content/uploads/2025/10/bema.webp'); ?>" width="50" height="50" alt="<?php echo esc_attr__('Bema Logo', 'bema_crm'); ?>" class="bema-logo"/>
+             Dashboard
         </h1>
         <p class="bema-subtitle">Music campaign management and subscriber analytics</p>
     </div>
@@ -194,7 +230,7 @@ $tier_revenue_stats = Dashboard_Data::get_tier_and_revenue_statistics();
                     <span class="dashicons dashicons-yes-alt"></span>
                 </div>
                 <div class="bema-stat-content">
-                    <div class="bema-stat-number"><?php echo esc_html($campaign_stats['active_count']); ?></div>
+                      <div class="bema-stat-number"><?php echo esc_html($campaign_stats['active_count']); ?></div>
                     <div class="bema-stat-label">Active Campaigns</div>
                 </div>
             </div>
@@ -210,38 +246,24 @@ $tier_revenue_stats = Dashboard_Data::get_tier_and_revenue_statistics();
             </div>
         </div>
         
+        <!-- Active Campaigns List -->
         <?php if (!empty($campaign_stats['active_campaigns'])): ?>
-        <div class="bema-table-container">
-            <h3 class="bema-table-title">Active Campaigns</h3>
-            <table class="bema-table">
-                <thead>
-                    <tr>
-                        <th>Campaign</th>
-                        <th>Start Date</th>
-                        <th>End Date</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($campaign_stats['active_campaigns'] as $campaign): ?>
-                        <?php 
-                        $days_left = 'N/A';
-                        if (!empty($campaign['end_date'])) {
-                            $end_date = new DateTime($campaign['end_date']);
-                            $today = new DateTime();
-                            $diff = $today->diff($end_date);
-                            $days_left = $end_date > $today ? $diff->days . ' days left' : 'Expired';
-                        }
-                        ?>
-                        <tr>
-                            <td class="bema-campaign-name"><?php echo esc_html($campaign['campaign']); ?></td>
-                            <td><?php echo esc_html($campaign['start_date'] ?: 'Not set'); ?></td>
-                            <td><?php echo esc_html($campaign['end_date'] ?: 'Not set'); ?></td>
-                            <td><span class="bema-status-badge bema-status-active"><?php echo esc_html($days_left); ?></span></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+        <div class="bema-active-campaigns">
+            <h3>Active Campaigns</h3>
+            <div class="bema-campaigns-list">
+                <?php foreach ($campaign_stats['active_campaigns'] as $campaign): ?>
+                    <div class="bema-campaign-item">
+                        <div class="bema-campaign-name"><?php echo esc_html($campaign['campaign']); ?></div>
+                        <div class="bema-campaign-dates">
+                            <?php 
+                            $start = $campaign['start_date'] ? date('M j', strtotime($campaign['start_date'])) : 'No start';
+                            $end = $campaign['end_date'] ? date('M j', strtotime($campaign['end_date'])) : 'No end';
+                            echo esc_html("$start - $end");
+                            ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
         </div>
         <?php endif; ?>
     </div>
@@ -315,423 +337,100 @@ $tier_revenue_stats = Dashboard_Data::get_tier_and_revenue_statistics();
         </div>
     </div>
     
-    <!-- Revenue & Tier Analytics -->
-    <div class="bema-row">
-        <!-- Revenue Metrics -->
-        <div class="bema-section bema-col-half">
-            <div class="bema-section-header">
-                <h2><span class="dashicons dashicons-chart-line"></span> Revenue Analytics</h2>
-            </div>
-            
-            <div class="bema-revenue-overview">
-                <div class="bema-total-revenue">
-                    <div class="bema-big-number bema-revenue-number">$<?php echo esc_html(number_format($tier_revenue_stats['total_revenue'], 2)); ?></div>
-                    <div class="bema-big-label">Total Revenue</div>
-                </div>
-                
-                <?php if (!empty($tier_revenue_stats['tier_data'])): ?>
-                <div class="bema-revenue-breakdown">
-                    <?php foreach (array_slice($tier_revenue_stats['tier_data'], 0, 3) as $campaign_name => $data): ?>
-                        <div class="bema-revenue-item">
-                            <div class="bema-campaign-revenue">
-                                <span class="bema-campaign-name"><?php echo esc_html($campaign_name); ?></span>
-                                <span class="bema-campaign-amount">$<?php echo esc_html(number_format($data['revenue'], 2)); ?></span>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-                <?php endif; ?>
-            </div>
+    <!-- Revenue Analytics -->
+    <div class="bema-section">
+        <div class="bema-section-header">
+            <h2><span class="dashicons dashicons-chart-line"></span> Revenue Analytics</h2>
         </div>
         
-        <!-- Tier Breakdown -->
-        <div class="bema-section bema-col-half">
-            <div class="bema-section-header">
-                <h2><span class="dashicons dashicons-awards"></span> Tier Distribution</h2>
+        <div class="bema-revenue-overview">
+            <div class="bema-total-revenue">
+                <div class="bema-big-number bema-revenue-number">$<?php echo esc_html(number_format($revenue_stats['total_revenue'], 2)); ?></div>
+                <div class="bema-big-label">Total Revenue</div>
             </div>
             
-            <div class="bema-tier-overview">
-                <div class="bema-no-tier">
-                    <span class="bema-tier-icon">👥</span>
-                    <div class="bema-tier-info">
-                        <div class="bema-tier-count"><?php echo esc_html($tier_revenue_stats['subscribers_without_tier']); ?></div>
-                        <div class="bema-tier-label">Without Tier</div>
+            <div class="bema-revenue-campaigns">
+                <div class="bema-campaigns-header">
+                    <h3>Campaign Revenue</h3>
+                    <div class="bema-pagination-controls">
+                        <button id="prev-page" disabled>Previous</button>
+                        <span id="page-info">Page 1</span>
+                        <button id="next-page">Next</button>
                     </div>
                 </div>
                 
-                <?php if (!empty($tier_revenue_stats['tier_data'])): ?>
-                <div class="bema-tier-list">
-                    <?php foreach ($tier_revenue_stats['tier_data'] as $campaign_name => $data): ?>
-                        <?php foreach ($data['tiers'] as $tier => $count): ?>
-                            <div class="bema-tier-item">
-                                <span class="bema-tier-badge"><?php echo esc_html(strtoupper($tier)); ?></span>
-                                <span class="bema-tier-campaign"><?php echo esc_html($campaign_name); ?></span>
-                                <span class="bema-tier-count"><?php echo esc_html($count); ?></span>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endforeach; ?>
+                <div id="campaigns-list" class="bema-campaigns-revenue-list">
+                    <!-- JavaScript will populate this -->
                 </div>
-                <?php endif; ?>
             </div>
         </div>
     </div>
 </div>
 
-<style>
-.bema-dashboard {
-    max-width: 1400px;
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-.bema-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 2rem;
-    border-radius: 12px;
-    margin-bottom: 2rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-}
-
-.bema-title {
-    margin: 0;
-    font-size: 2.5rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-}
-
-.bema-logo {
-    font-size: 3rem;
-}
-
-.bema-subtitle {
-    margin: 0.5rem 0 0 0;
-    opacity: 0.9;
-    font-size: 1.1rem;
-}
-
-.bema-section {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    border: 1px solid #e1e5e9;
-}
-
-.bema-section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-    border-bottom: 2px solid #f8f9fa;
-}
-
-.bema-section-header h2 {
-    margin: 0;
-    color: #2c3e50;
-    font-size: 1.4rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.bema-btn {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    text-decoration: none;
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: all 0.2s;
-}
-
-.bema-btn-primary {
-    background: #3498db;
-    color: white;
-}
-
-.bema-btn-primary:hover {
-    background: #2980b9;
-    color: white;
-}
-
-.bema-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-
-.bema-stats-compact {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
-.bema-stat-card {
-    background: white;
-    border-radius: 10px;
-    padding: 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    border-left: 4px solid;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-    transition: transform 0.2s;
-}
-
-.bema-stat-card:hover {
-    transform: translateY(-2px);
-}
-
-.bema-card-primary { border-left-color: #3498db; }
-.bema-card-secondary { border-left-color: #95a5a6; }
-.bema-card-success { border-left-color: #27ae60; }
-.bema-card-danger { border-left-color: #e74c3c; }
-
-.bema-stat-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-}
-
-.bema-card-primary .bema-stat-icon { background: #ebf3fd; color: #3498db; }
-.bema-card-secondary .bema-stat-icon { background: #f8f9fa; color: #95a5a6; }
-.bema-card-success .bema-stat-icon { background: #eafaf1; color: #27ae60; }
-.bema-card-danger .bema-stat-icon { background: #fdf2f2; color: #e74c3c; }
-
-.bema-stat-number {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #2c3e50;
-    line-height: 1;
-}
-
-.bema-stat-label {
-    color: #7f8c8d;
-    font-size: 0.9rem;
-    margin-top: 0.25rem;
-}
-
-.bema-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.bema-col-half {
-    margin-bottom: 0;
-}
-
-.bema-table-container {
-    margin-top: 1rem;
-}
-
-.bema-table-title {
-    color: #2c3e50;
-    margin-bottom: 1rem;
-    font-size: 1.1rem;
-}
-
-.bema-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.bema-table th {
-    background: #f8f9fa;
-    padding: 1rem;
-    text-align: left;
-    font-weight: 600;
-    color: #2c3e50;
-    border-bottom: 2px solid #e9ecef;
-}
-
-.bema-table td {
-    padding: 1rem;
-    border-bottom: 1px solid #f1f3f4;
-}
-
-.bema-campaign-name {
-    font-weight: 600;
-    color: #2c3e50;
-}
-
-.bema-status-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 500;
-}
-
-.bema-status-active {
-    background: #d4edda;
-    color: #155724;
-}
-
-.bema-last-sync {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: #6c757d;
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid #f1f3f4;
-}
-
-.bema-subscriber-overview, .bema-revenue-overview, .bema-tier-overview {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-}
-
-.bema-total-subscribers, .bema-total-revenue {
-    text-align: center;
-    padding: 1rem;
-    background: #f8f9fa;
-    border-radius: 8px;
-}
-
-.bema-big-number {
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: #2c3e50;
-}
-
-.bema-revenue-number {
-    color: #27ae60;
-}
-
-.bema-big-label {
-    color: #6c757d;
-    margin-top: 0.5rem;
-}
-
-.bema-subscriber-breakdown, .bema-revenue-breakdown {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.bema-breakdown-item, .bema-revenue-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem;
-    background: #f8f9fa;
-    border-radius: 6px;
-}
-
-.bema-breakdown-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    margin-right: 0.5rem;
-}
-
-.bema-dot-active { background: #27ae60; }
-.bema-dot-unconfirmed { background: #f39c12; }
-.bema-dot-unsubscribed { background: #e74c3c; }
-
-.bema-breakdown-label {
-    flex: 1;
-}
-
-.bema-breakdown-count, .bema-campaign-amount {
-    font-weight: 600;
-    color: #2c3e50;
-}
-
-.bema-campaign-revenue {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-}
-
-.bema-no-tier {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    background: #f8f9fa;
-    border-radius: 8px;
-}
-
-.bema-tier-icon {
-    font-size: 2rem;
-}
-
-.bema-tier-count {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #2c3e50;
-}
-
-.bema-tier-label {
-    color: #6c757d;
-}
-
-.bema-tier-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.bema-tier-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    background: #f8f9fa;
-    border-radius: 6px;
-}
-
-.bema-tier-badge {
-    background: #3498db;
-    color: white;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    min-width: 40px;
-    text-align: center;
-}
-
-.bema-tier-campaign {
-    flex: 1;
-    font-size: 0.9rem;
-    color: #6c757d;
-}
-
-@media (max-width: 768px) {
-    .bema-row {
-        grid-template-columns: 1fr;
+<script type="text/javascript">
+jQuery(document).ready(function($) {
+    // Revenue campaigns data from PHP
+    const campaignsData = <?php echo wp_json_encode( $revenue_stats['campaigns'] ); ?>;
+    const itemsPerPage = 5;
+    let currentPage = 1;
+    
+    function displayPage(page) {
+        const startIndex = (page - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        const pageData = campaignsData.slice(startIndex, endIndex);
+        
+        let html = '';
+        pageData.forEach(campaign => {
+            const statusClass = campaign.status === 'active' ? 'status-active' : 
+                               campaign.status === 'draft' ? 'status-draft' : 'status-inactive';
+            
+            html += `
+                <div class="bema-campaign-revenue-item">
+                    <div class="bema-campaign-info">
+                        <span class="bema-campaign-name">${campaign.name}</span>
+                        <span class="bema-status-badge ${statusClass}">${campaign.status}</span>
+                    </div>
+                    <div class="bema-campaign-amount">$${campaign.revenue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                </div>
+            `;
+        });
+        
+        $('#campaigns-list').html(html);
+        
+        // Update pagination controls
+        const totalPages = Math.ceil(campaignsData.length / itemsPerPage);
+        $('#page-info').text(`Page ${page} of ${totalPages}`);
+        $('#prev-page').prop('disabled', page === 1);
+        $('#next-page').prop('disabled', page === totalPages);
     }
     
-    .bema-stats-grid {
-        grid-template-columns: 1fr;
-    }
+    // Pagination event handlers
+    $('#prev-page').on('click', function() {
+        if (currentPage > 1) {
+            currentPage--;
+            displayPage(currentPage);
+        }
+    });
     
-    .bema-title {
-        font-size: 2rem;
-    }
+    $('#next-page').on('click', function() {
+        const totalPages = Math.ceil(campaignsData.length / itemsPerPage);
+        if (currentPage < totalPages) {
+            currentPage++;
+            displayPage(currentPage);
+        }
+    });
     
-    .bema-section-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1rem;
-    }
-}
-</style>
+    // Initial display
+    displayPage(1);
+});
+</script>
+
+<?php
+// Enqueue dashboard-specific CSS
+wp_enqueue_style(
+    'bema-dashboard-css',
+    plugins_url('assets/css/dashboard.css', BEMA_FILE),
+    [],
+    BEMA_VERSION
+);
+?>

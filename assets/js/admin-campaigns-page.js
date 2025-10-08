@@ -1,15 +1,15 @@
-(function ($) {
-    $(document).ready(function () {
+(function($) {
+    $(document).ready(function() {
         // Edit button click
         $(document).on('click', '.edit-btn', function(e) {
             e.preventDefault();
             var $row = $(this).closest('tr');
             
-            // Show edit inputs, hide display values
+            // Hide display values and show edit inputs
             $row.find('.display-value').hide();
             $row.find('.edit-input').show();
             
-            // Show submit/cancel buttons, hide edit button
+            // Hide edit button and show submit/cancel buttons
             $(this).hide();
             $row.find('.submit-btn, .cancel-btn').show();
         });
@@ -18,43 +18,16 @@
         $(document).on('click', '.cancel-btn', function(e) {
             e.preventDefault();
             var $row = $(this).closest('tr');
-
-            // Restore original values from display
-            var startText = $row.find('[data-field="start_date"] .display-value').text().trim();
-            var endText = $row.find('[data-field="end_date"] .display-value').text().trim();
-            var statusText = $row.find('[data-field="status"] .display-value .status-badge').text().trim().toLowerCase();
-
-            // Convert formatted dates back to yyyy-mm-dd when possible
-            var startInput = $row.find('[data-field="start_date"] .edit-input');
-            var endInput = $row.find('[data-field="end_date"] .edit-input');
-            startInput.val(parseDateToInput(startText));
-            endInput.val(parseDateToInput(endText));
-
-            // Restore status select
-            var statusInput = $row.find('[data-field="status"] .edit-input');
-            if (statusText) {
-                statusInput.val(statusText);
-            }
             
-            // Hide edit inputs, show display values
+            // Hide edit inputs and show display values
             $row.find('.edit-input').hide();
             $row.find('.display-value').show();
             
-            // Show edit button, hide submit/cancel buttons
-            $row.find('.edit-btn').show();
+            // Hide submit/cancel buttons and show edit button
             $(this).hide();
             $row.find('.submit-btn').hide();
+            $row.find('.edit-btn').show();
         });
-
-        function parseDateToInput(formatted) {
-            // Expect formats like 'January 1, 2025' or '—'
-            if (!formatted || formatted === '—') return '';
-            var date = new Date(formatted);
-            if (isNaN(date.getTime())) return '';
-            var m = (date.getMonth() + 1).toString().padStart(2, '0');
-            var d = date.getDate().toString().padStart(2, '0');
-            return date.getFullYear() + '-' + m + '-' + d;
-        }
 
         // Submit button click
         $(document).on('click', '.submit-btn', function(e) {
@@ -80,12 +53,15 @@
             
             $button.prop('disabled', true).text('Saving...');
             
+            // Get nonce value correctly
+            var nonce = $('input[name="bema_campaign_nonce"]').val();
+            
             $.ajax({
                 url: ajaxurl,
                 type: 'POST',
                 data: {
                     action: 'update_campaign',
-                    nonce: $('#bema_campaign_nonce').val(),
+                    nonce: nonce,
                     campaign_id: campaignId,
                     campaign_name: campaignName,
                     start_date: startDate,
@@ -109,8 +85,9 @@
                         showNotice(response.data.message || 'Failed to update campaign', 'error');
                     }
                 },
-                error: function() {
-                    showNotice('Error updating campaign', 'error');
+                error: function(xhr, status, error) {
+                    console.log('AJAX Error:', {xhr: xhr, status: status, error: error});
+                    showNotice('Error updating campaign: ' + error, 'error');
                 },
                 complete: function() {
                     $button.prop('disabled', false).text('Submit');

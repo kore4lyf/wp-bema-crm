@@ -4,6 +4,7 @@ namespace Bema\Database;
 
 use Exception;
 use Bema\Bema_CRM_Logger;
+use const ARRAY_A;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -37,7 +38,7 @@ class Campaign_Database_Manager
     {
         try {
             if (!function_exists('dbDelta')) {
-                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+                require_once \ABSPATH . 'wp-admin/includes/upgrade.php';
             }
 
             $charset_collate = $this->wpdb->get_charset_collate();
@@ -55,7 +56,7 @@ class Campaign_Database_Manager
                 CONSTRAINT fk_bemacrm_campaignsmeta_product FOREIGN KEY (product_id) REFERENCES {$posts_table}(ID) ON DELETE CASCADE
             ) $charset_collate;";
 
-            dbDelta($sql);
+            \dbDelta($sql);
 
             if ($this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") !== $this->table_name) {
                 throw new Exception('Failed to create the database table.');
@@ -92,29 +93,29 @@ class Campaign_Database_Manager
         try {
             // Validate status
             $valid_statuses = ['draft', 'pending', 'active', 'completed'];
-            if (!in_array($status, $valid_statuses)) {
+            if (!\in_array($status, $valid_statuses)) {
                 $status = 'draft';
             }
 
             $data = [
-                'id' => absint($id),
-                'campaign' => sanitize_text_field($campaign),
+                'id' => \absint($id),
+                'campaign' => \sanitize_text_field($campaign),
                 'status' => $status
             ];
             $format = ['%d', '%s', '%s'];
 
             if (!is_null($product_id)) {
-                $data['product_id'] = absint($product_id);
+                $data['product_id'] = \absint($product_id);
                 $format[] = '%d';
             }
 
             if (!is_null($start_date)) {
-                $data['start_date'] = sanitize_text_field($start_date);
+                $data['start_date'] = \sanitize_text_field($start_date);
                 $format[] = '%s';
             }
 
             if (!is_null($end_date)) {
-                $data['end_date'] = sanitize_text_field($end_date);
+                $data['end_date'] = \sanitize_text_field($end_date);
                 $format[] = '%s';
             }
 
@@ -124,7 +125,7 @@ class Campaign_Database_Manager
                 throw new Exception('Failed to insert campaign: ' . $this->wpdb->last_error);
             }
 
-            return absint($id);
+            return \absint($id);
         } catch (Exception $e) {
             $this->logger->error('Failed to insert campaign', [
                 'campaign' => $campaign,
@@ -165,16 +166,16 @@ class Campaign_Database_Manager
                 // Validate status
                 $status = $campaign['status'] ?? 'draft';
                 $valid_statuses = ['draft', 'pending', 'active', 'completed'];
-                if (!in_array($status, $valid_statuses)) {
+                if (!\in_array($status, $valid_statuses)) {
                     $status = 'draft';
                 }
                 
                 $placeholders[] = "(%d, %s, %d, %s, %s, %s)";
-                $values[] = absint($campaign['id']);
-                $values[] = sanitize_text_field($campaign['campaign'] ?? '');
-                $values[] = absint($campaign['product_id'] ?? 0);
-                $values[] = !empty($campaign['start_date']) ? sanitize_text_field($campaign['start_date']) : null;
-                $values[] = !empty($campaign['end_date']) ? sanitize_text_field($campaign['end_date']) : null;
+                $values[] = \absint($campaign['id']);
+                $values[] = \sanitize_text_field($campaign['campaign'] ?? '');
+                $values[] = \absint($campaign['product_id'] ?? 0);
+                $values[] = !empty($campaign['start_date']) ? \sanitize_text_field($campaign['start_date']) : null;
+                $values[] = !empty($campaign['end_date']) ? \sanitize_text_field($campaign['end_date']) : null;
                 $values[] = $status;
             }
 
@@ -200,7 +201,7 @@ class Campaign_Database_Manager
 
             return $result;
         } catch (Exception $e) {
-            $this->logger->error('Failed to get all campaigns', [
+            $this->logger->error('Failed to bulk upsert campaigns', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -208,130 +209,18 @@ class Campaign_Database_Manager
         }
     }
 
-
     /**
-     * Fetches a single campaign record by its unique campaign ID, including published product details.
-     */
-    public function get_campaign_by_id(int $id): ?array
-    {
-        $posts_table = $this->wpdb->posts;
-        $term_relationships_table = $this->wpdb->term_relationships;
-        $term_taxonomy_table = $this->wpdb->term_taxonomy;
-        $terms_table = $this->wpdb->terms;
-
-        $query = $this->wpdb->prepare(
-            "
-            SELECT
-                t1.id,
-                t1.campaign,
-                t1.product_id,
-                t2.post_title AS album,
-                YEAR(t2.post_date) AS year,
-                (SELECT t4.name FROM {$term_relationships_table} AS t3
-                INNER JOIN {$term_taxonomy_table} AS t5 ON t3.term_taxonomy_id = t5.term_taxonomy_id
-                INNER JOIN {$terms_table} AS t4 ON t4.term_id = t5.term_id
-                WHERE t3.object_id = t1.product_id AND t5.taxonomy = 'download_category' AND t4.slug LIKE '%s' LIMIT 1) AS artist
-            FROM {$this->table_name} AS t1
-            LEFT JOIN {$posts_table} AS t2 ON t1.product_id = t2.ID
-            WHERE t1.id = %d AND (t2.post_status = 'publish' OR t1.product_id IS NULL)
-            LIMIT 1
-            ",
-            '%-artist',
-            absint($id)
-        );
-
-        $result = $this->wpdb->get_row($query, ARRAY_A);
-        return $result ?: null;
-    }
-
-    /**
-     * Fetches a single campaign record by its campaign name, including published product details.
-     */
-    public function get_campaign_by_name(string $campaign_name): ?array
-    {
-        $posts_table = $this->wpdb->posts;
-        $term_relationships_table = $this->wpdb->term_relationships;
-        $term_taxonomy_table = $this->wpdb->term_taxonomy;
-        $terms_table = $this->wpdb->terms;
-
-        $query = $this->wpdb->prepare(
-            "
-            SELECT
-                t1.id,
-                t1.campaign,
-                t1.product_id,
-                t1.start_date,
-                t1.end_date,
-                t1.status,
-                t2.post_title AS album,
-                YEAR(t2.post_date) AS year,
-                (SELECT t4.name FROM {$term_relationships_table} AS t3
-                INNER JOIN {$term_taxonomy_table} AS t5 ON t3.term_taxonomy_id = t5.term_taxonomy_id
-                INNER JOIN {$terms_table} AS t4 ON t4.term_id = t5.term_id
-                WHERE t3.object_id = t1.product_id AND t5.taxonomy = 'download_category' AND t4.slug LIKE '%s' LIMIT 1) AS artist
-            FROM {$this->table_name} AS t1
-            LEFT JOIN {$posts_table} AS t2 ON t1.product_id = t2.ID
-            WHERE t1.campaign = %s AND (t2.post_status = 'publish' OR t1.product_id IS NULL)
-            LIMIT 1
-            ",
-            '%-artist',
-            sanitize_text_field($campaign_name)
-        );
-
-        $result = $this->wpdb->get_row($query, ARRAY_A);
-        return $result ?: null;
-    }
-
-    /**
-     * Retrieves all unique campaign names from the database.
+     * Retrieves all campaigns from the database.
      *
-     * @return array An array of campaign names, or an empty array on failure.
-     */
-    public function get_all_campaign_names(): array
-    {
-        try {
-            $query = "SELECT campaign FROM {$this->table_name}";
-            $results = $this->wpdb->get_col($query);
-
-            if (is_wp_error($results)) {
-                throw new Exception("Database query failed: " . $results->get_error_message());
-            }
-            
-            return $results ?: [];
-        } catch (Exception $e) {
-            $this->logger->error('Failed to get campaigns list', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return [];
-        }
-    }
-
-    /**
-     * Retrieves all published campaign records, including product details.
+     * @return array An array of campaign data.
      */
     public function get_all_campaigns(): array
     {
         $posts_table = $this->wpdb->posts;
-        $term_relationships_table = $this->wpdb->term_relationships;
-        $term_taxonomy_table = $this->wpdb->term_taxonomy;
-        $terms_table = $this->wpdb->terms;
 
         $query = $this->wpdb->prepare(
             "
-            SELECT
-                t1.id,
-                t1.campaign,
-                t1.product_id,
-                t1.start_date,
-                t1.end_date,
-                t1.status,
-                t2.post_title AS album,
-                YEAR(t2.post_date) AS year,
-                (SELECT t4.name FROM {$term_relationships_table} AS t3
-                INNER JOIN {$term_taxonomy_table} AS t5 ON t3.term_taxonomy_id = t5.term_taxonomy_id
-                INNER JOIN {$terms_table} AS t4 ON t4.term_id = t5.term_id
-                WHERE t3.object_id = t1.product_id AND t5.taxonomy = 'download_category' AND t4.slug LIKE '%s' LIMIT 1) AS artist
+            SELECT t1.campaign
             FROM {$this->table_name} AS t1
             LEFT JOIN {$posts_table} AS t2 ON t1.product_id = t2.ID
             WHERE t2.post_status = 'publish' OR t1.product_id IS NULL
@@ -361,18 +250,18 @@ class Campaign_Database_Manager
 
         // Validate orderby parameter
         $valid_orderby = ['id', 'campaign', 'product_id', 'start_date', 'end_date', 'status'];
-        if (!in_array($orderby, $valid_orderby, true)) {
+        if (!\in_array($orderby, $valid_orderby, true)) {
             $orderby = 'start_date';
         }
 
         // Validate order parameter
-        $order = strtoupper($order);
-        if (!in_array($order, ['ASC', 'DESC'], true)) {
+        $order = \strtoupper($order);
+        if (!\in_array($order, ['ASC', 'DESC'], true)) {
             $order = 'DESC';
         }
 
         // Handle NULL values for date sorting - put NULL dates last
-        if (in_array($orderby, ['start_date', 'end_date'])) {
+        if (\in_array($orderby, ['start_date', 'end_date'])) {
             $order_clause = "ORDER BY t1.$orderby IS NULL, t1.$orderby $order";
         } else {
             $order_clause = "ORDER BY t1.$orderby $order";
@@ -444,24 +333,24 @@ class Campaign_Database_Manager
             foreach ($data as $key => $value) {
                 switch ($key) {
                     case 'campaign':
-                        $update_data['campaign'] = sanitize_text_field($value);
+                        $update_data['campaign'] = \sanitize_text_field($value);
                         $format[] = '%s';
                         break;
                     case 'product_id':
-                        $update_data['product_id'] = is_null($value) ? null : absint($value);
+                        $update_data['product_id'] = is_null($value) ? null : \absint($value);
                         $format[] = '%d';
                         break;
                     case 'start_date':
-                        $update_data['start_date'] = is_null($value) ? null : sanitize_text_field($value);
+                        $update_data['start_date'] = is_null($value) ? null : \sanitize_text_field($value);
                         $format[] = '%s';
                         break;
                     case 'end_date':
-                        $update_data['end_date'] = is_null($value) ? null : sanitize_text_field($value);
+                        $update_data['end_date'] = is_null($value) ? null : \sanitize_text_field($value);
                         $format[] = '%s';
                         break;
                     case 'status':
                         $valid_statuses = ['draft', 'pending', 'active', 'completed'];
-                        $status = in_array($value, $valid_statuses) ? $value : 'draft';
+                        $status = \in_array($value, $valid_statuses) ? $value : 'draft';
                         $update_data['status'] = $status;
                         $format[] = '%s';
                         break;
@@ -475,7 +364,7 @@ class Campaign_Database_Manager
             $updated = $this->wpdb->update(
                 $this->table_name,
                 $update_data,
-                ['id' => absint($id)],
+                ['id' => \absint($id)],
                 $format,
                 ['%d']
             );
@@ -512,20 +401,20 @@ class Campaign_Database_Manager
             foreach ($data as $key => $value) {
                 switch ($key) {
                     case 'product_id':
-                        $update_data['product_id'] = is_null($value) ? null : absint($value);
+                        $update_data['product_id'] = is_null($value) ? null : \absint($value);
                         $format[] = '%d';
                         break;
                     case 'start_date':
-                        $update_data['start_date'] = is_null($value) ? null : sanitize_text_field($value);
+                        $update_data['start_date'] = is_null($value) ? null : \sanitize_text_field($value);
                         $format[] = '%s';
                         break;
                     case 'end_date':
-                        $update_data['end_date'] = is_null($value) ? null : sanitize_text_field($value);
+                        $update_data['end_date'] = is_null($value) ? null : \sanitize_text_field($value);
                         $format[] = '%s';
                         break;
                     case 'status':
                         $valid_statuses = ['draft', 'pending', 'active', 'completed'];
-                        $status = in_array($value, $valid_statuses) ? $value : 'draft';
+                        $status = \in_array($value, $valid_statuses) ? $value : 'draft';
                         $update_data['status'] = $status;
                         $format[] = '%s';
                         break;
@@ -539,7 +428,7 @@ class Campaign_Database_Manager
             $updated = $this->wpdb->update(
                 $this->table_name,
                 $update_data,
-                ['campaign' => sanitize_text_field($campaign)],
+                ['campaign' => \sanitize_text_field($campaign)],
                 $format,
                 ['%s']
             );
@@ -561,46 +450,17 @@ class Campaign_Database_Manager
     }
 
     /**
-     * Inserts or updates a campaign record.
+     * Deletes a campaign record by its ID.
+     *
+     * @param int $id The ID of the campaign to delete.
+     * @return bool True on success, false on failure.
      */
-    public function upsert_campaign(int $id, string $campaign, array $data): bool
-    {
-        try {
-            $existing_campaign = $this->get_campaign_by_id($id);
-
-            if ($existing_campaign) {
-                // If the campaign exists, update it with the new data.
-                return $this->update_campaign_by_id($id, $data);
-            } else {
-                // If the campaign does not exist, insert a new record.
-                $product_id = $data['product_id'] ?? null;
-                $start_date = $data['start_date'] ?? null;
-                $end_date = $data['end_date'] ?? null;
-                $status = $data['status'] ?? 'draft';
-
-                return $this->insert_campaign($id, $campaign, $product_id, $start_date, $end_date, $status) !== false;
-            }
-        } catch (Exception $e) {
-            $this->logger->error('Failed to upsert campaign', [
-                'campaign' => $campaign,
-                'data' => $data,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return false;
-        }
-    }
-
-
-    /**
-     * Deletes a campaign record by the campaign ID.
-     */
-    public function delete_campaign_by_id(int $id): int|false
+    public function delete_campaign_by_id(int $id): bool
     {
         try {
             $deleted = $this->wpdb->delete(
                 $this->table_name,
-                ['id' => absint($id)],
+                ['id' => \absint($id)],
                 ['%d']
             );
 
@@ -608,7 +468,7 @@ class Campaign_Database_Manager
                 throw new Exception('Failed to delete campaign: ' . $this->wpdb->last_error);
             }
 
-            return $deleted;
+            return $deleted > 0;
         } catch (Exception $e) {
             $this->logger->error('Failed to delete campaign by ID', [
                 'id' => $id,
@@ -620,53 +480,132 @@ class Campaign_Database_Manager
     }
 
     /**
-     * Deletes a campaign record by the campaign name. Note: campaign names are not unique.
+     * Retrieves a campaign by its ID.
+     *
+     * @param int $id The ID of the campaign to retrieve.
+     * @return array|null The campaign data or null if not found.
      */
-    public function delete_campaign_by_name(string $campaign): int|false
+    public function get_campaign_by_id(int $id): ?array
     {
-        try {
-            $deleted = $this->wpdb->delete(
-                $this->table_name,
-                ['campaign' => sanitize_text_field($campaign)],
-                ['%s']
-            );
+        $query = $this->wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE id = %d",
+            \absint($id)
+        );
 
-            if (false === $deleted) {
-                throw new Exception('Failed to delete campaign: ' . $this->wpdb->last_error);
-            }
+        $result = $this->wpdb->get_row($query, ARRAY_A);
 
-            return $deleted;
-        } catch (Exception $e) {
-            $this->logger->error('Failed to delete campaign by name', [
-                'campaign' => $campaign,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return false;
-        }
+        return $result ? $result : null;
     }
 
     /**
-     * Deletes the entire table.
+     * Retrieves a campaign by its name.
+     *
+     * @param string $campaign_name The name of the campaign to retrieve.
+     * @return array|null The campaign data or null if not found.
      */
-    public function delete_table(): bool
+    public function get_campaign_by_name(string $campaign_name): ?array
     {
-        try {
-            $sql = "DROP TABLE IF EXISTS {$this->table_name}";
-            $this->wpdb->query($sql);
+        $query = $this->wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE campaign = %s",
+            \sanitize_text_field($campaign_name)
+        );
 
-            if ($this->wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") === $this->table_name) {
-                throw new Exception("Failed to delete the database table: {$this->table_name}");
-            }
+        $result = $this->wpdb->get_row($query, ARRAY_A);
 
-            return true;
-        } catch (Exception $e) {
-            $this->logger->error('Failed to delete campaigns table', [
-                'table_name' => $this->table_name,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return false;
+        return $result ? $result : null;
+    }
+
+    /**
+     * Checks if a campaign exists by its ID.
+     *
+     * @param int $id The ID of the campaign to check.
+     * @return bool True if the campaign exists, false otherwise.
+     */
+    public function campaign_exists_by_id(int $id): bool
+    {
+        $count = $this->wpdb->get_var(
+            $this->wpdb->prepare(
+                "SELECT COUNT(*) FROM {$this->table_name} WHERE id = %d",
+                \absint($id)
+            )
+        );
+
+        return (int) $count > 0;
+    }
+
+    /**
+     * Checks if a campaign exists by its name.
+     *
+     * @param string $campaign_name The name of the campaign to check.
+     * @return bool True if the campaign exists, false otherwise.
+     */
+    public function campaign_exists_by_name(string $campaign_name): bool
+    {
+        $count = $this->wpdb->get_var(
+            $this->wpdb->prepare(
+                "SELECT COUNT(*) FROM {$this->table_name} WHERE campaign = %s",
+                \sanitize_text_field($campaign_name)
+            )
+        );
+
+        return (int) $count > 0;
+    }
+
+    /**
+     * Gets all campaigns with a specific status.
+     *
+     * @param string $status The status to filter by.
+     * @return array An array of campaigns with the specified status.
+     */
+    public function get_campaigns_by_status(string $status): array
+    {
+        $valid_statuses = ['draft', 'pending', 'active', 'completed'];
+        if (!\in_array($status, $valid_statuses)) {
+            return [];
         }
+
+        $query = $this->wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE status = %s",
+            $status
+        );
+
+        $results = $this->wpdb->get_results($query, ARRAY_A);
+        return $results ?: [];
+    }
+
+    /**
+     * Gets all active campaigns.
+     *
+     * @return array An array of active campaigns.
+     */
+    public function get_active_campaigns(): array
+    {
+        return $this->get_campaigns_by_status('active');
+    }
+
+    /**
+     * Gets all campaigns within a date range.
+     *
+     * @param string $start_date Start date in Y-m-d format.
+     * @param string $end_date End date in Y-m-d format.
+     * @return array An array of campaigns within the date range.
+     */
+    public function get_campaigns_by_date_range(string $start_date, string $end_date): array
+    {
+        $query = $this->wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE 
+             (start_date >= %s AND start_date <= %s) OR
+             (end_date >= %s AND end_date <= %s) OR
+             (start_date <= %s AND end_date >= %s)",
+            $start_date,
+            $end_date,
+            $start_date,
+            $end_date,
+            $start_date,
+            $end_date
+        );
+
+        $results = $this->wpdb->get_results($query, ARRAY_A);
+        return $results ?: [];
     }
 }

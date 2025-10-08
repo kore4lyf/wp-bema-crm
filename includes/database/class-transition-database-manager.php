@@ -52,7 +52,7 @@ class Transition_Database_Manager
     {
         try {
             if (!function_exists('dbDelta')) {
-                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+                require_once \ABSPATH . 'wp-admin/includes/upgrade.php';
             }
 
             $charset_collate = $this->wpdb->get_charset_collate();
@@ -70,7 +70,7 @@ class Transition_Database_Manager
                 CONSTRAINT fk_destination FOREIGN KEY (destination) REFERENCES {$this->campaigns_table}(id) ON DELETE CASCADE
             ) $charset_collate;";
 
-            dbDelta($sql);
+            \dbDelta($sql);
 
             // INFO: Log successful table creation for monitoring
             $this->logger->info('Transitions table created successfully', [
@@ -83,7 +83,7 @@ class Transition_Database_Manager
             $this->logger->error('Failed to create transitions table', [
                 'table_name' => $this->table_name,
                 'error' => $e->getMessage(),
-                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+                'trace' => \WP_DEBUG ? $e->getTraceAsString() : null
             ]);
             return false;
         }
@@ -103,11 +103,11 @@ class Transition_Database_Manager
     {
         try {
             $record_data = [
-                'source' => absint($source_id),
-                'destination' => absint($destination_id),
-                'status' => sanitize_text_field($status),
-                'subscribers' => absint($subscribers),
-                'transition_date' => current_time('mysql'),
+                'source' => \absint($source_id),
+                'destination' => \absint($destination_id),
+                'status' => \sanitize_text_field($status),
+                'subscribers' => \absint($subscribers),
+                'transition_date' => \current_time('mysql'),
             ];
 
             $inserted = $this->wpdb->insert(
@@ -140,7 +140,7 @@ class Transition_Database_Manager
                 'subscribers' => $subscribers,
                 'db_error' => $this->wpdb->last_error,
                 'error' => $e->getMessage(),
-                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+                'trace' => \WP_DEBUG ? $e->getTraceAsString() : null
             ]);
             return false;
         }
@@ -171,7 +171,7 @@ class Transition_Database_Manager
             t.transition_date DESC
         ";
 
-        $results = $this->wpdb->get_results($sql, ARRAY_A);
+        $results = $this->wpdb->get_results($sql, \ARRAY_A);
 
         foreach ($results as &$result) {
             try {
@@ -228,7 +228,7 @@ class Transition_Database_Manager
             LIMIT %d OFFSET %d
         ", $per_page, $offset);
 
-        $results = $this->wpdb->get_results($sql, ARRAY_A);
+        $results = $this->wpdb->get_results($sql, \ARRAY_A);
 
         if ($results === null) {
             return [];
@@ -271,7 +271,7 @@ class Transition_Database_Manager
             $existing_record = $this->wpdb->get_row(
                 $this->wpdb->prepare(
                     "SELECT id FROM {$this->table_name} WHERE id = %d",
-                    absint($transition_id)
+                    \absint($transition_id)
                 )
             );
 
@@ -286,15 +286,15 @@ class Transition_Database_Manager
 
             // Update the existing record
             $update_data = [
-                'status' => sanitize_text_field($status),
-                'subscribers' => absint($subscribers),
-                'transition_date' => current_time('mysql'),
+                'status' => \sanitize_text_field($status),
+                'subscribers' => \absint($subscribers),
+                'transition_date' => \current_time('mysql'),
             ];
 
             $updated = $this->wpdb->update(
                 $this->table_name,
                 $update_data,
-                ['id' => absint($transition_id)],
+                ['id' => \absint($transition_id)],
                 ['%s', '%d', '%s'],
                 ['%d']
             );
@@ -319,7 +319,7 @@ class Transition_Database_Manager
                 'subscribers' => $subscribers,
                 'db_error' => $this->wpdb->last_error,
                 'error' => $e->getMessage(),
-                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+                'trace' => \WP_DEBUG ? $e->getTraceAsString() : null
             ]);
             return false;
         }
@@ -351,7 +351,7 @@ class Transition_Database_Manager
     public function get_transition_date_from_id_map(): array {
         // Get all transition records
         $sql = "SELECT * FROM {$this->table_name}";
-        $transition_data = $this->wpdb->get_results($sql, ARRAY_A);
+        $transition_data = $this->wpdb->get_results($sql, \ARRAY_A);
 
         $data = [];
 
@@ -377,7 +377,7 @@ class Transition_Database_Manager
                 // CRITICAL: Log table deletion for security monitoring
                 $this->logger->critical('Transitions table deleted', [
                     'table_name' => $this->table_name,
-                    'user_id' => get_current_user_id(),
+                    'user_id' => \get_current_user_id(),
                     'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
                 ]);
                 return true;
@@ -389,7 +389,7 @@ class Transition_Database_Manager
                 'table_name' => $this->table_name,
                 'db_error' => $this->wpdb->last_error,
                 'error' => $e->getMessage(),
-                'trace' => WP_DEBUG ? $e->getTraceAsString() : null
+                'trace' => \WP_DEBUG ? $e->getTraceAsString() : null
             ]);
             return false;
         }

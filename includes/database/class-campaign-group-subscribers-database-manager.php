@@ -102,7 +102,7 @@ class Campaign_Group_Subscribers_Database_Manager
     {
         try {
             if (!function_exists('dbDelta')) {
-                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+                require_once \ABSPATH . 'wp-admin/includes/upgrade.php';
             }
 
             $charset_collate = $this->wpdb->get_charset_collate();
@@ -124,7 +124,7 @@ class Campaign_Group_Subscribers_Database_Manager
             FOREIGN KEY (field_id) REFERENCES {$this->fields_table_name}(id) ON DELETE SET NULL
             ) $charset_collate;";
 
-            dbDelta($sql);
+            \dbDelta($sql);
 
             return true;
         } catch (Exception $e) {
@@ -149,20 +149,20 @@ class Campaign_Group_Subscribers_Database_Manager
     {
         try {
             $data = [
-                'subscriber_id' => absint($subscriber_id),
-                'group_id' => absint($group_id),
-                'campaign_id' => absint($campaign_id),
-                'tier' => sanitize_text_field($tier),
+                'subscriber_id' => \absint($subscriber_id),
+                'group_id' => \absint($group_id),
+                'campaign_id' => \absint($campaign_id),
+                'tier' => \sanitize_text_field($tier),
             ];
             $format = ['%d', '%d', '%d', '%s'];
 
             if (!is_null($field_id)) {
-                $data['field_id'] = absint($field_id);
+                $data['field_id'] = \absint($field_id);
                 $format[] = '%d';
             }
 
             if (!is_null($purchase_id)) {
-                $data['purchase_id'] = absint($purchase_id);
+                $data['purchase_id'] = \absint($purchase_id);
                 $format[] = '%d';
             }
 
@@ -197,7 +197,7 @@ class Campaign_Group_Subscribers_Database_Manager
             $campaign_id
         );
 
-        $result = $this->wpdb->get_row($query, ARRAY_A);
+        $result = $this->wpdb->get_row($query, \ARRAY_A);
         return $result ?: null;
     }
 
@@ -217,7 +217,7 @@ class Campaign_Group_Subscribers_Database_Manager
                  WHERE T1.subscriber_id = %d",
                 $subscriber_id
             ),
-            ARRAY_A
+            \ARRAY_A
         ) ?: [];
     }
 
@@ -243,18 +243,18 @@ class Campaign_Group_Subscribers_Database_Manager
             foreach ($data as $key => $value) {
                 switch ($key) {
                     case 'group_id':
-                        $update_data['group_id'] = absint($value);
+                        $update_data['group_id'] = \absint($value);
                         $format[] = '%d';
                         break;
                     case 'tier':
-                        $update_data['tier'] = sanitize_text_field($value);
+                        $update_data['tier'] = \sanitize_text_field($value);
                         $format[] = '%s';
                         break;
                     case 'field_id':
-                        $update_data['field_id'] = is_null($value) ? null : absint($value);
+                        $update_data['field_id'] = is_null($value) ? null : \absint($value);
                         $format[] = '%d';
                         break;                    case 'purchase_id':
-                        $update_data['purchase_id'] = is_null($value) ? null : absint($value);
+                        $update_data['purchase_id'] = is_null($value) ? null : \absint($value);
                         $format[] = '%d';
                         break;
                 }
@@ -267,7 +267,7 @@ class Campaign_Group_Subscribers_Database_Manager
             $updated = $this->wpdb->update(
                 $this->table_name,
                 $update_data,
-                ['subscriber_id' => absint($subscriber_id), 'campaign_id' => absint($campaign_id)],
+                ['subscriber_id' => \absint($subscriber_id), 'campaign_id' => \absint($campaign_id)],
                 $format,
                 ['%d', '%d']
             );
@@ -284,43 +284,43 @@ class Campaign_Group_Subscribers_Database_Manager
     }
 
     /**
-     * Inserts a new campaign subscriber record or updates an existing one if a unique key is found.
-     *
-     * @param array $data An associative array of data including 'subscriber_id', 'campaign_id', and other fields to insert/update.
-     *
-     * @return bool|int True on successful update, the new row's ID on successful insert, or false on failure.
-     */
-    public function upsert_campaign_subscriber(array $data): bool|int
-    {
-        try {
-            if (empty($data['subscriber_id']) || empty($data['campaign_id'])) {
-                throw new Exception('subscriber_id and campaign_id are required for upsert.');
-            }
-
-            $subscriber_id = (int) $data['subscriber_id'];
-            $campaign_id = (int) $data['campaign_id'];
-            $group_id = (int) $data['group_id'];
-            $tier = sanitize_text_field($data['tier'] ?? '');
-            $field_id = isset($data['field_id']) ? (int) $data['field_id'] : null;
-            $purchase_id = isset($data['purchase_id']) ? (int) $data['purchase_id'] : null;
-
-            $existing = $this->get_campaign_subscriber($subscriber_id, $campaign_id);
-
-            if ($existing) {
-                return $this->update_campaign_subscriber($subscriber_id, $campaign_id, [
-                    'group_id' => $group_id,
-                    'tier' => $tier,
-                    'field_id' => $field_id,
-                    'purchase_id' => $purchase_id
-                ]);
-            } else {
-                return $this->insert_campaign_subscriber($subscriber_id, $group_id, $campaign_id, $tier, $field_id, $purchase_id);
-            }
-        } catch (Exception $e) {
-            $this->logger->log('upsert_campaign_subscriber Error: ' . $e->getMessage(), 'error');
-            return false;
+ * Inserts a new campaign subscriber record or updates an existing one if a unique key is found.
+ *
+ * @param array $data An associative array of data including 'subscriber_id', 'campaign_id', and other fields to insert/update.
+ *
+ * @return bool|int True on successful update, the new row's ID on successful insert, or false on failure.
+ */
+public function upsert_campaign_subscriber(array $data): bool|int
+{
+    try {
+        if (empty($data['subscriber_id']) || empty($data['campaign_id'])) {
+            throw new Exception('subscriber_id and campaign_id are required for upsert.');
         }
+
+        $subscriber_id = (int) $data['subscriber_id'];
+        $campaign_id = (int) $data['campaign_id'];
+        $group_id = (int) $data['group_id'];
+        $tier = \sanitize_text_field($data['tier'] ?? '');
+        $field_id = isset($data['field_id']) ? (int) $data['field_id'] : null;
+        $purchase_id = isset($data['purchase_id']) ? (int) $data['purchase_id'] : null;
+
+        $existing = $this->get_campaign_subscriber($subscriber_id, $campaign_id);
+
+        if ($existing) {
+            return $this->update_campaign_subscriber($subscriber_id, $campaign_id, [
+                'group_id' => $group_id,
+                'tier' => $tier,
+                'field_id' => $field_id,
+                'purchase_id' => $purchase_id
+            ]);
+        } else {
+            return $this->insert_campaign_subscriber($subscriber_id, $group_id, $campaign_id, $tier, $field_id, $purchase_id);
+        }
+    } catch (Exception $e) {
+        $this->logger->log('upsert_campaign_subscriber Error: ' . $e->getMessage(), 'error');
+        return false;
     }
+}
 
     /**
  * Inserts or updates multiple campaign subscriber records in a single bulk operation.
@@ -348,12 +348,12 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
             }
 
             $values_placeholders[] = '(%d, %d, %d, %d, %s, %d)';
-            $query_values[] = absint($record['subscriber_id']);
-            $query_values[] = absint($record['group_id']);
-            $query_values[] = absint($record['campaign_id']);
-            $query_values[] = isset($record['field_id']) ? absint($record['field_id']) : 0;
-            $query_values[] = sanitize_text_field($record['subscriber_tier'] ?? '');
-            $query_values[] = isset($record['purchase_id']) ? absint($record['purchase_id']) : 0;
+            $query_values[] = \absint($record['subscriber_id']);
+            $query_values[] = \absint($record['group_id']);
+            $query_values[] = \absint($record['campaign_id']);
+            $query_values[] = isset($record['field_id']) ? \absint($record['field_id']) : 0;
+            $query_values[] = \sanitize_text_field($record['subscriber_tier'] ?? '');
+            $query_values[] = isset($record['purchase_id']) ? \absint($record['purchase_id']) : 0;
             $valid_records_count++;
         }
 
@@ -392,7 +392,7 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
         try {
             $deleted = $this->wpdb->delete(
                 $this->table_name,
-                ['subscriber_id' => absint($subscriber_id), 'campaign_id' => absint($campaign_id)],
+                ['subscriber_id' => \absint($subscriber_id), 'campaign_id' => \absint($campaign_id)],
                 ['%d', '%d']
             );
 
@@ -417,7 +417,7 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
     public function get_all_records(): array
     {
         $query = "SELECT T1.*, T2.campaign FROM {$this->table_name} AS T1 LEFT JOIN {$this->campaigns_table_name} AS T2 ON T1.campaign_id = T2.id";
-        $results = $this->wpdb->get_results($query, ARRAY_A);
+        $results = $this->wpdb->get_results($query, \ARRAY_A);
         return $results ?: [];
     }
 
@@ -454,7 +454,7 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
                 "SELECT tier, COUNT(*) as count FROM {$this->table_name} WHERE campaign_id = %d GROUP BY tier",
                 $campaign_id
             ),
-            ARRAY_A
+            \ARRAY_A
         );
         
         $counts = [];
@@ -481,7 +481,7 @@ public function upsert_campaign_subscribers_bulk(array $data): bool
         
         $total = $this->wpdb->get_var(
             $this->wpdb->prepare(
-                "SELECT SUM(pm.meta_value) 
+                "SELECT SUM(CAST(NULLIF(REPLACE(REPLACE(pm.meta_value, '$', ''), ',', ''), '') AS DECIMAL(12,2)))
                  FROM {$this->table_name} cgs
                  JOIN {$edd_payments_table} p ON cgs.purchase_id = p.ID
                  JOIN {$edd_payment_meta_table} pm ON p.ID = pm.post_id

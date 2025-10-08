@@ -68,7 +68,7 @@ class Subscribers_Database_Manager
     {
         try {
             if (!function_exists('dbDelta')) {
-                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+                require_once \ABSPATH . 'wp-admin/includes/upgrade.php';
             }
 
             $charset_collate = $this->wpdb->get_charset_collate();
@@ -87,7 +87,7 @@ class Subscribers_Database_Manager
             UNIQUE KEY email (email)
             ) $charset_collate;";
 
-            $result = dbDelta($sql);
+            \dbDelta($sql);
 
             if (!$result) {
                 throw new Exception('Failed to create the database table.');
@@ -127,10 +127,10 @@ class Subscribers_Database_Manager
     ): bool {
         try {
             $data = [
-                'id' => absint($id),
-                'email' => sanitize_email($email),
-                'name' => sanitize_text_field($name),
-                'status' => sanitize_text_field($status),
+                'id' => \absint($id),
+                'email' => \sanitize_email($email),
+                'name' => \sanitize_text_field($name),
+                'status' => \sanitize_text_field($status),
             ];
             $format = ['%d', '%s', '%s', '%s'];
 
@@ -181,10 +181,10 @@ class Subscribers_Database_Manager
             $values = [];
             foreach ($subscribers_to_insert as $s) {
                 $placeholders[] = "(%d, %s, %s, %s, NULLIF(%s,''), NULLIF(%s,''), NULLIF(%s,''))";
-                $values[] = absint($s['id']);
-                $values[] = sanitize_email($s['email']);
-                $values[] = sanitize_text_field($s['name'] ?? '');
-                $values[] = sanitize_text_field($s['status'] ?? 'unconfirmed');
+                $values[] = \absint($s['id']);
+                $values[] = \sanitize_email($s['email']);
+                $values[] = \sanitize_text_field($s['name'] ?? '');
+                $values[] = \sanitize_text_field($s['status'] ?? 'unconfirmed');
                 $values[] = $s['subscribed_at'] ?? '';
                 $values[] = $s['unsubscribed_at'] ?? '';
                 $values[] = $s['updated_at'] ?? '';
@@ -223,23 +223,23 @@ VALUES " . implode(', ', $placeholders);
         try {
             $data = [];
             $fmt = [];
-            $where = ['email' => sanitize_email($current_email)];
+            $where = ['email' => \sanitize_email($current_email)];
             $where_fmt = ['%s'];
 
             if (isset($new['id'])) {
-                $data['id'] = absint($new['id']);
+                $data['id'] = \absint($new['id']);
                 $fmt[] = '%d';
             }
             if (isset($new['email'])) {
-                $data['email'] = sanitize_email($new['email']);
+                $data['email'] = \sanitize_email($new['email']);
                 $fmt[] = '%s';
             }
             if (isset($new['name'])) {
-                $data['name'] = sanitize_text_field($new['name']);
+                $data['name'] = \sanitize_text_field($new['name']);
                 $fmt[] = '%s';
             }
             if (isset($new['status'])) {
-                $data['status'] = sanitize_text_field($new['status']);
+                $data['status'] = \sanitize_text_field($new['status']);
                 $fmt[] = '%s';
             }
 
@@ -289,19 +289,19 @@ VALUES " . implode(', ', $placeholders);
         try {
             $data = [];
             $fmt = [];
-            $where = ['id' => absint($id)];
+            $where = ['id' => \absint($id)];
             $where_fmt = ['%d'];
 
             if (isset($new['email'])) {
-                $data['email'] = sanitize_email($new['email']);
+                $data['email'] = \sanitize_email($new['email']);
                 $fmt[] = '%s';
             }
             if (isset($new['name'])) {
-                $data['name'] = sanitize_text_field($new['name']);
+                $data['name'] = \sanitize_text_field($new['name']);
                 $fmt[] = '%s';
             }
             if (isset($new['status'])) {
-                $data['status'] = sanitize_text_field($new['status']);
+                $data['status'] = \sanitize_text_field($new['status']);
                 $fmt[] = '%s';
             }
 
@@ -356,7 +356,7 @@ VALUES " . implode(', ', $placeholders);
             // Use wpdb->delete() to safely remove the subscriber record.
             $deleted = $this->wpdb->delete(
                 $this->table_name,
-                ['email' => sanitize_email($email)],
+                ['email' => \sanitize_email($email)],
                 ['%s']
             );
 
@@ -389,9 +389,9 @@ VALUES " . implode(', ', $placeholders);
         return $this->wpdb->get_row(
             $this->wpdb->prepare(
                 "SELECT * FROM {$this->table_name} WHERE email = %s",
-                sanitize_email($email)
+                \sanitize_email($email)
             ),
-            ARRAY_A
+            \ARRAY_A
         );
     }
 
@@ -407,9 +407,9 @@ VALUES " . implode(', ', $placeholders);
         return $this->wpdb->get_row(
             $this->wpdb->prepare(
                 "SELECT * FROM {$this->table_name} WHERE id = %d",
-                absint($id)
+                \absint($id)
             ),
-            ARRAY_A
+            \ARRAY_A
         );
     }
 
@@ -420,7 +420,7 @@ VALUES " . implode(', ', $placeholders);
      */
     public function get_all_subscribers(): array
     {
-        return $this->wpdb->get_results("SELECT * FROM {$this->table_name}", ARRAY_A);
+        return $this->wpdb->get_results("SELECT * FROM {$this->table_name}", \ARRAY_A);
     }
 
     /**
@@ -522,7 +522,7 @@ VALUES " . implode(', ', $placeholders);
         );
 
         // Execute the query and return the results as an associative array.
-        return $this->wpdb->get_results($sql, ARRAY_A);
+        return $this->wpdb->get_results($sql, \ARRAY_A);
     }
 
     /**
@@ -639,10 +639,10 @@ VALUES " . implode(', ', $placeholders);
             $values = [];
 
             foreach ($subscribers_to_process as $s) {
-                $id = absint($s['id']);
-                $email = sanitize_email($s['email']);
-                $name = sanitize_text_field(trim(($s['fields']['name'] ?? '') . ' ' . ($s['fields']['last_name'] ?? '')));
-                $status = sanitize_text_field($s['status'] ?? 'unconfirmed');
+                $id = \absint($s['id']);
+                $email = \sanitize_email($s['email']);
+                $name = \sanitize_text_field(trim(($s['fields']['name'] ?? '') . ' ' . ($s['fields']['last_name'] ?? '')));
+                $status = \sanitize_text_field($s['status'] ?? 'unconfirmed');
 
                 $subscribed_at = $s['subscribed_at'] ?? '';
                 $unsubscribed_at = $s['unsubscribed_at'] ?? '';
@@ -721,7 +721,7 @@ VALUES " . implode(', ', $placeholders);
     {
         $results = $this->wpdb->get_results(
             "SELECT status, COUNT(*) as count FROM {$this->table_name} GROUP BY status",
-            ARRAY_A
+            \ARRAY_A
         );
         
         $counts = [

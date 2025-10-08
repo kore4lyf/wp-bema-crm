@@ -61,7 +61,7 @@ class Group_Database_Manager
     {
         try {
             if (!function_exists('dbDelta')) {
-                require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+                require_once \ABSPATH . 'wp-admin/includes/upgrade.php';
             }
 
             $charset_collate = $this->wpdb->get_charset_collate();
@@ -75,7 +75,7 @@ class Group_Database_Manager
                 CONSTRAINT fk_bemacrm_groupmeta_campaign_id FOREIGN KEY (campaign_id) REFERENCES {$this->campaign_table_name}(id) ON DELETE CASCADE
             ) $charset_collate;";
 
-            $result = dbDelta($sql);
+            $result = \dbDelta($sql);
 
             if (!$result) {
                 throw new Exception('Failed to create the database table.');
@@ -98,9 +98,9 @@ class Group_Database_Manager
     public function upsert_group(int $id, string $group_name, int $campaign_id)
     {
         try {
-            $sanitized_id = absint($id);
-            $sanitized_group_name = sanitize_text_field($group_name);
-            $sanitized_campaign_id = absint($campaign_id);
+            $sanitized_id = \absint($id);
+            $sanitized_group_name = \sanitize_text_field($group_name);
+            $sanitized_campaign_id = \absint($campaign_id);
 
             $existing_group = $this->get_group_by_id($sanitized_id);
 
@@ -166,9 +166,9 @@ class Group_Database_Manager
             
             foreach ($groups_to_upsert as $group) {
                 $placeholders[] = "(%d, %s, %d)";
-                $values[] = absint($group['id']);
-                $values[] = sanitize_text_field($group['group_name']);
-                $values[] = absint($group['campaign_id']);
+                $values[] = \absint($group['id']);
+                $values[] = \sanitize_text_field($group['group_name']);
+                $values[] = \absint($group['campaign_id']);
             }
 
             $query = "INSERT INTO {$this->table_name} (id, group_name, campaign_id) VALUES " .
@@ -200,103 +200,47 @@ class Group_Database_Manager
         try {
             $deleted = $this->wpdb->delete(
                 $this->table_name,
-                ['group_name' => sanitize_text_field($group_name)],
+                ['group_name' => \sanitize_text_field($group_name)],
                 ['%s']
             );
 
             if (false === $deleted) {
                 throw new Exception('Failed to delete group: ' . $this->wpdb->last_error);
             }
-            return $deleted;
-        } catch (Exception $e) {
-            $this->logger->error('Group_Database_Manager Error: ' . $e->getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Deletes a group using the provided ID.
-     *
-     * @param int $id The ID of the group to delete.
-     * @return int|false The number of deleted rows on success, or false on failure.
-     */
-    public function delete_group_by_id(int $id)
-    {
-        try {
-            $deleted = $this->wpdb->delete(
-                $this->table_name,
-                ['id' => absint($id)],
-                ['%d']
-            );
-            if (false === $deleted) {
-                throw new Exception('Failed to delete group: ' . $this->wpdb->last_error);
-            }
-            return $deleted;
-        } catch (Exception $e) {
-            $this->logger->error('Group_Database_Manager Error: ' . $e->getMessage());
-            return false;
-        }
-    }
 
-    /**
-     * Retrieves a group by its name.
-     *
-     * @param string $group_name The name of the group.
-     * @return array|object|null The group data as an associative array, or null if not found.
-     */
-    public function get_group_by_name(string $group_name)
-    {
-        return $this->wpdb->get_row(
-            $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE group_name = %s",
-                sanitize_text_field($group_name)
-            ),
-            ARRAY_A
-        );
+            return $deleted;
+        } catch (Exception $e) {
+            $this->logger->error('Group_Database_Manager Error: ' . $e->getMessage());
+            return false;
+        }
     }
 
     /**
      * Retrieves a group by its ID.
      *
      * @param int $id The ID of the group to retrieve.
-     * @return array|object|null The group data as an associative array, or null if not found.
+     * @return array|null The group data or null if not found.
      */
-    public function get_group_by_id(int $id)
+    public function get_group_by_id(int $id): ?array
     {
-        return $this->wpdb->get_row(
-            $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE id = %d",
-                absint($id)
-            ),
-            ARRAY_A
+        $query = $this->wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE id = %d",
+            \absint($id)
         );
-    }
 
-    /**
-     * Retrieves all groups associated with a specific campaign ID.
-     *
-     * @param int $campaign_id The ID of the campaign.
-     * @return array An array of group data, or an empty array if none found.
-     */
-    public function get_groups_by_campaign_id(int $campaign_id)
-    {
-        return $this->wpdb->get_results(
-            $this->wpdb->prepare(
-                "SELECT * FROM {$this->table_name} WHERE campaign_id = %d",
-                absint($campaign_id)
-            ),
-            ARRAY_A
-        );
+        $result = $this->wpdb->get_row($query, \ARRAY_A);
+
+        return $result ? $result : null;
     }
 
     /**
      * Retrieves all groups from the database.
      *
-     * @return array An array of all group data, or an empty array if none found.
+     * @return array An array of all groups.
      */
     public function get_all_groups()
     {
-        return $this->wpdb->get_results("SELECT * FROM {$this->table_name}", ARRAY_A);
+        return $this->wpdb->get_results("SELECT * FROM {$this->table_name}", \ARRAY_A);
     }
 
     /**

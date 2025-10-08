@@ -2,20 +2,22 @@
     'use strict';
 
     // Client-side debug function
-    function debugLog(data, label) {
+    function debugLog(data, label, skipAjax = false) {
         if (!bemaAdmin || !bemaAdmin.debug || !bemaAdmin.debug.enabled) {
             return;
         }
 
         console.log(`${label || ''}: `, data);
 
-        // Send to server for logging
-        $.post(bemaAdmin.ajaxUrl, {
-            action: 'bema_debug_log',
-            nonce: bemaAdmin.nonce,
-            data: data,
-            label: label
-        });
+        // Send to server for logging (unless skipped)
+        if (!skipAjax) {
+            $.post(bemaAdmin.ajaxUrl, {
+                action: 'bema_debug_log',
+                nonce: bemaAdmin.nonce,
+                data: data,
+                label: label
+            });
+        }
     }
 
     window.BemaSync = {
@@ -127,6 +129,13 @@
                             this.stopStatusPolling();
                         }
                     }
+                },
+                error: (xhr, status, error) => {
+                    debugLog({
+                        xhr: xhr.responseText,
+                        status: status,
+                        error: error
+                    }, 'SYNC_STATUS_ERROR', true); // Skip AJAX logging to prevent loops
                 }
             });
         },

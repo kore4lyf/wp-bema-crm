@@ -143,7 +143,7 @@ class Utils
       '%-artist'
     );
 
-    $albums = $wpdb->get_results($query, ARRAY_A);
+    $albums = $wpdb->get_results($query, \ARRAY_A);
 
     if (empty($albums)) {
       return [];
@@ -185,7 +185,7 @@ class Utils
 
   public function get_campaign_group_names($campaign_name): array
   {
-    $tiers = get_option('bema_crm_tiers', []);
+    $tiers = \get_option('bema_crm_tiers', []);
 
     $campaign_group_names = [];
 
@@ -234,7 +234,7 @@ class Utils
   {
     global $wpdb;
 
-    $album_name = sanitize_text_field($album_name);
+    $album_name = \sanitize_text_field($album_name);
 
     // Find the EDD download (post) by its title
     $query = $wpdb->prepare(
@@ -249,7 +249,7 @@ class Utils
       $album_name
     );
 
-    $album = $wpdb->get_row($query, ARRAY_A);
+    $album = $wpdb->get_row($query, \ARRAY_A);
 
     if (empty($album)) {
       return [
@@ -284,7 +284,7 @@ class Utils
         $album['ID'],
         '%-artist' // Search for a term slug ending in '-artist'
       ),
-      ARRAY_A
+      \ARRAY_A
     );
 
     if (!empty($artist_term['name'])) {
