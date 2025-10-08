@@ -26,8 +26,8 @@ if (!class_exists('Bema_CRM_Logger')) {
 
 /**
  * Plugin Name: Bema CRM
- * Plugin URI: https://www.wordpress.org/bema-crm
- * Description: Bema Website Customer Relationship Model
+ * Plugin URI: https://github.com/BemaISLTD/bema_crm.git 
+ * Description: Advanced Customer Relationship Management for Bema Music with MailerLite and EDD integration, campaign tier management, and automated subscriber transitions.
  * Version: 1.0.0
  * Requires at least: 5.6
  * Requires PHP: 7.4
