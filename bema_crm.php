@@ -1023,8 +1023,10 @@ class Bema_CRM
             require_once BEMA_PATH . 'includes/notification/class-bema-crm-notifier.php';
 
             // Add CRM Trigger
-            $mailerlite = new \Bema\Providers\MailerLite(get_option('bema_crm_settings')['api']['mailerlite_api_key'] ?? '');
-            $this->triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager);
+            $settings = get_option('bema_crm_settings', []);
+            $api_key = $settings['api']['mailerlite_api_key'] ?? '';
+            $mailerlite = new \Bema\Providers\MailerLite($api_key, $this->logger);
+            $this->triggers = new Triggers($mailerlite, $this->sync_instance, $this->utils, $this->group_db_manager, $this->field_db_manager, $this->logger);
             $this->triggers->init();
 
             // Register sync cron Hook
@@ -1335,15 +1337,18 @@ class Bema_CRM
         try {
             Bema_CRM::get_logger()->info('Starting plugin deactivation');
 
-            // Clear scheduled hooks
+            // Clear only our scheduled hooks, and check if they exist first
             $hooks_to_clear = [
                 'bema_daily_sync',
                 'bema_health_check',
                 'bema_cleanup_logs'
             ];
 
+            // Be more selective about when to clear hooks
             foreach ($hooks_to_clear as $hook) {
-                wp_clear_scheduled_hook($hook);
+                if (wp_next_scheduled($hook)) {
+                    wp_clear_scheduled_hook($hook);
+                }
             }
 
             // Clear transients

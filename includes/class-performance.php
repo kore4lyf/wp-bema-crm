@@ -26,7 +26,6 @@ class Performance
 
         // Core optimizations
         if (is_admin()) {
-            add_filter('pre_http_request', [$this, 'block_external_requests'], 10, 3);
             add_action('admin_init', [$this, 'optimize_admin_load']);
             add_action('admin_footer', [$this, 'log_page_performance']);
 
@@ -51,9 +50,12 @@ class Performance
 
     public function prepare_sync()
     {
-        // Increase limits for sync operations
-        ini_set('memory_limit', '512M');
-        set_time_limit(300);
+        // Only modify limits if not in WP_CRON context
+        if (!wp_doing_cron()) {
+            // Increase limits for sync operations
+            ini_set('memory_limit', '512M');
+            set_time_limit(300);
+        }
 
         // Disable unnecessary WordPress features during sync
         wp_defer_term_counting(true);
@@ -78,23 +80,6 @@ class Performance
         $this->clear_sync_cache();
     }
 
-    public function block_external_requests($pre, $parsed_args, $url)
-    {
-        // Allow API requests to MailerLite and your own domain
-        if (strpos($url, 'mailerlite.com') !== false || strpos($url, site_url()) !== false) {
-            return false;
-        }
-
-        // Block non-essential external requests during page loads
-        $blocked_domains = ['wordpress.org', 'api.wordpress.org'];
-        foreach ($blocked_domains as $domain) {
-            if (strpos($url, $domain) !== false) {
-                return new \WP_Error('http_request_blocked', 'External request blocked during page load');
-            }
-        }
-
-        return false;
-    }
 
     public function optimize_admin_load()
     {

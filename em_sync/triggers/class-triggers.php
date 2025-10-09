@@ -533,6 +533,18 @@ class Triggers
      */
     public function handle_deleted_album_cron(string $album_name, array $album_details): void
     {
+        // Check for required dependencies
+        if (!$this->mailerlite || !$this->utils || !$this->field_database || !$this->group_database) {
+            $this->logger->error('Cannot execute deleted album cron: Missing required dependencies', [
+                'album_name' => $album_name,
+                'mailerlite' => $this->mailerlite ? 'available' : 'null',
+                'utils' => $this->utils ? 'available' : 'null', 
+                'field_database' => $this->field_database ? 'available' : 'null',
+                'group_database' => $this->group_database ? 'available' : 'null'
+            ]);
+            return;
+        }
+
         $tiers = get_option('bema_crm_tiers', []);
 
         // Handle field deletion

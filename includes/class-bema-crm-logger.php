@@ -164,6 +164,9 @@ class Bema_CRM_Logger
 
         // Schedule log cleanup to run periodically.
         add_action('wp_loaded', [$this, 'schedule_log_cleanup']);
+        
+        // Register the cron action hook immediately (not in wp_loaded)
+        add_action('bema_crm_log_cleanup_' . $this->identifier, [$this, 'cleanup_old_logs']);
     }
 
     // ========================================
@@ -472,7 +475,7 @@ class Bema_CRM_Logger
             wp_schedule_event(time(), 'daily', 'bema_crm_log_cleanup_' . $this->identifier);
         }
         
-        add_action('bema_crm_log_cleanup_' . $this->identifier, [$this, 'cleanup_old_logs']);
+        // Action hook is now registered in constructor, not here
     }
 
     /**

@@ -21,7 +21,8 @@ update_option($sync_option_key, $sync_state);
 function trigger_immediate_sync()
 {
     if (!wp_next_scheduled(SYNC_CRON_JOB)) {
-        wp_schedule_single_event(time(), SYNC_CRON_JOB);
+        // Schedule 30 seconds in the future to avoid conflicts
+        wp_schedule_single_event(time() + 30, SYNC_CRON_JOB);
     }
 }
 // Handle Start Sync Form
@@ -62,7 +63,8 @@ if (isset($_POST['start_sync'])) {
             'last_sync_time' => date('F j, Y g:i A', current_time('timestamp')),
         ];
         update_option($sync_option_key, $sync_state);
-        wp_clear_scheduled_hook( SYNC_CRON_JOB );
+        // Only clear if we're sure no other cron jobs are using this hook
+        // wp_clear_scheduled_hook( SYNC_CRON_JOB );
         // Trigger the actual immediate sync process
         trigger_immediate_sync();
         \Bema\bema_notice('Sync process started successfully!', 'success', 'Sync Started');
